@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List, Optional, Sequence, Tuple
 
+from num2words import num2words
 import numpy as np
 import requests
 import sounddevice as sd
@@ -18,6 +19,8 @@ from Levenshtein import distance
 from loguru import logger
 
 from glados import asr, tts, vad
+from plugins.intent_classifier import IntentClassifier
+from plugins.plugin_manager import PluginManager, load_plugins
 
 logger.remove(0)
 logger.add(sys.stderr, level="SUCCESS")
@@ -50,6 +53,8 @@ class GladosConfig:
     announcement: Optional[str]
     personality_preprompt: List[dict[str, str]]
     interruptible: bool
+    intents: List[dict]
+    intent_confidence_threshold: int
     voice_model: str = VOICE_MODEL
     speaker_id: Optional[int] = None
 
@@ -74,18 +79,11 @@ class GladosConfig:
 
 
 class Glados:
-    def __init__(
-        self,
-        voice_model: str,
-        speaker_id: Optional[int],
-        completion_url: str,
-        model: str,
-        api_key: str | None = None,
-        wake_word: str | None = None,
-        personality_preprompt: Sequence[dict[str, str]] = DEFAULT_PERSONALITY_PREPROMPT,
-        announcement: str | None = None,
-        interruptible: bool = True,
-    ) -> None:
+    def __init__(self, voice_model: str, speaker_id: Optional[int], completion_url: str, model: str,
+                 api_key: str | None = None, wake_word: str | None = None,
+                 personality_preprompt: Sequence[dict[str, str]] = DEFAULT_PERSONALITY_PREPROMPT,
+                 announcement: str | None = None, interruptible: bool = True,
+                 config: GladosConfig | None = None) -> None:
         """
         Initializes the VoiceRecognition class, setting up necessary models, streams, and queues.
 
@@ -103,6 +101,7 @@ class Glados:
         7. The audio stream is reset (buffers cleared), and listening continues.
 
         Args:
+            config:
             wake_word (str, optional): The wake word to use for activation. Defaults to None.
         """
         self.completion_url = completion_url
@@ -135,13 +134,33 @@ class Glados:
         self._recording_started = False
         self._gap_counter = 0
 
+        # Plugin initialization
+        # Expose a minimal LLM client for plugins
+        self.llm_client = {
+            "model": model,
+            "url": completion_url,
+            "headers": {
+                "Authorization": f"Bearer {api_key}" if api_key else None,
+                "Content-Type": "application/json",
+            },
+        }
+        self.intent_classifier = IntentClassifier(config.intents)
+        self.plugin_manager = PluginManager()
+        load_plugins("plugins")
+        self.confidence_threshold = config.intent_confidence_threshold
+        logger.info("Running pre-initialization for plugins...")
+        # self.plugin_manager.pre_initialize_plugins(self.llm_client)
+
+        # personality configuration
         self._messages = personality_preprompt
+
         self.llm_queue: queue.Queue[str] = queue.Queue()
         self.tts_queue: queue.Queue[str] = queue.Queue()
         self.processing = False
         self.currently_speaking = False
         self.interruptible = interruptible
         self.shutdown_event = threading.Event()
+
 
         llm_thread = threading.Thread(target=self.process_LLM)
         llm_thread.start()
@@ -157,7 +176,7 @@ class Glados:
                 sd.wait()
 
         def audio_callback_for_sdInputStream(
-            indata: np.ndarray, frames: int, time: Any, status: CallbackFlags
+                indata: np.ndarray, frames: int, time: Any, status: CallbackFlags
         ):
             data = indata.copy().squeeze()  # Reduce to single channel if necessary
             vad_value = self._vad_model.process_chunk(data)
@@ -170,6 +189,45 @@ class Glados:
             callback=audio_callback_for_sdInputStream,
             blocksize=int(SAMPLE_RATE * VAD_SIZE / 1000),
         )
+
+    def query_intent_llm(self, detected_text: str) -> str:
+        """
+        Sends the text to the LLM for processing.
+
+        Args:
+            detected_text (str): User input.
+
+        Returns:
+            str: LLM response.
+        """
+        data = {
+            "model": self.model,
+            "stream": False,
+            "messages": self.messages + [{"role": "user", "content": detected_text}],
+        }
+        response = requests.post(
+            self.completion_url, headers=self.prompt_headers, json=data
+        )
+        return response.json().get("content", "")
+
+    def detect_intent(self, detected_text: str):
+        """
+        Routes a detected command to the appropriate plugin or the LLM based on intent detection.
+
+        Args:
+            detected_text (str): The user's transcribed input.
+        """
+        intent, confidence = self.intent_classifier.predict_intent(detected_text)
+        logger.success(f"Detected intent: {intent} (confidence: {confidence:.2f}) threshold: {self.confidence_threshold:.2f}")
+
+        # Dispatch to plugin, returning the data
+        if confidence < self.confidence_threshold:
+            return None
+        elif intent in self.plugin_manager.plugins:
+            return self.plugin_manager.execute(intent, detected_text)
+        else:
+            logger.warning(f"Unable to find intent {intent} in {self.plugin_manager.plugins}")
+            return None
 
     @property
     def messages(self) -> Sequence[dict[str, str]]:
@@ -193,6 +251,7 @@ class Glados:
             personality_preprompt=personality_preprompt,
             announcement=config.announcement,
             interruptible=config.interruptible,
+            config=config
         )
 
     @classmethod
@@ -305,11 +364,13 @@ class Glados:
 
         if detected_text:
             logger.success(f"ASR text: '{detected_text}'")
+            intent_data = self.detect_intent(detected_text)
+            logger.success(f"Intent responded with {intent_data}")
 
             if self.wake_word and not self._wakeword_detected(detected_text):
                 logger.info(f"Required wake word {self.wake_word=} not detected.")
             else:
-                self.llm_queue.put(detected_text)
+                self.llm_queue.put(f"{detected_text}{intent_data}")
                 self.processing = True
                 self.currently_speaking = True
 
@@ -340,6 +401,16 @@ class Glados:
         with self._buffer.mutex:
             self._buffer.queue.clear()
 
+    def replace_numbers_with_words(self, text):
+        # Define a function to convert a number to its word equivalent
+        def number_to_words(match):
+            number = int(match.group())
+            return num2words(number)
+
+        # Use regex to find all numbers in the string and replace them with their word equivalents
+        result = re.sub(r'\b\d+\b', number_to_words, text)
+        return result
+
     def process_TTS_thread(self):
         """
         Processes the LLM generated text using the TTS model.
@@ -359,13 +430,15 @@ class Glados:
                 generated_text = self.tts_queue.get(timeout=PAUSE_TIME)
 
                 if (
-                    generated_text == "<EOS>"
+                        generated_text == "<EOS>"
                 ):  # End of stream token generated in process_LLM_thread
                     finished = True
                 elif not generated_text:
                     logger.warning("Empty string sent to TTS")  # should not happen!
                 else:
+                    generated_text = self.replace_numbers_with_words(generated_text)
                     logger.success(f"LLM text: {generated_text}")
+
                     logger.info(f"LLM inference time: {(time.time() - start):.2f}s")
                     start = time.time()
                     audio = self._tts.generate_speech_audio(generated_text)
@@ -415,7 +488,7 @@ class Glados:
                 pass
 
     def clip_interrupted_sentence(
-        self, generated_text: str, percentage_played: float
+            self, generated_text: str, percentage_played: float
     ) -> str:
         """
         Clips the generated text if the TTS was interrupted.
@@ -466,7 +539,7 @@ class Glados:
             logger.debug("Audio stream already closed or invalid")
 
         elapsed_time = (
-            time.time() - start_time + 0.12
+                time.time() - start_time + 0.12
         )  # slight delay to ensure all audio timing is correct
         played_samples = elapsed_time * self._tts.rate
 
@@ -496,10 +569,10 @@ class Glados:
                 # Perform the request and process the stream
 
                 with requests.post(
-                    self.completion_url,
-                    headers=self.prompt_headers,
-                    json=data,
-                    stream=True,
+                        self.completion_url,
+                        headers=self.prompt_headers,
+                        json=data,
+                        stream=True,
                 ) as response:
                     sentence = []
                     for line in response.iter_lines():

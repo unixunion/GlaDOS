@@ -8,3 +8,5 @@ requests
 textual
 pyyaml
 librosa
+num2words
+scikit-learn
