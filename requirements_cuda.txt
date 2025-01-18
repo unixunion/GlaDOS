@@ -10,3 +10,6 @@ pyyaml
 librosa
 num2words
 scikit-learn
+pandas
+numpy~=2.0.2
+spacy

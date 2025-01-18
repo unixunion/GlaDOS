@@ -41,3 +41,4 @@ humanfriendly~=10.0
 coloredlogs~=15.0.1
 flatbuffers~=24.12.23
 pyreadline3~=3.5.4
+spacy

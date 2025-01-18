@@ -1,108 +1,33 @@
-import copy
-import json
 import queue
-import re
-import sys
 import threading
-import time
-from dataclasses import dataclass
+import sys
 from pathlib import Path
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple, List
 
-from num2words import num2words
 import numpy as np
-import requests
 import sounddevice as sd
 from sounddevice import CallbackFlags
-import yaml
 from Levenshtein import distance
 from loguru import logger
 
 from glados import asr, tts, vad
-from plugins.intent_classifier import IntentClassifier
+from glados.config import GladosConfig, DEFAULT_PERSONALITY_PREPROMPT, VAD_SIZE, VAD_MODEL, VAD_THRESHOLD, \
+    SAMPLE_RATE
+from glados.llmclient import LLMClient
+from glados.util import replace_numbers_with_words
 from plugins.plugin_manager import PluginManager, load_plugins
 
 logger.remove(0)
-logger.add(sys.stderr, level="SUCCESS")
-
-VAD_MODEL = "silero_vad.onnx"
-VOICE_MODEL = "glados.onnx"
-PAUSE_TIME = 0.05  # Time to wait between processing loops
-SAMPLE_RATE = 16000  # Sample rate for input stream
-VAD_SIZE = 50  # Milliseconds of sample for Voice Activity Detection (VAD)
-VAD_THRESHOLD = 0.9  # Threshold for VAD detection
-BUFFER_SIZE = 600  # Milliseconds of buffer before VAD detection
-PAUSE_LIMIT = 500  # Milliseconds of pause allowed before processing
-SIMILARITY_THRESHOLD = 2  # Threshold for wake word similarity
-
-NEUROTOXIN_RELEASE_ALLOWED = False  # preparation for function calling, see issue #13
-DEFAULT_PERSONALITY_PREPROMPT = (
-    {
-        "role": "system",
-        "content": "You are a helpful AI assistant. You are here to assist the user in their tasks.",
-    },
-)
-
-
-@dataclass
-class GladosConfig:
-    completion_url: str
-    model: str
-    api_key: Optional[str]
-    wake_word: Optional[str]
-    announcement: Optional[str]
-    personality_preprompt: List[dict[str, str]]
-    interruptible: bool
-    intents: List[dict]
-    intent_confidence_threshold: int
-    voice_model: str = VOICE_MODEL
-    speaker_id: Optional[int] = None
-
-    @classmethod
-    def from_yaml(cls, path: str, key_to_config: Sequence[str] | None = ("Glados",)):
-        key_to_config = key_to_config or []
-
-        try:
-            # First attempt with UTF-8
-            with open(path, "r", encoding="utf-8") as file:
-                data = yaml.safe_load(file)
-        except UnicodeDecodeError:
-            # Fall back to utf-8-sig if UTF-8 fails (handles BOM)
-            with open(path, "r", encoding="utf-8-sig") as file:
-                data = yaml.safe_load(file)
-
-        config = data
-        for nested_key in key_to_config:
-            config = config[nested_key]
-
-        return cls(**config)
+logger.add(sys.stderr, level="INFO")
 
 
 class Glados:
     def __init__(self, voice_model: str, speaker_id: Optional[int], completion_url: str, model: str,
-                 api_key: str | None = None, wake_word: str | None = None,
+                 api_key: Optional[str] = None, wake_word: Optional[str] = None,
                  personality_preprompt: Sequence[dict[str, str]] = DEFAULT_PERSONALITY_PREPROMPT,
-                 announcement: str | None = None, interruptible: bool = True,
-                 config: GladosConfig | None = None) -> None:
+                 announcement: Optional[str] = None, interruptible: bool = True) -> None:
         """
-        Initializes the VoiceRecognition class, setting up necessary models, streams, and queues.
-
-        This class is not thread-safe, so you should only use it from one thread. It works like this:
-        1. The audio stream is continuously listening for input.
-        2. The audio is buffered until voice activity is detected. This is to make sure that the
-            entire sentence is captured, including before voice activity is detected.
-        2. While voice activity is detected, the audio is stored, together with the buffered audio.
-        3. When voice activity is not detected after a short time (the PAUSE_LIMIT), the audio is
-            transcribed. If voice is detected again during this time, the timer is reset and the
-            recording continues.
-        4. After the voice stops, the listening stops, and the audio is transcribed.
-        5. If a wake word is set, the transcribed text is checked for similarity to the wake word.
-        6. The function is called with the transcribed text as the argument.
-        7. The audio stream is reset (buffers cleared), and listening continues.
-
-        Args:
-            config:
-            wake_word (str, optional): The wake word to use for activation. Defaults to None.
+        Initializes the Glados assistant with models, plugins, and configuration.
         """
         self.completion_url = completion_url
         self.model = model
@@ -114,59 +39,34 @@ class Glados:
             speaker_id=speaker_id,
         )
 
-        # warm up onnx ASR model
+        # Warm up ASR model
         self._asr_model.transcribe_file("data/0.wav")
 
-        # LLAMA_SERVER_HEADERS
-        self.prompt_headers = {
-            "Authorization": (
-                f"Bearer {api_key}" if api_key else "Bearer your_api_key_here"
-            ),
-            "Content-Type": "application/json",
-        }
+        # Initialize queues
+        self._sample_queue = queue.Queue()
 
-        # Initialize sample queues and state flags
-        self._samples: List[np.ndarray] = []
-        self._sample_queue: queue.Queue[Tuple[np.ndarray, np.ndarray]] = queue.Queue()
-        self._buffer: queue.Queue[np.ndarray] = queue.Queue(
-            maxsize=BUFFER_SIZE // VAD_SIZE
-        )
+        # Circular buffer for pre-activation audio
+        self._buffer = queue.Queue(maxsize=600 // VAD_SIZE)
         self._recording_started = False
         self._gap_counter = 0
-
-        # Plugin initialization
-        # Expose a minimal LLM client for plugins
-        self.llm_client = {
-            "model": model,
-            "url": completion_url,
-            "headers": {
-                "Authorization": f"Bearer {api_key}" if api_key else None,
-                "Content-Type": "application/json",
-            },
-        }
-        self.intent_classifier = IntentClassifier(config.intents)
-        self.plugin_manager = PluginManager()
-        load_plugins("plugins")
-        self.confidence_threshold = config.intent_confidence_threshold
-        logger.info("Running pre-initialization for plugins...")
-        # self.plugin_manager.pre_initialize_plugins(self.llm_client)
-
-        # personality configuration
-        self._messages = personality_preprompt
-
-        self.llm_queue: queue.Queue[str] = queue.Queue()
-        self.tts_queue: queue.Queue[str] = queue.Queue()
         self.processing = False
-        self.currently_speaking = False
         self.interruptible = interruptible
         self.shutdown_event = threading.Event()
 
+        # Add a flag for TTS playback
+        self.currently_playing = False
 
-        llm_thread = threading.Thread(target=self.process_LLM)
-        llm_thread.start()
+        # Plugin and LLM setup
+        self.plugin_manager = PluginManager()
+        load_plugins("plugins")
+        self.llm_client = LLMClient(url=completion_url, model=model, headers={
+            "Authorization": f"Bearer {api_key or 'your_api_key_here'}",
+            "Content-Type": "application/json"
+        }, config=config)
 
-        tts_thread = threading.Thread(target=self.process_TTS_thread)
-        tts_thread.start()
+        # Threads for LLM and TTS processing
+        threading.Thread(target=self.process_llm, daemon=True).start()
+        threading.Thread(target=self.process_tts, daemon=True).start()
 
         if announcement:
             audio = self._tts.generate_speech_audio(announcement)
@@ -175,9 +75,7 @@ class Glados:
             if not self.interruptible:
                 sd.wait()
 
-        def audio_callback_for_sdInputStream(
-                indata: np.ndarray, frames: int, time: Any, status: CallbackFlags
-        ):
+        def audio_callback(indata: np.ndarray, frames: int, time: Any, status: CallbackFlags):
             data = indata.copy().squeeze()  # Reduce to single channel if necessary
             vad_value = self._vad_model.process_chunk(data)
             vad_confidence = vad_value > VAD_THRESHOLD
@@ -186,501 +84,228 @@ class Glados:
         self.input_stream = sd.InputStream(
             samplerate=SAMPLE_RATE,
             channels=1,
-            callback=audio_callback_for_sdInputStream,
+            callback=audio_callback,
             blocksize=int(SAMPLE_RATE * VAD_SIZE / 1000),
         )
 
-    def query_intent_llm(self, detected_text: str) -> str:
+    def start(self):
         """
-        Sends the text to the LLM for processing.
-
-        Args:
-            detected_text (str): User input.
-
-        Returns:
-            str: LLM response.
-        """
-        data = {
-            "model": self.model,
-            "stream": False,
-            "messages": self.messages + [{"role": "user", "content": detected_text}],
-        }
-        response = requests.post(
-            self.completion_url, headers=self.prompt_headers, json=data
-        )
-        return response.json().get("content", "")
-
-    def detect_intent(self, detected_text: str):
-        """
-        Routes a detected command to the appropriate plugin or the LLM based on intent detection.
-
-        Args:
-            detected_text (str): The user's transcribed input.
-        """
-        intent, confidence = self.intent_classifier.predict_intent(detected_text)
-        logger.success(f"Detected intent: {intent} (confidence: {confidence:.2f}) threshold: {self.confidence_threshold:.2f}")
-
-        # Dispatch to plugin, returning the data
-        if confidence < self.confidence_threshold:
-            return None
-        elif intent in self.plugin_manager.plugins:
-            return self.plugin_manager.execute(intent, detected_text)
-        else:
-            logger.warning(f"Unable to find intent {intent} in {self.plugin_manager.plugins}")
-            return None
-
-    @property
-    def messages(self) -> Sequence[dict[str, str]]:
-        return self._messages
-
-    @classmethod
-    def from_config(cls, config: GladosConfig):
-        personality_preprompt = []
-        for line in config.personality_preprompt:
-            personality_preprompt.append(
-                {"role": list(line.keys())[0], "content": list(line.values())[0]}
-            )
-
-        return cls(
-            voice_model=config.voice_model,
-            speaker_id=config.speaker_id,
-            completion_url=config.completion_url,
-            model=config.model,
-            api_key=config.api_key,
-            wake_word=config.wake_word,
-            personality_preprompt=personality_preprompt,
-            announcement=config.announcement,
-            interruptible=config.interruptible,
-            config=config
-        )
-
-    @classmethod
-    def from_yaml(cls, path: str):
-        return cls.from_config(GladosConfig.from_yaml(path))
-
-    def start_listen_event_loop(self):
-        """
-        Starts the Glados voice assistant, continuously listening for input and responding.
+        Starts the Glados assistant.
         """
         self.input_stream.start()
-        logger.success("Audio Modules Operational")
-        logger.success("Listening...")
-        # Loop forever, but is 'paused' when new samples are not available
+        logger.success("Input Stream Started")
+        logger.info("Listening...")
         try:
-            while True:
+            while not self.shutdown_event.is_set():
                 sample, vad_confidence = self._sample_queue.get()
                 self._handle_audio_sample(sample, vad_confidence)
         except KeyboardInterrupt:
-            self.shutdown_event.set()
-            self.input_stream.stop()
+            self.shutdown()
 
     def _handle_audio_sample(self, sample: np.ndarray, vad_confidence: bool):
-        """
-        Handles the processing of each audio sample.
-
-        If the recording has not started, the sample is added to the circular buffer.
-
-        If the recording has started, the sample is added to the samples list, and the pause
-        limit is checked to determine when to process the detected audio.
-
-        Args:
-            sample (np.ndarray): The audio sample to process.
-            vad_confidence (bool): Whether voice activity is detected in the sample.
-        """
         if not self._recording_started:
             self._manage_pre_activation_buffer(sample, vad_confidence)
         else:
             self._process_activated_audio(sample, vad_confidence)
 
     def _manage_pre_activation_buffer(self, sample: np.ndarray, vad_confidence: bool):
-        """
-        Manages the circular buffer of audio samples before activation (i.e., before the voice is detected).
-
-        If the buffer is full, the oldest sample is discarded to make room for new ones.
-
-        If voice activity is detected, the audio stream is stopped, and the processing is turned off
-        to prevent overlap with the LLM and TTS threads.
-
-        Args:
-            sample (np.ndarray): The audio sample to process.
-            vad_confidence (bool): Whether voice activity is detected in the sample.
-        """
         if self._buffer.full():
-            self._buffer.get()  # Discard the oldest sample to make room for new ones
+            self._buffer.get()
         self._buffer.put(sample)
-
-        if vad_confidence:  # Voice activity detected
-            sd.stop()  # Stop the audio stream to prevent overlap
-            self.processing = (
-                False  # Turns off processing on threads for the LLM and TTS!!!
-            )
-            self._samples = list(self._buffer.queue)
+        if vad_confidence:
             self._recording_started = True
+            self.processing = False
+            self._samples = list(self._buffer.queue)
 
     def _process_activated_audio(self, sample: np.ndarray, vad_confidence: bool):
-        """
-        Processes audio samples after activation (i.e., after the wake word is detected).
-
-        Uses a pause limit to determine when to process the detected audio. This is to
-        ensure that the entire sentence is captured before processing, including slight gaps.
-        """
+        if self.currently_playing:
+            logger.debug("TTS playback in progress; skipping audio capture.")
+            return
 
         self._samples.append(sample)
-
         if not vad_confidence:
             self._gap_counter += 1
-            if self._gap_counter >= PAUSE_LIMIT // VAD_SIZE:
+            if self._gap_counter >= 500 // VAD_SIZE:
                 self._process_detected_audio()
         else:
             self._gap_counter = 0
 
-    def _wakeword_detected(self, text: str) -> bool:
-        """
-        Calculates the nearest Levenshtein distance from the detected text to the wake word.
-
-        This is used as 'Glados' is not a common word, and Whisper can sometimes mishear it.
-        """
-        assert self.wake_word is not None, "Wake word should not be None"
-
-        words = text.split()
-        closest_distance = min(
-            [distance(word.lower(), self.wake_word) for word in words]
-        )
-        return closest_distance < SIMILARITY_THRESHOLD
-
     def _process_detected_audio(self):
-        """
-        Processes the detected audio and generates a response.
 
-        This function is called when the pause limit is reached after the voice stops.
-        It transcribes the audio and checks for the wake word if it is set. If the wake
-        word is detected, the detected text is sent to the LLM model for processing.
-        The audio stream is then reset, and listening continues.
-        """
-        logger.debug("Detected pause after speech. Processing...")
-        self.input_stream.stop()
+        if self.currently_playing:
+            logger.debug("Skipping audio processing as TTS is currently playing.")
+            self.reset()
+            return
 
-        detected_text = self.asr(self._samples)
+        audio_data = np.concatenate(self._samples)
+        detected_text = self._asr_model.transcribe(audio_data)
 
         if detected_text:
-            logger.success(f"ASR text: '{detected_text}'")
-            intent_data = self.detect_intent(detected_text)
-            logger.success(f"Intent responded with {intent_data}")
-
-            if self.wake_word and not self._wakeword_detected(detected_text):
-                logger.info(f"Required wake word {self.wake_word=} not detected.")
-            else:
-                self.llm_queue.put(f"{detected_text}{intent_data}")
-                self.processing = True
-                self.currently_speaking = True
-
-        if not self.interruptible:
-            while self.currently_speaking:
-                time.sleep(PAUSE_TIME)
-
+            logger.success(f"ASR text: {detected_text}")
+            if not self.wake_word or self._wakeword_detected(detected_text):
+                self.llm_client.llm_queue.put(detected_text)
         self.reset()
-        self.input_stream.start()
-
-    def asr(self, samples: List[np.ndarray]) -> str:
-        """
-        Performs automatic speech recognition on the collected samples.
-        """
-        audio = np.concatenate(samples)
-
-        detected_text = self._asr_model.transcribe(audio)
-        return detected_text
 
     def reset(self):
-        """
-        Resets the recording state and clears buffers.
-        """
-        logger.debug("Resetting recorder...")
         self._recording_started = False
-        self._samples.clear()
+        self._samples = []
         self._gap_counter = 0
         with self._buffer.mutex:
             self._buffer.queue.clear()
 
-    def replace_numbers_with_words(self, text):
-        # Define a function to convert a number to its word equivalent
-        def number_to_words(match):
-            number = int(match.group())
-            return num2words(number)
+    def _wakeword_detected(self, text: str) -> bool:
+        words = text.split()
+        return any(distance(word.lower(), self.wake_word.lower()) < 2 for word in words)
 
-        # Use regex to find all numbers in the string and replace them with their word equivalents
-        result = re.sub(r'\b\d+\b', number_to_words, text)
-        return result
+    # def process_llm(self):
+    #     while not self.shutdown_event.is_set():
+    #         try:
+    #             detected_text = self.llm_client.llm_queue.get(timeout=0.1)
+    #             response = self.llm_client.chat(detected_text)
+    #             self.llm_client.llm_queue.put(response)
+    #         except queue.Empty:
+    #             continue
 
-    def process_TTS_thread(self):
+    def process_llm(self):
         """
-        Processes the LLM generated text using the TTS model.
-
-        Runs in a separate thread to allow for continuous processing of the LLM output.
+        Processes the detected text using the LLM.
         """
-        assistant_text = []  # The text generated by the assistant, to be spoken by the TTS
-        system_text = []  # The text logged to the system prompt when the TTS is interrupted
-        finished = False  # a flag to indicate when the TTS has finished speaking
-        interrupted = (
-            False  # a flag to indicate when the TTS was interrupted by new input
-        )
+        while not self.shutdown_event.is_set():
+            try:
+                # Get user input from the LLM queue
+                detected_text = self.llm_client.llm_queue.get(timeout=0.1)
+                self.llm_client.chat(detected_text)
+
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.error(f"Error in process_llm: {e}")
+
+    def process_tts(self):
+        """
+        Processes the LLM-generated text using the TTS model.
+        Handles playback, interruptions, and <EOS> tokens.
+        """
+        assistant_text = []  # Text generated by the assistant for TTS
+        system_text = []  # Text logged when TTS is interrupted
+        finished = False  # Indicates if TTS has finished speaking
+        interrupted = False  # Indicates if TTS playback was interrupted
+        self.currently_playing = False  # Playback state flag
 
         while not self.shutdown_event.is_set():
             try:
-                start = time.time()
-                generated_text = self.tts_queue.get(timeout=PAUSE_TIME)
+                text = self.llm_client.tts_queue.get(timeout=0.1)
 
-                if (
-                        generated_text == "<EOS>"
-                ):  # End of stream token generated in process_LLM_thread
+                if text == "<EOS>":  # Handle end-of-stream token
                     finished = True
-                elif not generated_text:
-                    logger.warning("Empty string sent to TTS")  # should not happen!
+                elif not text:
+                    logger.warning("Empty string sent to TTS.")  # Log if empty text
                 else:
-                    generated_text = self.replace_numbers_with_words(generated_text)
-                    logger.success(f"LLM text: {generated_text}")
+                    logger.info(f"TTS input text: {text}")
+                    self.currently_playing = True  # Start playback
 
-                    logger.info(f"LLM inference time: {(time.time() - start):.2f}s")
-                    start = time.time()
-                    audio = self._tts.generate_speech_audio(generated_text)
-                    logger.info(
-                        f"TTS Complete, inference: {(time.time() - start):.2f}, length: {len(audio) / self._tts.rate:.2f}s"
-                    )
+                    # Generate audio from TTS
+                    adjusted_text = replace_numbers_with_words(text)
+                    audio = self._tts.generate_speech_audio(adjusted_text)
                     total_samples = len(audio)
-
                     if total_samples:
                         sd.play(audio, self._tts.rate)
 
+                        # Track playback and detect interruptions
                         interrupted, percentage_played = self.percentage_played(
                             total_samples
                         )
-
                         if interrupted:
                             clipped_text = self.clip_interrupted_sentence(
-                                generated_text, percentage_played
+                                text, percentage_played
                             )
-
                             logger.info(
-                                f"TTS interrupted at {percentage_played}%: {clipped_text}"
+                                f"TTS interrupted at {percentage_played:.2f}%: {clipped_text}"
                             )
-                            system_text = copy.deepcopy(assistant_text)
+                            system_text = assistant_text[:]
                             system_text.append(clipped_text)
                             finished = True
 
-                        assistant_text.append(generated_text)
+                        assistant_text.append(text)
+                        sd.wait()  # Ensure playback completes or interruption is handled
+
+                    self.currently_playing = False  # End playback
 
                 if finished:
-                    self.messages.append(
+                    # Append the completed assistant message
+                    self.llm_client.messages.append(
                         {"role": "assistant", "content": " ".join(assistant_text)}
                     )
-                    # if interrupted:
-                    #     self.messages.append(
-                    #         {
-                    #             "role": "system",
-                    #             "content": f"USER INTERRUPTED GLADOS, TEXT DELIVERED: {' '.join(system_text)}",
-                    #         }
-                    #     )
-                    assistant_text = []
+                    # Optionally log the interrupted text
+                    if interrupted:
+                        self.llm_client.messages.append(
+                            {
+                                "role": "system",
+                                "content": f"USER INTERRUPTED GLADOS, TEXT DELIVERED: {' '.join(system_text)}",
+                            }
+                        )
+                    # Reset flags and buffers
+                    assistant_text.clear()
                     finished = False
                     interrupted = False
-                    self.currently_speaking = False
 
             except queue.Empty:
-                pass
+                continue
+            except Exception as e:
+                logger.error(f"Error in process_tts: {e}")
+                self.currently_playing = False
 
-    def clip_interrupted_sentence(
-            self, generated_text: str, percentage_played: float
-    ) -> str:
+    def percentage_played(self, total_samples: int) -> Tuple[bool, float]:
         """
-        Clips the generated text if the TTS was interrupted.
+        Tracks the playback progress and detects interruptions.
 
         Args:
-
-            generated_text (str): The generated text from the LLM model.
-            percentage_played (float): The percentage of the audio played before the TTS was interrupted.
-
-            Returns:
-
-            str: The clipped text.
-
-        """
-        tokens = generated_text.split()
-        words_to_print = round((percentage_played / 100) * len(tokens))
-        text = " ".join(tokens[:words_to_print])
-
-        # If the TTS was cut off, make that clear
-        if words_to_print < len(tokens):
-            text = text + "<INTERRUPTED>"
-        return text
-
-    def percentage_played(self, total_samples: int) -> Tuple[bool, int]:
-        interrupted = False
-        start_time = time.time()
-        played_samples = 0.0
-
-        try:
-            stream = sd.get_stream()
-
-            while stream and stream.active:
-                time.sleep(PAUSE_TIME)
-                if self.processing is False:
-                    sd.stop()
-                    with self.tts_queue.mutex:
-                        self.tts_queue.queue.clear()
-                    interrupted = True
-                    break
-
-                try:
-                    if not stream.active:
-                        break
-                except sd.PortAudioError:
-                    break
-
-        except (sd.PortAudioError, RuntimeError):
-            logger.debug("Audio stream already closed or invalid")
-
-        elapsed_time = (
-                time.time() - start_time + 0.12
-        )  # slight delay to ensure all audio timing is correct
-        played_samples = elapsed_time * self._tts.rate
-
-        # Calculate percentage of audio played
-        percentage_played = min(int((played_samples / total_samples * 100)), 100)
-        return interrupted, percentage_played
-
-    def process_LLM(self):
-        """
-        Processes the detected text using the LLM model.
-
-        """
-        while not self.shutdown_event.is_set():
-            try:
-                detected_text = self.llm_queue.get(timeout=0.1)
-
-                self.messages.append({"role": "user", "content": detected_text})
-
-                data = {
-                    "model": self.model,
-                    "stream": True,
-                    "messages": self.messages,
-                }
-                logger.debug(f"starting request on {self.messages=}")
-                logger.debug("Performing request to LLM server...")
-
-                # Perform the request and process the stream
-
-                with requests.post(
-                        self.completion_url,
-                        headers=self.prompt_headers,
-                        json=data,
-                        stream=True,
-                ) as response:
-                    sentence = []
-                    for line in response.iter_lines():
-                        if self.processing is False:
-                            break  # If the stop flag is set from new voice input, halt processing
-                        if line:  # Filter out empty keep-alive new lines
-                            try:
-                                cleaned_line = self._clean_raw_bytes(line)
-                                if cleaned_line:  # Add check for empty cleaned line
-                                    chunk = self._process_chunk(cleaned_line)
-                                    if chunk:
-                                        sentence.append(chunk)
-                                        # If there is a pause token, send the sentence to the TTS queue
-                                        if chunk in [
-                                            ",",
-                                            ".",
-                                            "!",
-                                            "?",
-                                            ":",
-                                            ";",
-                                            "?!",
-                                            "\n",
-                                            "\n\n",
-                                        ]:
-                                            self._process_sentence(sentence)
-                                            sentence = []
-                            except Exception as e:
-                                logger.error(f"Error processing line: {e}")
-                                continue
-
-                    if self.processing and sentence:
-                        self._process_sentence(sentence)
-                    self.tts_queue.put("<EOS>")  # Add end of stream token to the queue
-            except queue.Empty:
-                time.sleep(PAUSE_TIME)
-
-    def _process_sentence(self, current_sentence: List[str]):
-        """
-        Join text, remove inflections and actions, and send to the TTS queue.
-
-        The LLM like to *whisper* things or (scream) things, and prompting is not a 100% fix.
-        We use regular expressions to remove text between ** and () to clean up the text.
-        Finally, we remove any non-alphanumeric characters/punctuation and send the text
-        to the TTS queue.
-        """
-        sentence = "".join(current_sentence)
-        sentence = re.sub(r"\*.*?\*|\(.*?\)", "", sentence)
-        sentence = (
-            sentence.replace("\n\n", ". ")
-            .replace("\n", ". ")
-            .replace("  ", " ")
-            .replace(":", " ")
-        )
-        if sentence:
-            self.tts_queue.put(sentence)
-
-    def _clean_raw_bytes(self, line):
-        """
-        Cleans the raw bytes from the server and converts to OpenAI format.
-
-        Args:
-            line (bytes): The raw bytes from the server
+            total_samples (int): Total number of samples in the audio.
 
         Returns:
-            dict or None: Parsed JSON response in OpenAI format, or None if parsing fails
+            Tuple[bool, float]: (Whether playback was interrupted, Percentage of playback completed).
         """
-        try:
-            # Handle OpenAI format
-            if line.startswith(b"data: "):
-                json_str = line.decode("utf-8")[6:]  # Remove 'data: ' prefix
-                return json.loads(json_str)
-            # Handle Ollama format
-            else:
-                return json.loads(line.decode("utf-8"))
-        except Exception as e:
-            logger.warning(f"Failed to parse server response: {e}")
-            return None
+        elapsed_samples = 0
+        while sd.get_stream().active and elapsed_samples < total_samples:
+            elapsed_samples = sd.get_stream().time * self._tts.rate
+            if self.shutdown_event.is_set():
+                return True, (elapsed_samples / total_samples) * 100
+        return False, 100.0
 
-    def _process_chunk(self, line):
+    def clip_interrupted_sentence(self, text: str, percentage: float) -> str:
         """
-        Processes a single line of text from the LLM server.
+        Clips the sentence based on the percentage of playback completed.
 
         Args:
-            line (dict): The line of text from the LLM server.
+            text (str): The original text.
+            percentage (float): Percentage of the sentence that was played.
+
+        Returns:
+            str: The truncated text.
         """
-        if not line or not isinstance(line, dict):
-            return None
+        words = text.split()
+        clip_index = int(len(words) * (percentage / 100))
+        return " ".join(words[:clip_index]) + "..."
 
-        try:
-            # Handle OpenAI format
-            if "choices" in line:
-                content = line.get("choices", [{}])[0].get("delta", {}).get("content")
-                return content if content else None
-            # Handle Ollama format
-            else:
-                content = line.get("message", {}).get("content")
-                return content if content else None
-        except Exception as e:
-            logger.error(f"Error processing chunk: {e}")
-            return None
-
-
-def start() -> None:
-    """Set up the LLM server and start GlaDOS."""
-    glados_config = GladosConfig.from_yaml("glados_config.yml")
-    glados = Glados.from_config(glados_config)
-    glados.start_listen_event_loop()
+    def shutdown(self):
+        self.shutdown_event.set()
+        self.input_stream.stop()
+        logger.success("Shutting down Glados.")
 
 
 if __name__ == "__main__":
-    start()
+    config = GladosConfig.from_yaml("glados_config.yml")
+    assistant = Glados(
+        voice_model=config.voice_model,
+        speaker_id=config.speaker_id,
+        completion_url=config.completion_url,
+        model=config.model,
+        api_key=config.api_key,
+        wake_word=config.wake_word,
+        personality_preprompt=config.personality_preprompt,
+        announcement=config.announcement,
+        interruptible=config.interruptible,
+    )
+    assistant.start()
+
+

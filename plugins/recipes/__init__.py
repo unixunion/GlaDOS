@@ -1,118 +1,297 @@
-import requests
+import json
+import os
+import pickle
+import re
+from typing import List, Dict, Any
+
 from loguru import logger
+from rapidfuzz import fuzz
+from tqdm import tqdm
+import spacy
+
+from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParamaterType
+
+# Load the spaCy language model
+nlp = spacy.load("en_core_web_sm")
 
 from plugins.plugin_manager import PluginManager
-from plugins.recipes.util import (load_and_preprocess_recipes, find_best_recipe, list_matching_recipes,
-                                  extract_ingredients)
 
 plugin_manager = PluginManager()
 
-recipes, ingredient_set_raw = load_and_preprocess_recipes("plugin_data/recipes/recipes.json")
+# Global variables to hold recipes and ingredients
+data_file = "plugin_data/recipes/test_dataset.csv"
+pickle_file = "plugin_data/recipes/test_cache.pkl"
+
+# the actual recipes
+recipes = []
+# the ingredients cache is used for ingredient based searching
+# and aligning the terms in the query to what exists in the dataset
 ingredient_set = set()
 
 
-def pre_initialize_recipes(glados_instance) -> None:
+def load_recipes(file_path: str):
     """
-    Pre-initializes the recipes plugin by refining the ingredient set using the local LLM.
+    Load and preprocess recipes from a CSV file.
 
     Args:
-        glados_instance (Glados): An instance of the Glados class to access the local model.
-    """
-    global ingredient_set_raw
-    global ingredient_set
-    logger.info("Pre-initializing recipes plugin...")
-    ingredient_prompt = (
-        "Extract the ingredient from the following string, extract only the ingredient, and respond with only the "
-        "ingredients name.\n"
-    )
-
-    try:
-        # Use the local model from Glados
-        for raw_ingredient in ingredient_set_raw:
-            try:
-                refined_response = glados_instance.model.generate(
-                    prompt=ingredient_prompt,
-                    max_tokens=500,
-                    temperature=0.7
-                )
-
-                # Assuming the model returns a string of refined ingredients
-                refined_ingredients = refined_response.split(", ")
-                ingredient_set.update(refined_ingredients)
-                logger.success(f"Updated ingredient with: {refined_ingredients}")
-            except Exception as e:
-                logger.error(f"Failed to refine ingredients using the local LLM: {e}")
-    except Exception as e2:
-        logger.error(f"Failed to refine ingredients using the local LLM: {e2}")
-
-
-plugin_manager.add_pre_init_hook(pre_initialize_recipes)
-
-
-@plugin_manager.register("recipes")
-def handle_recipe(inquiry: str) -> str:
-    best_recipe = find_best_recipe(inquiry, recipes)
-    logger.success(f"Found best recipe: {best_recipe['title']}")
-
-    # Structured response
-    response = (
-        "DATA_FOLLOWS:: "
-        "The following data is from a recipe API. "
-        "First repeat the name of the recipe and ask for confirmation if the receip is indeed the desired one, "
-        "Once the recipe is confirmed, Turn this into the requested recipe format, providing instructions step by step, "
-        "waiting for confirmation after each step. "
-        "If clarification or ingredient substitutions are needed, ask the user explicitly. "
-        "All units should be converted to metric where possible. "
-        "\n\n"
-        f"Title: {best_recipe['title']}\n"
-        f"Ingredients: {', '.join(best_recipe['ingredients'])}\n"
-        f"Instructions: {best_recipe['instructions']}"
-    )
-    return response
-
-
-@plugin_manager.register("list_recipes")
-def list_recipes(inquiry: str) -> str:
-    matching_recipes = list_matching_recipes(inquiry, recipes)
-    if not matching_recipes:
-        return "No matching recipes found."
-    result = "DATA_FOLLOWS:: the following data is from a Recipe API, analyse the response which contains similarity score, and present this most likely items to the user\n"
-    for recipe in matching_recipes:
-        result += f" - {recipe['title']} (Similarity: {recipe['similarity']:.2f})\n"
-    return result
-
-
-@plugin_manager.register("find_recipe_by_ingredients")
-def find_recipe_by_ingredients(inquiry: str) -> str:
-    """
-    Finds recipes based on user-provided ingredients.
-
-    Args:
-        inquiry (str): The user's input containing ingredients.
+        file_path (str): Path to the CSV file.
 
     Returns:
-        str: A list of matching recipes or a message if no matches are found.
+        List[Dict]: A list of preprocessed recipes.
     """
-    user_ingredients = extract_ingredients(inquiry, ingredient_set)
-    logger.success(f"Searching for recipes that call for: {user_ingredients}")
+    import pandas as pd
 
-    if not user_ingredients:
-        return "I couldn't identify any ingredients in your input. Please try again with a list of ingredients."
+    global recipes, ingredient_set
 
-    matching_recipes = []
+    # Check if the pickle cache exists
+    if os.path.exists(pickle_file):
+        logger.info("Loading recipes from pickle cache...")
+        with open(pickle_file, "rb") as f:
+            recipes, ingredient_set = pickle.load(f)
+        logger.success(f"Loaded {len(recipes)} recipes from cache.")
+    else:
+        logger.info("Processing recipes from CSV file...")
+        df = pd.read_csv(file_path)
+        recipes = []
+        for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing Recipes", unit="recipe"):
+            ingredients = json.loads(row['NER'])
+            cleaned_ingredients = clean_ingredients(ingredients)
+            ingredient_set.update(cleaned_ingredients)
+
+            try:
+                recipes.append({
+                    "title": row['title'].strip(),
+                    "ingredients": row['ingredients'],
+                    "directions": json.loads(row['directions'])
+                })
+            except:
+                pass
+
+        with open(pickle_file, "wb") as f:
+            pickle.dump((recipes, ingredient_set), f)
+
+    logger.success(f"Loaded {len(recipes)} recipes with {len(ingredient_set)} unique ingredients.")
+    logger.success(f"Ingredients: {ingredient_set}")
+
+
+def clean_ingredients(raw_ingredients: List[str]) -> List[str]:
+    """
+    Cleans and normalizes ingredient names.
+
+    Args:
+        raw_ingredients (List[str]): List of raw ingredient strings.
+
+    Returns:
+        List[str]: Cleaned ingredient names.
+    """
+    cleaned = []
+    for ingredient in raw_ingredients:
+        # Normalize ingredient strings
+        ingredient = re.sub(r"\(.*?\)|\d+[\w\s\/\.]*", "", ingredient).strip()
+        ingredient = re.sub(r"\s+", " ", ingredient).lower()
+        if ingredient:
+            cleaned.append(ingredient)
+    return cleaned
+
+
+def find_best_recipe(query: str) -> Any | None:
+    """
+    Find the best matching recipe for a given query using fuzzy matching.
+
+    Args:
+        query (str): The search query.
+
+    Returns:
+        Dict: The best matching recipe with its similarity score.
+    """
+    best_score = -1
+    best_recipe = None
+
     for recipe in recipes:
-        recipe_ingredients = [i.lower() for i in recipe["ingredients"]]
-        match_count = sum(1 for i in user_ingredients if any(i in ri for ri in recipe_ingredients))
-        if match_count > 0:
-            matching_recipes.append((recipe, match_count))
+        score = fuzz.ratio(query.lower(), recipe['title'].lower())
+        if score > best_score:
+            best_score = score
+            best_recipe = recipe
 
-    matching_recipes.sort(key=lambda x: x[1], reverse=True)
+    if best_recipe:
+        best_recipe['similarity'] = best_score / 100
+        return best_recipe
 
-    if not matching_recipes:
-        return "No recipes found matching the provided ingredients."
+    return None
 
-    response = "DATA_FOLLOWS:: The Receip API has responded with recipes matching the ingredients, present this list to the user and let them choose which one they are interrested in making:\n"
 
-    for recipe, match_count in matching_recipes[:5]:  # Limit to top 5 matches
-        response += f"- {recipe['title']} (Matched Ingredients: {match_count})\n"
+def search_by_ingredients(query_ingredients: List[str]) -> List[Dict]:
+    """
+    Search recipes by matching ingredients.
+
+    Args:
+        query_ingredients (List[str]): List of ingredients to match.
+
+    Returns:
+        List[Dict]: List of matching recipes sorted by relevance.
+    """
+    matching_recipes = []
+    logger.success(f"Searching recipes that have ingredients {query_ingredients}")
+
+    for recipe in recipes:
+        common = set(query_ingredients).intersection(recipe['ingredients'])
+        if common:
+            matching_recipes.append({
+                "title": recipe['title'],
+                "ingredients": recipe['ingredients'],
+                "directions": recipe['directions'],
+                "matched_ingredients": list(common),
+                "match_count": len(common)
+            })
+
+    return sorted(matching_recipes, key=lambda x: x['match_count'], reverse=True)
+
+
+
+search_recipes_definition = (
+    FunctionRequest(type="function",
+                    function=FunctionMetadata(
+                        name='search_recipes',
+                        description="Search for recipes",
+                        parameters=Parameters(type="object", required=['query'], properties={
+                            'query': ParamaterType(type="string", description="the recipe name to search for")
+                        })
+                    )
+                    )
+)
+
+
+
+@plugin_manager.register(
+    "search_recipes",
+    "Search for recipes based on a query",
+    function_request=search_recipes_definition.to_dict()
+)
+def search_recipes(query: str) -> str:
+    """
+    Search for recipes matching the query.
+
+    Args:
+        query (str): The search query.
+
+    Returns:
+        str: List of matching recipes.
+    """
+
+    query = extract_relevant_terms_nlp(query)
+    logger.success(f"query shortened: {query}")
+
+    matches = []
+    for recipe in recipes:
+        score = fuzz.partial_ratio(query.lower(), recipe['title'].lower())
+        if score > 50:
+            matches.append((score, recipe))
+
+    matches = sorted(matches, key=lambda x: x[0], reverse=True)
+
+    if not matches:
+        return "No recipe could be found"
+
+#     response = """
+# The recipe API responded with multiple recipes. Compare the following recipes to the original request,
+# and ask for confirmation in selecting the single most likely recipe by title alone that matches the requested recipe.
+# Do not reply with details or ingredients until after the selection is confirmed.
+#
+# For the selected recipe, process the data as follows:
+#
+# 1. When generating response, you must conver all abreviated units to their unabbreviate forms before presenting them. Use the
+# following mappings:
+#    - tsp -> teaspoon
+#    - Tbsp -> tablespoon
+#    - c -> cup
+#    - oz -> ounce
+#    - lb -> pound
+#    - g -> gram
+#    - kg -> kilogram
+#    - ml -> milliliter
+#    - l -> liter
+#
+# 2. You must Convert fractions to their textual representation:
+#    - 1/2 -> half
+#    - 1/4 -> quarter
+#    - 3/4 -> three-quarters
+#    - 1/3 -> one-third
+#    - 2/3 -> two-thirds
+#    - three/four -> three-quarters
+#    - Example: "1 1/2 c." -> "one and a half cups"
+#
+# 3. you must Provide the ingredient list with fully unabbreviated quantities and units in the following format:
+#    - "1 tsp. salt" -> "one teaspoon salt"
+#    - "2 c. milk" -> "two cups milk"
+#    - "3/4 c. sugar" -> "three-quarters cup sugar"
+#
+# 4. Generate step-by-step preparation instructions. Clarify each step to make it actionable. Example:
+#    - "Mix dry ingredients" -> "In a large mixing bowl, combine the flour, sugar, salt, and baking powder."
+#
+# 5. Pause after each step and prompt for confirmation before proceeding to the next step. Allow the user to restart or
+# stop the instructions at any time.
+#
+# 6. If no recipe matches the query, terminate this response and indicate that no suitable recipe was found.
+#
+# Use the following recipes as input data:
+#
+# """
+    response = ("Choose the most suitable recipes based on the original request and ask which one to proceed with, once "
+                "confirmed present the recipe as step by step instructions, pausing between ingredients and directions, "
+                "and asking for confirmation to continue between each step of the process")
+    for score, recipe in matches[:10]:  # Limit to top 10 matches
+        response += f" recipe_data: _title:{recipe['title']}, _similarity:{score}%, _ingredients:{recipe['ingredients']}, _directions:{recipe['directions']})\n"
     return response
+
+
+@plugin_manager.register(
+    "find_recipe_by_ingredients",
+    "Search for recipes based on a ingredients at hand",
+    function_request={
+        "query": {"type": "str", "description": "Comma separated list of ingredients to to search recipes for"}
+    },
+)
+def find_recipe_by_ingredients(query: str) -> str:
+    """
+    Find recipes by ingredients.
+
+    Args:
+        query (str): Comma-separated list of ingredients.
+
+    Returns:
+        str: Matching recipes.
+    """
+    query_ingredients = [
+        word.strip().lower()
+        for word in re.split(r'[,\s]+', query)
+        if word.strip().lower() in ingredient_set
+    ]
+    matches = search_by_ingredients(query_ingredients)
+
+    if not matches:
+        return "DATA_RESPONSE:: The recipe API responded with no matching recipes found. Tell the user that no recipe was found, and cancel this line of inquiry. Make the response short, and to the point in this case."
+
+    response = "DATA_RESPONSE:: The recipe API responded with the following recipes, compare them to the original request, and then present the most likely matches present, use the similarity score internally only. Dont read the similarity score to the user, and then let the user choose a recipe to continue with. :\n"
+    for match in matches[:5]:
+        response += f"- {match['title']} ({match['match_count']} matches)\n"
+    return response
+
+
+def extract_relevant_terms_nlp(query: str) -> str:
+    """
+    Extracts the main search term from a query using spaCy NLP.
+
+    Args:
+        query (str): The full search query.
+
+    Returns:
+        str: The extracted relevant terms.
+    """
+    doc = nlp(query)
+    # Extract nouns and proper nouns as relevant terms
+    relevant_terms = [token.text for token in doc if token.pos_ in ("NOUN", "PROPN")]
+    return " ".join(relevant_terms)
+
+
+# Load recipes at initialization
+load_recipes(data_file)
