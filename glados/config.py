@@ -31,10 +31,9 @@ class GladosConfig:
     announcement: Optional[str]
     personality_preprompt: List[dict[str, str]]
     interruptible: bool
-    intents: List[dict]
-    intent_confidence_threshold: int
     voice_model: str = VOICE_MODEL
     speaker_id: Optional[int] = None
+    contexts: List[str] = None
 
     @classmethod
     def from_yaml(cls, path: str, key_to_config: Sequence[str] | None = ("Glados",)):

@@ -1,0 +1,29 @@
+{
+    "cooking": {
+        "history": [
+            {
+                "role": "user",
+                "content": "How do I make pasta?"
+            },
+            {
+                "role": "assistant",
+                "content": "Boil water, add pasta, and cook for 8-10 minutes."
+            },
+            {
+                "role": "tool",
+                "name": "recipe_search",
+                "content": "Pasta Carbonara Recipe"
+            }
+        ],
+        "tool_outputs": {}
+    },
+    "music": {
+        "history": [
+            {
+                "role": "user",
+                "content": "Play some relaxing music."
+            }
+        ],
+        "tool_outputs": {}
+    }
+}

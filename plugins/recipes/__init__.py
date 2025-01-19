@@ -1,8 +1,9 @@
+import ast
 import json
 import os
 import pickle
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 
 from loguru import logger
 from rapidfuzz import fuzz
@@ -147,6 +148,33 @@ def search_by_ingredients(query_ingredients: List[str]) -> List[Dict]:
     return sorted(matching_recipes, key=lambda x: x['match_count'], reverse=True)
 
 
+def convert_abbreviations(text: str) -> str:
+    """Converts common abbreviations to full forms for clarity."""
+    abbreviation_map = {
+        "tsp": "teaspoon",
+        "tbl": "tablespoon",
+        "tbsp": "tablespoon",
+        "oz": "ounces",
+        "c": "cup",
+        "qt": "quart",
+        "pkg": "package",
+    }
+    words = text.split()
+    return " ".join([abbreviation_map.get(word.lower(), word) for word in words])
+
+
+def safe_parse_list(serialized_list: Any) -> list:
+    """Safely parses a serialized list string into a Python list."""
+    if isinstance(serialized_list, list):
+        # If already a list, return it as-is
+        return serialized_list
+    try:
+        # Try parsing if it is a string representation of a list
+        return ast.literal_eval(serialized_list)
+    except (ValueError, SyntaxError):
+        logger.error(f"Failed to parse ingredients/directions: {serialized_list}")
+        return []
+
 
 search_recipes_definition = (
     FunctionRequest(type="function",
@@ -160,6 +188,7 @@ search_recipes_definition = (
                     )
 )
 
+CURRENT_RECIPES = []
 
 
 @plugin_manager.register(
@@ -167,7 +196,7 @@ search_recipes_definition = (
     "Search for recipes based on a query",
     function_request=search_recipes_definition.to_dict()
 )
-def search_recipes(query: str) -> str:
+def search_recipes(query: str) -> dict:
     """
     Search for recipes matching the query.
 
@@ -178,8 +207,9 @@ def search_recipes(query: str) -> str:
         str: List of matching recipes.
     """
 
-    query = extract_relevant_terms_nlp(query)
-    logger.success(f"query shortened: {query}")
+    # query = extract_relevant_terms_nlp(query)
+    logger.success(f"query for recipes: {query}")
+    global CURRENT_RECIPES
 
     matches = []
     for recipe in recipes:
@@ -190,67 +220,86 @@ def search_recipes(query: str) -> str:
     matches = sorted(matches, key=lambda x: x[0], reverse=True)
 
     if not matches:
-        return "No recipe could be found"
+        logger.success("No recipes found")
+        return {"status": "No recipes found for the query."}
 
-#     response = """
-# The recipe API responded with multiple recipes. Compare the following recipes to the original request,
-# and ask for confirmation in selecting the single most likely recipe by title alone that matches the requested recipe.
-# Do not reply with details or ingredients until after the selection is confirmed.
-#
-# For the selected recipe, process the data as follows:
-#
-# 1. When generating response, you must conver all abreviated units to their unabbreviate forms before presenting them. Use the
-# following mappings:
-#    - tsp -> teaspoon
-#    - Tbsp -> tablespoon
-#    - c -> cup
-#    - oz -> ounce
-#    - lb -> pound
-#    - g -> gram
-#    - kg -> kilogram
-#    - ml -> milliliter
-#    - l -> liter
-#
-# 2. You must Convert fractions to their textual representation:
-#    - 1/2 -> half
-#    - 1/4 -> quarter
-#    - 3/4 -> three-quarters
-#    - 1/3 -> one-third
-#    - 2/3 -> two-thirds
-#    - three/four -> three-quarters
-#    - Example: "1 1/2 c." -> "one and a half cups"
-#
-# 3. you must Provide the ingredient list with fully unabbreviated quantities and units in the following format:
-#    - "1 tsp. salt" -> "one teaspoon salt"
-#    - "2 c. milk" -> "two cups milk"
-#    - "3/4 c. sugar" -> "three-quarters cup sugar"
-#
-# 4. Generate step-by-step preparation instructions. Clarify each step to make it actionable. Example:
-#    - "Mix dry ingredients" -> "In a large mixing bowl, combine the flour, sugar, salt, and baking powder."
-#
-# 5. Pause after each step and prompt for confirmation before proceeding to the next step. Allow the user to restart or
-# stop the instructions at any time.
-#
-# 6. If no recipe matches the query, terminate this response and indicate that no suitable recipe was found.
-#
-# Use the following recipes as input data:
-#
-# """
-    response = ("Choose the most suitable recipes based on the original request and ask which one to proceed with, once "
-                "confirmed present the recipe as step by step instructions, pausing between ingredients and directions, "
-                "and asking for confirmation to continue between each step of the process")
+    CURRENT_RECIPES = matches[:10]  # Store top matches globally
+
+    result_data = []
     for score, recipe in matches[:10]:  # Limit to top 10 matches
-        response += f" recipe_data: _title:{recipe['title']}, _similarity:{score}%, _ingredients:{recipe['ingredients']}, _directions:{recipe['directions']})\n"
-    return response
+        try:
+            parsed_ingredients = safe_parse_list(recipe["ingredients"])
+            parsed_directions = safe_parse_list(recipe["directions"])
+
+            structured_recipe = {
+                "title": recipe["title"],
+                "similarity": f"{score}%",
+                "ingredients": [convert_abbreviations(ing) for ing in parsed_ingredients],
+                "directions": [
+                    {"step": i + 1, "instruction": convert_abbreviations(direction)}
+                    for i, direction in enumerate(parsed_directions)
+                ],
+            }
+
+            logger.info(f"append recipe: {structured_recipe}")
+            result_data.append(structured_recipe)
+        except Exception as e:
+            logger.warning(f"Skipping recipe: {recipe}")
+    return f"The following recipes were found by the API, Choose the most suitable recipe based on the request and score and ask which one to proceed with. Ask the user for confirmation as to which recipe to proceed with, and then proceed step-by-step, asking for confirmation between each ingredient and direction. recipes: {result_data}"
+
+
+select_recipes_definition = (
+    FunctionRequest(type="function",
+                    function=FunctionMetadata(
+                        name='select_recipe',
+                        description="Select a recipe from a previous search result",
+                        parameters=Parameters(type="object", required=['selection'], properties={
+                            'selection': ParamaterType(type="string", description="the recipe name to select from the previous search result")
+                        })
+                    )
+                    )
+)
 
 
 @plugin_manager.register(
-    "find_recipe_by_ingredients",
-    "Search for recipes based on a ingredients at hand",
-    function_request={
-        "query": {"type": "str", "description": "Comma separated list of ingredients to to search recipes for"}
-    },
+    "select_recipe",
+    "Select a recipe from a previous search result",
+    function_request=select_recipes_definition.to_dict()
 )
+def select_recipe(selection: str) -> dict:
+    """
+    Handles user selection of a recipe.
+
+    Args:
+        selection (str): User input indicating the recipe selection, e.g., 'Recipe 1'.
+
+    Returns:
+        dict: The selected recipe or a message indicating an error.
+    """
+    global CURRENT_RECIPES
+
+    try:
+        recipe_index = int(selection.strip().split()[-1]) - 1
+        if 0 <= recipe_index < len(CURRENT_RECIPES):
+            _, recipe = CURRENT_RECIPES[recipe_index]
+            return {
+                "status": "success",
+                "message": f"You selected '{recipe['title']}'. Here's the recipe step by step.",
+                "recipe": recipe,
+            }
+        else:
+            return {"status": "failed", "message": "Invalid selection. Please choose a valid recipe number."}
+    except (ValueError, IndexError):
+        return {"status": "failed", "message": "Invalid input. Please reply with 'Recipe X', where X is a number."}
+
+
+# @plugin_manager.register(
+#     "find_recipe_by_ingredients",
+#     "Search for recipes based on a ingredients at hand",
+#     function_request={
+#         "query": {"type": "str", "description": "Comma separated list of ingredients to to search recipes for"}
+#     },
+# )
 def find_recipe_by_ingredients(query: str) -> str:
     """
     Find recipes by ingredients.

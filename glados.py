@@ -1,3 +1,4 @@
+import os
 import queue
 import threading
 import sys
@@ -103,6 +104,9 @@ class Glados:
             self.shutdown()
 
     def _handle_audio_sample(self, sample: np.ndarray, vad_confidence: bool):
+        if self.currently_playing:
+            logger.debug("Skipping audio capture during TTS playback.")
+            return  # Do not process audio while TTS is playing
         if not self._recording_started:
             self._manage_pre_activation_buffer(sample, vad_confidence)
         else:
@@ -119,9 +123,11 @@ class Glados:
 
     def _process_activated_audio(self, sample: np.ndarray, vad_confidence: bool):
         if self.currently_playing:
+            self._was_currently_playing = self.currently_playing
             logger.debug("TTS playback in progress; skipping audio capture.")
             return
 
+        logger.info("sampling")
         self._samples.append(sample)
         if not vad_confidence:
             self._gap_counter += 1
@@ -157,15 +163,6 @@ class Glados:
         words = text.split()
         return any(distance(word.lower(), self.wake_word.lower()) < 2 for word in words)
 
-    # def process_llm(self):
-    #     while not self.shutdown_event.is_set():
-    #         try:
-    #             detected_text = self.llm_client.llm_queue.get(timeout=0.1)
-    #             response = self.llm_client.chat(detected_text)
-    #             self.llm_client.llm_queue.put(response)
-    #         except queue.Empty:
-    #             continue
-
     def process_llm(self):
         """
         Processes the detected text using the LLM.
@@ -179,7 +176,9 @@ class Glados:
             except queue.Empty:
                 continue
             except Exception as e:
-                logger.error(f"Error in process_llm: {e}")
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                logger.error(exc_type, fname, exc_tb.tb_lineno)
 
     def process_tts(self):
         """
