@@ -1,9 +1,12 @@
 import json
-from typing import Dict
+from typing import Dict, Optional
 
 from loguru import logger
 
 from glados.config import GladosConfig
+
+
+
 
 
 class ContextManager:
@@ -19,16 +22,16 @@ class ContextManager:
         if self._initialized:
             return  # Skip re-initialization
         self.contexts: Dict[str, Dict] = {}  # Store contexts and their histories
-
+        self.active_task: Optional[str] = None  # Tracks the current active context
 
     def __enter__(self):
         if not self.active_task:
             raise ValueError("No active task to manage. Use 'start_new_activity' to create one.")
-        print(f"Entering context for task: '{self.active_task}'")
+        logger.info(f"Entering context for task: '{self.active_task}'")
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        print(f"Exiting context for task: '{self.active_task}'")
+        logger.info(f"Exiting context for task: '{self.active_task}'")
         self.active_task = None
 
     def configure(self, config: GladosConfig):
@@ -37,16 +40,18 @@ class ContextManager:
                 self.start_new_activity(ctx)
         except Exception as e:
             logger.error("Unable to initialize contexts")
+
     def start_new_activity(self, task_name: str):
         """
         Start a new task or activity in a context.
         :param task_name: Name of the task to start.
         """
+        task_name = task_name.lower()
         if task_name in self.contexts:
-            print(f"Context '{task_name}' already exists. Switching to it.")
+            logger.info(f"Context '{task_name}' already exists. Switching to it.")
         else:
             self.contexts[task_name] = {"history": [], "tool_outputs": {}}
-            print(f"Started a new task: '{task_name}'.")
+            logger.info(f"Started a new task: '{task_name}'.")
         self.active_task = task_name
 
     def switch_to_activity(self, task_name: str):
@@ -54,10 +59,11 @@ class ContextManager:
         Switch to an existing task.
         :param task_name: Name of the task to switch to.
         """
+        task_name = task_name.lower()
         if task_name not in self.contexts:
             raise ValueError(f"Task '{task_name}' does not exist. Start it first.")
         self.active_task = task_name
-        print(f"Switched to task: '{task_name}'.")
+        logger.success(f"Switched to task: '{task_name}'.")
 
     def add_message(self, role: str, content: str):
         """
@@ -97,7 +103,7 @@ class ContextManager:
         """
         with open(file_path, "w") as file:
             json.dump(self.contexts, file, indent=4)
-        print(f"Contexts saved to '{file_path}'.")
+        logger.success(f"Contexts saved to '{file_path}'.")
 
     def load_contexts(self, file_path: str):
         """
@@ -106,12 +112,7 @@ class ContextManager:
         """
         with open(file_path, "r") as file:
             self.contexts = json.load(file)
-        print(f"Contexts loaded from '{file_path}'.")
-
-
-
-
-
+        logger.success(f"Contexts loaded from '{file_path}'.")
 
 
 # Example usage

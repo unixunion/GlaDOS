@@ -127,7 +127,7 @@ class Glados:
             logger.debug("TTS playback in progress; skipping audio capture.")
             return
 
-        logger.info("sampling")
+        logger.debug("sampling")
         self._samples.append(sample)
         if not vad_confidence:
             self._gap_counter += 1
@@ -285,6 +285,16 @@ class Glados:
         words = text.split()
         clip_index = int(len(words) * (percentage / 100))
         return " ".join(words[:clip_index]) + "..."
+
+    def set_voice(self, voice_model: str, speaker_id: Optional[int] = None):
+        """
+        Dynamically change the voice model and speaker.
+        """
+        self._tts = tts.Synthesizer(
+            model_path=str(Path.cwd() / "models" / voice_model),
+            speaker_id=speaker_id,
+        )
+        logger.success(f"Voice changed to {voice_model} with speaker ID {speaker_id}.")
 
     def shutdown(self):
         self.shutdown_event.set()

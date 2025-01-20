@@ -3,14 +3,14 @@ import json
 import os
 import pickle
 import re
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 
+import spacy
 from loguru import logger
 from rapidfuzz import fuzz
 from tqdm import tqdm
-import spacy
 
-from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParamaterType
+from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParameterType
 
 # Load the spaCy language model
 nlp = spacy.load("en_core_web_sm")
@@ -18,6 +18,8 @@ nlp = spacy.load("en_core_web_sm")
 from plugins.plugin_manager import PluginManager
 
 plugin_manager = PluginManager()
+plugin_manager.register_system_prompt("When selecting a recipe, interpret the user's selection based on prior results "
+                                      "and proceed without restarting the search.")
 
 # Global variables to hold recipes and ingredients
 data_file = "plugin_data/recipes/test_dataset.csv"
@@ -115,7 +117,7 @@ def find_best_recipe(query: str) -> Any | None:
             best_recipe = recipe
 
     if best_recipe:
-        best_recipe['similarity'] = best_score / 100
+        best_recipe['similarity'] = round((best_score / 100), 2)
         return best_recipe
 
     return None
@@ -180,9 +182,18 @@ search_recipes_definition = (
     FunctionRequest(type="function",
                     function=FunctionMetadata(
                         name='search_recipes',
-                        description="Search for recipes",
+                        description="Search for recipes based on a query and returns a list of recipes.",
+                                    # "Encourage the user to choose one from the results or provide feedback to search "
+                                    # "again. When addressing requests for a cooking recipe: Break the recipe into "
+                                    # "stepped instructions, presenting one step at a time. After each step, "
+                                    # "pause to evaluate the user's performance, providing snide commentary or mock "
+                                    # "praise. Await explicit user input to proceed to the next step in the recipe, "
+                                    # "or allow the user to jump to a specific step by requesting it, example: Go to "
+                                    # "step 2. If the user fails to respond promptly or chooses an illogical sequence, "
+                                    # "issue a passive-aggressive remark about their inability to follow simple "
+                                    # "directions.",
                         parameters=Parameters(type="object", required=['query'], properties={
-                            'query': ParamaterType(type="string", description="the recipe name to search for")
+                            'query': ParameterType(type="string", description="the recipe name to search for")
                         })
                     )
                     )
@@ -220,10 +231,10 @@ def search_recipes(query: str) -> dict:
     matches = sorted(matches, key=lambda x: x[0], reverse=True)
 
     if not matches:
-        logger.success("No recipes found")
-        return {"status": "No recipes found for the query."}
+        logger.warning(f"No recipes found for: {query}")
+        return "No recipes found matching the enquiry was found in the recipe search API."
 
-    CURRENT_RECIPES = matches[:10]  # Store top matches globally
+    # CURRENT_RECIPES = matches[:10]  # Store top matches globally
 
     result_data = []
     for score, recipe in matches[:10]:  # Limit to top 10 matches
@@ -231,30 +242,39 @@ def search_recipes(query: str) -> dict:
             parsed_ingredients = safe_parse_list(recipe["ingredients"])
             parsed_directions = safe_parse_list(recipe["directions"])
 
-            structured_recipe = {
-                "title": recipe["title"],
-                "similarity": f"{score}%",
-                "ingredients": [convert_abbreviations(ing) for ing in parsed_ingredients],
-                "directions": [
-                    {"step": i + 1, "instruction": convert_abbreviations(direction)}
-                    for i, direction in enumerate(parsed_directions)
-                ],
-            }
+            ingredients_list = ", ".join(convert_abbreviations(ing) for ing in parsed_ingredients)
+            directions_list = "\n".join(
+                f"{i + 1}. {convert_abbreviations(direction)}"
+                for i, direction in enumerate(parsed_directions)
+            )
+
+            structured_recipe = (
+                f"Title: {recipe['title']}, score: {score}, Ingredients:{ingredients_list}\n\n"
+                # f"Directions:\n{directions_list}\n"
+            )
 
             logger.info(f"append recipe: {structured_recipe}")
             result_data.append(structured_recipe)
         except Exception as e:
-            logger.warning(f"Skipping recipe: {recipe}")
-    return f"The following recipes were found by the API, Choose the most suitable recipe based on the request and score and ask which one to proceed with. Ask the user for confirmation as to which recipe to proceed with, and then proceed step-by-step, asking for confirmation between each ingredient and direction. recipes: {result_data}"
+            logger.warning(f"Skipping recipe: {recipe}, cause: {e}")
+    return (f"The following recipes were found by the recipe search API, filter out all recipes "
+            f"that are unrelated to the query '{query}', and choose which best matches the query "
+            f"query and ask the user to say 'select recipe followed by name of the recipe"
+            f""
+            f"recipes: "
+            f"{result_data}")
 
 
 select_recipes_definition = (
     FunctionRequest(type="function",
                     function=FunctionMetadata(
                         name='select_recipe',
-                        description="Select a recipe from a previous search result",
-                        parameters=Parameters(type="object", required=['selection'], properties={
-                            'selection': ParamaterType(type="string", description="the recipe name to select from the previous search result")
+                        description=(
+                            "Selects a recipe from the recipe database based on the name of the recipe, returning the "
+                            "best match"
+                        ),
+                        parameters=Parameters(type="object", required=['query'], properties={
+                            'query': ParameterType(type="string", description="the recipe by name from the recipe database")
                         })
                     )
                     )
@@ -263,10 +283,10 @@ select_recipes_definition = (
 
 @plugin_manager.register(
     "select_recipe",
-    "Select a recipe from a previous search result",
+    "Selects a recipe from the database",
     function_request=select_recipes_definition.to_dict()
 )
-def select_recipe(selection: str) -> dict:
+def select_recipe(query: str) -> dict:
     """
     Handles user selection of a recipe.
 
@@ -276,21 +296,41 @@ def select_recipe(selection: str) -> dict:
     Returns:
         dict: The selected recipe or a message indicating an error.
     """
-    global CURRENT_RECIPES
 
     try:
-        recipe_index = int(selection.strip().split()[-1]) - 1
-        if 0 <= recipe_index < len(CURRENT_RECIPES):
-            _, recipe = CURRENT_RECIPES[recipe_index]
+
+        matches = []
+        for recipe in recipes:
+            score = fuzz.partial_ratio(query.lower(), recipe['title'].lower())
+            if score > 70:
+                matches.append((score, recipe))
+
+        if matches:
+            # Get the recipe with the highest score
+            best_match = max(matches, key=lambda x: x[0])[1]
             return {
                 "status": "success",
-                "message": f"You selected '{recipe['title']}'. Here's the recipe step by step.",
-                "recipe": recipe,
+                "message": f"Selected recipe: {best_match['title']},"
+                           f"Here are the step-by-step instructions. I will guide you through each step and wait for your "
+                           f"confirmation before proceeding.",
+                "recipe": best_match,
             }
         else:
-            return {"status": "failed", "message": "Invalid selection. Please choose a valid recipe number."}
-    except (ValueError, IndexError):
-        return {"status": "failed", "message": "Invalid input. Please reply with 'Recipe X', where X is a number."}
+            return {
+                "status": "error",
+                "message": (
+                    "Failed to find a matching recipe. Please try again with a different query, e.g., 'Select Apple Pie'."
+                ),
+            }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": (
+                "An unexpected error occurred while selecting the recipe. Please try again later."
+            ),
+            "error": str(e),
+        }
 
 
 # @plugin_manager.register(

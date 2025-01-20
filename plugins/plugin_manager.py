@@ -6,6 +6,7 @@ from typing import Callable, Tuple, Any
 
 from loguru import logger
 
+from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParameterType
 
 def load_plugins(package: str):
     """
@@ -15,29 +16,43 @@ def load_plugins(package: str):
         package (str): The package name (e.g., "plugins").
     """
     package_path = package.replace(".", "/")
-    for root, dirs, files in os.walk(package_path):
+    for root, _, files in os.walk(package_path):
+        # Construct the module path
         module_path = root.replace("/", ".").replace("\\", ".")
-        if "__init__.py" in files:
-            # Load __init__.py for directories
-            try:
-                importlib.import_module(module_path)
-                logger.success(f"Loaded module: {module_path}")
-            except Exception as e:
-                logger.error(f"Failed to load module {module_path}: {e}")
-        else:
-            # Load individual Python files
-            for file in files:
-                if file.endswith(".py"):
-                    module_name = f"{module_path}.{file[:-3]}"
-                    try:
-                        importlib.import_module(module_name)
-                        logger.success(f"Loaded module: {module_name}")
-                    except Exception as e:
-                        logger.error(f"Failed to load module {module_name}: {e}")
+
+        for file in files:
+            if file.endswith(".py") and file != "__init__.py":
+                module_name = f"{module_path}.{file[:-3]}"
+                try:
+                    importlib.import_module(module_name)
+                    logger.success(f"Loaded module: {module_name}")
+                except Exception as e:
+                    logger.error(f"Failed to load module {module_name}: {e}")
+    # package_path = package.replace(".", "/")
+    # for root, dirs, files in os.walk(package_path):
+    #     module_path = root.replace("/", ".").replace("\\", ".")
+    #     if "__init__.py" in files:
+    #         # Load __init__.py for directories
+    #         try:
+    #             importlib.import_module(module_path)
+    #             logger.success(f"Loaded module: {module_path}")
+    #         except Exception as e:
+    #             logger.error(f"Failed to load module {module_path}: {e}")
+    #     else:
+    #         # Load individual Python files
+    #         for file in files:
+    #             if file.endswith(".py"):
+    #                 module_name = f"{module_path}.{file[:-3]}"
+    #                 try:
+    #                     importlib.import_module(module_name)
+    #                     logger.success(f"Loaded module: {module_name}")
+    #                 except Exception as e:
+    #                     logger.error(f"Failed to load module {module_name}: {e}")
 
 
 class PluginManager:
     _instance = None  # Singleton instance
+    _system_prompts = []
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
@@ -53,7 +68,7 @@ class PluginManager:
         self.pre_init_hooks = []  # List of pre-initialization hooks
         self._initialized = True  # Mark as initialized
 
-    def register(self, name: str, description: str, function_request: dict = None):
+    def register(self, name: str, description: str, function_request: dict = None, process_output: bool = True):
         """
         Decorator to register a plugin with the given name, description, and parameters.
 
@@ -61,16 +76,23 @@ class PluginManager:
             name (str): The name of the plugin.
             description (str): A short description of the plugin.
             function_request (dict, optional): A function / tool definition
-
+            process_output: if the llm should interpret the data or just feed it to the tts
         """
 
         def decorator(func: Callable):
-            logger.success(f"Registering plugin: {name}")
-            self.plugins[name] = {
-                "function": func,
-                "description": description,
-                "function_request": function_request or {},
-            }
+            logger.info(f"Registering plugin definition: {function_request}")
+            if self.validate_plugin_definition(plugin_definition=function_request):
+                self.plugins[name] = {
+                    "function": func,
+                    "description": description,
+                    "function_request": function_request or {},
+                    "process_output": process_output
+                }
+                logger.success(f"Registering plugin: {name}")
+            else:
+                logger.warning(f"Skipping plugin: {name}, due to validation failure, check the FunctionRequest object")
+            if len(self.plugins)>20:
+                logger.warning("More than 20 plugins are registered, this is not recommended, see https://platform.openai.com/docs/guides/function-calling")
             return func
 
         return decorator
@@ -86,6 +108,12 @@ class PluginManager:
         for k in self.plugins:
             available_functions.append(self.plugins[k]['function_request'])
         return available_functions
+
+    def should_process_plugin_output(self, name):
+        if name in self.plugins:
+            return self.plugins[name]["process_output"]
+        else:
+            return False
 
     def get_plugin_metadata(self, name: str) -> dict:
         """
@@ -132,124 +160,53 @@ class PluginManager:
         logger.success(f"Calling plugin '{name}' with args: {args}, kwargs: {kwargs}")
         return plugin["function"](*args, **kwargs)
 
-    def execute_plugin_and_wait(self, name: str, args: Tuple = (), kwargs: dict = {}) -> Any:
-        """
-        Executes a plugin synchronously and waits for the result.
+    def register_system_prompt(self, prompt):
+        self._system_prompts.append(prompt)
 
-        Args:
-            name (str): The name of the plugin to execute.
-            args (Tuple): Positional arguments for the plugin.
-            kwargs (dict): Keyword arguments for the plugin.
+    def get_system_prompts(self):
+        return self._system_prompts
 
-        Returns:
-            Any: The result from the plugin execution.
-        """
-        result_queue = queue.Queue()  # Queue to hold the plugin's result
+    def validate_plugin_definition(self, plugin_definition: dict) -> bool:
+        try:
+            # Example validations
+            assert "type" in plugin_definition, "Missing 'type' in plugin definition."
+            assert plugin_definition["type"] == "function", "Unsupported plugin type."
+            assert "function" in plugin_definition, "Missing 'function' in plugin definition."
 
-        def callback(result):
-            result_queue.put(result)
+            function = plugin_definition["function"]
+            assert "name" in function, "Missing 'name' in function definition."
+            assert "description" in function, "Missing 'description' in function definition."
+            assert "parameters" in function, "Missing 'parameters' in function definition."
 
-        # Ensure the plugin exists
-        if name not in self.plugins:
-            raise ValueError(f"Plugin '{name}' not found.")
+            parameters = function["parameters"]
+            assert parameters["type"] == "object", "'parameters.type' must be 'object'."
+            assert isinstance(parameters["properties"], dict), "'parameters.properties' must be a dictionary."
 
-        logger.info(f"Executing plugin '{name}' synchronously with args={args}, kwargs={kwargs}")
-        plugin = self.plugins[name]['function']
-
-        # Execute the plugin
-        threading.Thread(target=lambda: callback(plugin(*args, **kwargs))).start()
-
-        # Wait for the plugin result
-        return result_queue.get()
+            # Additional validations as needed...
+            return True  # Plugin is valid
+        except AssertionError as e:
+            logger.error(f"Invalid plugin definition: {e}")
+            return False
 
 
-# class PluginManager:
-#     _instance = None  # Singleton instance
-#
-#     def __init__(self):
-#         self.plugins = {}  # Registry of plugins
-#         self.pre_init_hooks = []  # List of pre-initialization hooks
-#
-#     def __new__(cls, *args, **kwargs):
-#         if not cls._instance:
-#             cls._instance = super(PluginManager, cls).__new__(cls)
-#             cls._instance.plugins = {}  # Initialize the plugin registry
-#         return cls._instance
-#
-#     def register(self, name: str, description: str):
-#         """
-#         Decorator to register a plugin with the given name.
-#
-#         Args:
-#             name (str): The name of the plugin.
-#         """
-#
-#         def decorator(func: Callable):
-#             logger.success(f"Registering plugin: {name}")
-#             self.plugins[name] = {"function": func, "description": description}
-#             logger.success(f"Plugins: {self.plugins}")
-#             return func
-#
-#         return decorator
-#
-#     def execute(self, name: str, *args, **kwargs):
-#         """
-#         Execute the plugin by name with provided arguments.
-#
-#         Args:
-#             name (str): The name of the plugin.
-#         Returns:
-#             The result of the plugin function.
-#         """
-#         plugin = self.plugins.get(name)
-#         if not plugin:
-#             raise ValueError(f"Plugin '{name}' not found.")
-#         logger.success(f"Calling plugin '{name}' with args: {args}, kwargs: {kwargs}")
-#         return plugin['function'](*args, **kwargs)
-#
-#     def pre_initialize_plugins(self, context):
-#         """
-#         Run pre-initialization hooks for all registered plugins.
-#
-#         Args:
-#             context: The context to pass to pre-initialization functions.
-#         """
-#         for hook in self.pre_init_hooks:
-#             try:
-#                 hook(context)
-#             except Exception as e:
-#                 logger.error(f"Error during plugin pre-initialization: {e}")
-#
-#     def add_pre_init_hook(self, hook: Callable):
-#         """
-#         Register a pre-initialization hook.
-#
-#         Args:
-#             hook (Callable): A function to be run during pre-initialization.
-#         """
-#         self.pre_init_hooks.append(hook)
-#         logger.info(f"Registered pre-init hook: {hook.__name__}")
-#
-#     def initialize_plugins(self, *args, **kwargs):
-#         """
-#         Calls the initialize hook for all loaded plugins.
-#         """
-#         for name, plugin in self.plugins.items():
-#             if hasattr(plugin, 'initialize'):
-#                 plugin.initialize(*args, **kwargs)
+plugin_manager = PluginManager()
 
-
-class BasePlugin:
-    def pre_initialize(self, llm, *args, **kwargs):
-        """
-        Hook for performing tasks with the LLM before full initialization.
-        Args:
-            llm: The low-level LLM instance or endpoint.
-        """
-        pass
-
-    def initialize(self, *args, **kwargs):
-        """
-        Hook for performing tasks after full initialization.
-        """
-        pass
+list_plugins_definition = (
+    FunctionRequest(type="function",
+                    function=FunctionMetadata(
+                        name='list_plugins',
+                        description="List all plugins, integrations and functions currently loaded into the home assistant architecture",
+                        parameters=Parameters(type="object", required=[], properties={}),
+                    )
+                    )
+).to_dict()
+@plugin_manager.register(
+        "list_plugins",
+        "Lists all available plugins.",
+        list_plugins_definition,
+    )
+def list_plugins() -> str:
+    try:
+        return f"Describe the current plugins / integrations / functions registered with this architecture:\n\n {plugin_manager.list_plugins()}"
+    except Exception as e:
+        logger.error(f"Unable to list plugins, error was {e}")

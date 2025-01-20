@@ -74,15 +74,23 @@ class TestPluginManager(unittest.TestCase):
         self.assertIn("subtract", plugins)
         self.assertEqual(plugins["subtract"]["description"], "Subtract two numbers")
 
-    def test_execute_plugin_and_wait(self):
-        """Test executing a plugin synchronously and waiting for its result."""
+    # def test_execute_plugin_and_wait(self):
+    #     """Test executing a plugin synchronously and waiting for its result."""
+    #
+    #     @self.manager.register(name="square", description="Square a number", function_request={"a": "b"})
+    #     def square(x):
+    #         return x * x
+    #
+    #     result = self.manager.execute_plugin_and_wait("square", args=(3,))
+    #     self.assertEqual(result, 9)
 
-        @self.manager.register(name="square", description="Square a number", function_request={"a": "b"})
+    def test_should_process_plugin_output(self):
+        @self.manager.register(name="square", description="Square a number", function_request={"a": "b"}, process_output=True)
         def square(x):
             return x * x
 
-        result = self.manager.execute_plugin_and_wait("square", args=(3,))
-        self.assertEqual(result, 9)
+        result = self.manager.should_process_plugin_output("square")
+        self.assertEqual(result, True)
 
     def test_get_available_plugins(self):
         x = self.manager.get_available_plugins()

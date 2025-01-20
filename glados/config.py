@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List, Sequence
 
 import yaml
@@ -12,6 +12,7 @@ VAD_THRESHOLD = 0.9  # Threshold for VAD detection
 BUFFER_SIZE = 700  # Milliseconds of buffer before VAD detection
 PAUSE_LIMIT = 500  # Milliseconds of pause allowed before processing
 SIMILARITY_THRESHOLD = 2  # Threshold for wake word similarity
+MIN_SENTENCE_LENGTH = 3
 
 NEUROTOXIN_RELEASE_ALLOWED = False  # preparation for function calling, see issue #13
 DEFAULT_PERSONALITY_PREPROMPT = (
@@ -21,6 +22,11 @@ DEFAULT_PERSONALITY_PREPROMPT = (
     },
 )
 
+@dataclass
+class PluginConfig:
+    name: str
+    description: str
+    intents: List[str]
 
 @dataclass
 class GladosConfig:
@@ -34,6 +40,8 @@ class GladosConfig:
     voice_model: str = VOICE_MODEL
     speaker_id: Optional[int] = None
     contexts: List[str] = None
+    plugin_intent_threshold: float = 0.7
+    plugins: List[PluginConfig] = field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, path: str, key_to_config: Sequence[str] | None = ("Glados",)):

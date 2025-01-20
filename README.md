@@ -1,5 +1,12 @@
 <a href="https://trendshift.io/repositories/9828" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9828" alt="dnhkng%2FGlaDOS | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
+# This Fork
+
+This fork introduces a pluggable architecture, with function calling support to for GLaDOS.
+WARNING! GLaDOS is ultimately evil, so be careful in connecting her to any real world stuff. 
+you have been warned!
+
+
 # GLaDOS Personality Core
 This is a project dedicated to building a real-life version of GLaDOS!
 

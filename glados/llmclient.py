@@ -1,18 +1,26 @@
+import inspect
+import json
 import os
 import queue
+import re
 import sys
 import threading
-from typing import Optional, Sequence, Iterator
-import ollama
-from ollama import ChatResponse
-from loguru import logger
+from typing import Optional, Sequence, List
 
-from glados.config import GladosConfig
+import openai
+from loguru import logger
+from openai import Stream
+from openai.types.chat import ChatCompletionChunk
+
+from glados.config import GladosConfig, MIN_SENTENCE_LENGTH
 from plugins.context_manager import ContextManager
+from plugins.event_system.event_system import EventSystem
 from plugins.plugin_manager import PluginManager
 
 plugin_manager = PluginManager()
 context_manager = ContextManager()
+event_system = EventSystem()
+
 
 class LLMClient:
     def __init__(self, url: str, model: str, headers: Optional[dict] = None, config: GladosConfig = None):
@@ -29,13 +37,16 @@ class LLMClient:
         self.model = model
         self.headers = headers or {}
         self.functions = {}
-        self.client = ollama.Client()  # Synchronous client for threading
+        # self.client = ollama.Client()  # Synchronous client for threading
+
+        logger.info(f"Initializing with mode {self.model}")
+
+        self.client = openai.OpenAI(base_url=config.completion_url, api_key=config.api_key)  # Synchronous client for threading
         context_manager.configure(config=config)
 
         # Queues for communication
         self.llm_queue: queue.Queue[str] = queue.Queue()
         self.tts_queue: queue.Queue[str] = queue.Queue()
-
 
         # Initialize personality preprompts
         self._messages = []
@@ -51,6 +62,30 @@ class LLMClient:
     def messages(self) -> Sequence[dict[str, str]]:
         with self._lock:
             return self._messages.copy()
+
+    def process_sentence(self, current_sentence: List[str]):
+        """
+        Compose sentences from tokens, clean, and send to TTS queue.
+        """
+        # Join tokens into a sentence
+        sentence = " ".join(current_sentence)
+
+        # Fix spacing around punctuation
+        sentence = re.sub(r"\s+([.,!?;:])", r"\1", sentence)  # Remove space before punctuation
+        sentence = re.sub(r"([a-zA-Z])\s+'([a-zA-Z])", r"\1'\2", sentence)  # Fix contractions
+        sentence = re.sub(r"\s+", " ", sentence).strip()  # Normalize extra spaces
+
+        if sentence:
+            logger.info(f"TTS input text: {sentence}")
+            self.tts_queue.put(sentence)
+
+    def maybe_process_sentence(self, current_sentence):
+        if current_sentence.endswith(".") and len(current_sentence) >= MIN_SENTENCE_LENGTH:
+            logger.debug(f"Processing complete sentence: '{current_sentence}'")
+            self.process_sentence([current_sentence])
+            return ""
+        else:
+            return current_sentence
 
     def chat(self, content: str) -> str:
         """
@@ -72,68 +107,159 @@ class LLMClient:
             logger.info(f"Available plugins/tools: {plugin_manager.get_available_plugins_as_list()}")
 
             # Query the LLM
-            response: Iterator[ChatResponse] = self.client.chat(
-                self.model,
-                messages=self.messages,
+            # response: Iterator[ChatResponse] = self.client.chat(
+            #     self.model,
+            #     messages=self.messages,
+            #     tools=plugin_manager.get_available_plugins_as_list(),
+            #     # tool_choice="auto",
+            #     stream=True
+            # )
+
+            # tool_choice={"type": "function", "function": {"name": "get_current_weather"}}.
+            response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
+                model=self.model,
+                messages=self._messages,
+                stream=True,
                 tools=plugin_manager.get_available_plugins_as_list(),
-                stream=True
+                tool_choice="auto"
             )
 
             # Initialize variables for response accumulation
-            complete_response = []
+            complete_response = ""
             tool_result = None
+            tool_error = False
+            process_tool_result = True
 
             for chunk in response:
-                if chunk.message.tool_calls:
-                    # Handle tool calls in the response
-                    for tool in chunk.message.tool_calls:
-                        if function_to_call := plugin_manager.get_available_plugins().get(tool.function.name):
-                            logger.info(f"Executing tool: {tool.function.name} with args: {tool.function.arguments}")
-                            tool_result = function_to_call(**tool.function.arguments)
-                            logger.info(f"Tool output: {tool_result}")
+                logger.info(f"choices: {chunk.choices}")
 
-                            # Add tool result to messages
-                            with self._lock:
+                if chunk.choices[0].delta.tool_calls:
+                    # Handle tool calls in the response
+                    for tool in chunk.choices[0].delta.tool_calls:
+                        if function_to_call := plugin_manager.get_available_plugins().get(tool.function.name):
+                            try:
+                                logger.info(
+                                    f"Executing tool: {tool.function.name} with args: {tool.function.arguments}")
+
+                                # args fix
+                                raw_arguments = tool.function.arguments
+                                arguments = json.loads(raw_arguments) if raw_arguments else {}
+
+                                # Dynamically inspect the function signature
+                                sig = inspect.signature(function_to_call)
+                                parameters = sig.parameters
+
+                                if not parameters:
+                                    tool_result = function_to_call()
+                                elif not arguments:
+                                    raise ValueError(
+                                        f"Function {function_to_call.__name__} expects arguments but none were provided.")
+                                else:
+                                    tool_result = function_to_call(**arguments)
+
+                                logger.info(f"Tool output: {tool_result}")
+                                process_tool_result = plugin_manager.should_process_plugin_output(tool.function.name)
+                                logger.info(f"Tool process_result: {process_tool_result}")
+
+                                if process_tool_result:
+                                    # Add tool result to messages
+                                    with self._lock:
+                                        self._messages.append({
+                                            "role": "tool",
+                                            "name": tool.function.name,
+                                            "content": str(tool_result),
+                                        })
+                                        context_manager.add_tool_output(tool.function.name, content)
+                                else:
+                                    # just add the output
+                                    self._messages.append({
+                                        "role": "assistant",
+                                        "content": str(tool_result),
+                                    })
+                                    self.tts_queue.put(f"{tool_result}")
+                                    context_manager.add_tool_output(tool.function.name, content)
+                            except Exception as e:
+                                logger.error(
+                                    f"Error invoking plugin: {tool.function.name} with args: {tool.function.arguments}, the error was {e}")
                                 self._messages.append({
                                     "role": "tool",
                                     "name": tool.function.name,
-                                    "content": str(tool_result),
+                                    "content": "Calling the tool failed",
                                 })
-                                context_manager.add_tool_output(tool.function.name, content)
+                                tool_error = True
                         else:
                             logger.warning(f"Tool {tool.function.name} not found.")
                 else:
                     # If no tool was used, handle the direct response
-                    if chunk.message.content:
-                        direct_response = chunk.message.content.strip()
-                        logger.info(f"Streamed LLM chunk: {direct_response}")
+                    current_sentence = ""
+                    if chunk.choices[0].delta.content:
+                        direct_response = chunk.choices[0].delta.content
+                        if not direct_response:  # Skip empty or insignificant chunks
+                            logger.warning("Skipping empty chunk")
+                            continue
 
-                        # Accumulate the complete response
-                        complete_response.append(direct_response)
+                        # Append the chunk directly to the current sentence
+                        current_sentence += direct_response
+                        complete_response += direct_response
+                        logger.debug(f"Tool current sentence: '{current_sentence}'")
 
-                        # Add to TTS queue only, avoid re-queueing to LLM queue
-                        self.tts_queue.put(direct_response)
+                        current_sentence = self.maybe_process_sentence(current_sentence)
+
+                        # todo add result to messags!
+
+                    # Process any remaining text after the loop ends
+                    if current_sentence:
+                        logger.info(f"Processing remaining sentence: '{current_sentence.strip()}'")
+                        self.process_sentence([current_sentence.strip()])
 
             # Query the LLM again if a tool was used to finalize the interaction
-            if tool_result:
-                logger.info("Querying LLM again after tool use.")
+            if (tool_result or tool_error) and process_tool_result:
+                logger.info("Querying LLM again after tool use")
                 try:
-                    final_response: ChatResponse = self.client.chat(
-                        self.model,
-                        messages=self.messages,
+
+                    # final_response: Iterator[ChatResponse] = self.client.chat(
+                    #     self.model,
+                    #     messages=self.messages,
+                    #     stream=True
+                    # )
+
+                    final_response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=self._messages,
+                        stream=True
                     )
-                    final_content = final_response.message.content.strip()
-                    logger.info(f"Final LLM response after tool use: {final_content}")
 
-                    with self._lock:
-                        self._messages.append({"role": "assistant", "content": final_content})
-                        context_manager.add_message("assistant", final_content)
+                    current_sentence = ""
 
-                    # Add to TTS queue only
-                    self.tts_queue.put(final_content)
+                    for final_response_chunk in final_response:
+                        direct_response = final_response_chunk.choices[0].delta.content
+
+                        if not direct_response:  # Skip empty or insignificant chunks
+                            logger.warning("Skipping empty chunk")
+                            continue
+
+                        # Append the chunk directly to the current sentence
+                        current_sentence += direct_response
+                        complete_response += direct_response
+
+                        logger.debug(f"Tool current sentence: '{current_sentence}'")
+
+                        current_sentence = self.maybe_process_sentence(current_sentence)
+
+                    # Process any remaining text after the loop ends
+                    if current_sentence:
+                        logger.info(f"Processing remaining sentence: '{current_sentence.strip()}'")
+                        self.process_sentence([current_sentence.strip()])
 
                 except Exception as e:
                     logger.error(f"Error during final LLM query: {type(e).__name__}")
+
+            logger.info("Journalling assistant response")
+            self._messages.append({
+                "role": "assistant",
+                "content": complete_response
+            })
+            context_manager.add_message("assistant", complete_response)
 
             # Signal end of stream for TTS
             self.tts_queue.put("<EOS>")
@@ -143,6 +269,4 @@ class LLMClient:
             with self._lock:
                 return self._messages[-1]["content"]
         except Exception as e:
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-            logger.error(exc_type, fname, exc_tb.tb_lineno)
+            logger.exception(str(e))
