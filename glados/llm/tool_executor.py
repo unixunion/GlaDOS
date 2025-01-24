@@ -40,7 +40,12 @@ class ToolExecutor:
             self.event_system.publish(EventMessage(
                 role="tool",
                 name=f"{function_name}",
-                content="There was a error invoking this tool, the error was: {e}",
+                content=f"There was a error invoking this tool, the error was: {e}",
                 process_output=True
+            ))
+            self.event_system.publish(EventMessage(
+                role="log",
+                name=f"{function_name}",
+                content=f"There was a error invoking this tool, the error was: {e}"
             ))
             return {"error": str(e)}

@@ -18,3 +18,4 @@ torch~=2.5.1
 tqdm~=4.67.1
 ollama~=0.4.6
 openai-whisper
+dateparser~=1.2.0

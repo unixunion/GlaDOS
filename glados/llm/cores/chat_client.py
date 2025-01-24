@@ -130,7 +130,7 @@ class ChatClient:
 
     def _store_message_in_history(self, message: str):
         """Callback to store finalized sentences in the message manager."""
-        logger.info(f"Storing finalized message in history: {message}")
+        logger.debug(f"Storing finalized message in history: {message}")
         self.message_manager.add_message("assistant", message)
 
     def chat(self, content, tools=None):
@@ -153,11 +153,13 @@ class ChatClient:
                         tool_result = self.tool_executor.execute_tool(tool_call)
                         process_tool_result = plugin_manager.should_process_plugin_output(tool_call.function.name)
                         logger.info(f"tool process_output: {process_tool_result}")
+                        self.message_manager.add_message("tool", str(tool_result), name=tool_call.function.name)
                         if process_tool_result:
-                            self.message_manager.add_message("tool", str(tool_result), name=tool_call.function.name)
                             self.chat(None, tools=None)
                         else:
-                            logger.info("Not appending tool output to the messages")
+                            logger.info("Not appending tool output to the messages, but sending it direct to the TTS, "
+                                        "the model will know about it if queried though, since its added to the messages")
+                            self.llm_queue.put(str(tool_result))
                 else:
                     self.response_processor.process_chunk(chunk)
 

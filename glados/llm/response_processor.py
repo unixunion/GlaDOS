@@ -38,7 +38,7 @@ class ResponseProcessor:
         """
         sentence = self.current_sentence.strip()
         if sentence:
-            logger.info(f"Finalizing sentence: {sentence}")
+            logger.debug(f"Finalizing sentence: {sentence}")
 
             # Send to TTS queue
             if self.tts_queue:

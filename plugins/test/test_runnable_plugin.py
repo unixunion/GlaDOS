@@ -36,6 +36,21 @@ class MyRunnablePlugin(RunnablePlugin):
             process_output=True  # process output via llm model inference,
         )(self.hello_world)
 
+        plugin_manager.register(
+            llm_function_request=FunctionRequest(
+                function=FunctionMetadata(
+                    description="Hello Universe, greets the universe",
+                    parameters=Parameters(type="object", required=[], properties={
+                    })
+                )),
+            intents=[
+                "run the hello universe plugin",
+                "hello universe",
+                "invoke the hello universe function"
+            ],
+            process_output=True  # process output via llm model inference,
+        )(self.hello_universe)
+
     def start(self):
         logger.info("Starting...")
         if self._worker_thread and self._worker_thread.is_alive():
@@ -62,6 +77,10 @@ class MyRunnablePlugin(RunnablePlugin):
             "status": "success",
             "content": f"hello world, name passed in was {name}"
         }
+
+    def hello_universe(self):
+        logger.info("testing crash method")
+        raise ValueError("error parsing the input, the user has provided bad data")
 
     def send_events(self):
         event_system.publish(

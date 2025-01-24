@@ -11,9 +11,7 @@ from openai import Stream
 from openai.types.chat import ChatCompletionChunk
 
 from glados.config import GladosConfig, MIN_SENTENCE_LENGTH
-from glados.util import cleanup_sentence
 from plugins.context_manager import ContextManager
-from plugins.event_system.event_system import EventSystem
 from plugins.plugin_system.plugin_manager import PluginManager
 
 plugin_manager = PluginManager()

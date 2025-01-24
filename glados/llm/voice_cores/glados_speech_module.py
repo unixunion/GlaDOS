@@ -106,7 +106,7 @@ class GladosSpeechModule:
                 self.stt_enabled = True
 
             self._speaking_lock.clear()  # Clear the speaking lock
-            logger.info("TTS playback completed. Re-enabling STT.")
+            logger.debug("TTS playback completed. Re-enabling STT.")
 
     def _play_audio(self, audio):
         """
@@ -114,7 +114,7 @@ class GladosSpeechModule:
         """
         import sounddevice as sd
         try:
-            logger.info("Playing TTS audio...")
+            logger.debug("Playing TTS audio...")
             sd.play(audio, self._tts.rate)
             sd.wait()  # Wait for playback to complete
         except Exception as e:
@@ -145,12 +145,32 @@ class GladosSpeechModule:
         return text
 
     def _replace_numbers_with_words(self, text: str) -> str:
-        """Replace numerical values in the text with their word equivalents."""
-        def number_to_words(match):
-            number = int(match.group())
-            return num2words(number)
+        """
+        Replace numerical values in the text with their word equivalents,
+        handling cases where numbers are part of words (e.g., "6pm" -> "six pm").
+        """
 
-        return re.sub(r'\b\d+\b', number_to_words, text)
+        def number_to_words(match):
+            number = match.group("number")
+            prefix = match.group("prefix") or ""
+            suffix = match.group("suffix") or ""
+            # Convert the number to words
+            number_word = num2words(int(number))
+            # Reassemble the full word
+            return f"{prefix}{number_word}{suffix}"
+
+        # Regex to capture numbers with optional prefixes/suffixes (e.g., "6pm", "7:30")
+        pattern = r"(?P<prefix>[^a-zA-Z\d])?(?P<number>\d+)(?P<suffix>[a-zA-Z]*)"
+
+        return re.sub(pattern, number_to_words, text)
+
+    # def _replace_numbers_with_words(self, text: str) -> str:
+    #     """Replace numerical values in the text with their word equivalents."""
+    #     def number_to_words(match):
+    #         number = int(match.group())
+    #         return num2words(number)
+    #
+    #     return re.sub(r'\b\d+\b', number_to_words, text)
 
     def _filter_special_tags(self, text: str) -> str:
         """Filter out special tags or metadata from the text."""

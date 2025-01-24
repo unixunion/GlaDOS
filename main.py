@@ -153,9 +153,9 @@ if __name__ == "__main__":
         # Main loop to monitor wakeword detection and handle interactions
         while True:
             if glados.wakeword_interrupt.wait(timeout=5):
-                logger.info("wake word detected in main")
+                logger.debug("wake word detected in main")
             else:
-                logger.info("wake word timed out")
+                logger.debug("wake word timed out")
 
             time.sleep(0.1)
 

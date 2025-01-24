@@ -1,7 +1,9 @@
+import dataclasses
 import threading
 import time
-from datetime import datetime, timedelta
-from typing import List, Optional, Dict
+from datetime import datetime
+from typing import List, Optional
+import dateparser
 
 from loguru import logger
 
@@ -13,27 +15,34 @@ from plugins.plugin_system.runnable_plugin import RunnablePlugin
 plugin_manager = PluginManager()
 
 
+@dataclasses.dataclass
+class Alarm:
+    alarm_time: datetime
+    description: str
+
+
 class AlarmClock(RunnablePlugin):
 
     def __init__(self):
         super().__init__()
         logger.info("Instantiating Alarm Clock System")
-        self.alarms: List[float] = []
+        self.alarms: List[Alarm] = []
         self.event_system = EventSystem()
         self._worker_thread = None
         self._stop_event = threading.Event()
+        self._lock = threading.Lock()
 
         plugin_manager.register(
             llm_function_request=FunctionRequest(
                 type="function",
                 function=FunctionMetadata(
-                    description="Sets an alarm at a fixed time (HH:MM format).",
+                    description="Sets an alarm at a fixed time (natural language format).",
                     parameters=Parameters(
                         type="object",
                         properties={
                             "time": ParameterType(
                                 type="string",
-                                description="The fixed time for the alarm in HH:MM format (24-hour clock)."
+                                description="The time for the alarm in natural language, e.g., '5pm tomorrow'."
                             ),
                             "description": ParameterType(
                                 type="string",
@@ -46,66 +55,77 @@ class AlarmClock(RunnablePlugin):
                 )),
             intents=[
                 "set an alarm for five o clock",
-                "set a alarm for seventeen thirty four",
-                "set the alarm for 5 am tomorrow",
-                "set an alarm for 7pm"
+                "set an alarm for 5pm tomorrow",
+                "set the alarm for 8:30 am on Sunday",
+                "set an alarm for next Monday at noon"
             ],
-            process_output=False
+            process_output=True
         )(self.set_fixed_time_alarm)
 
+        plugin_manager.register(
+            llm_function_request=FunctionRequest(
+                type="function",
+                function=FunctionMetadata(
+                    description="Retrieves all currently set alarms.",
+                    parameters=Parameters(
+                        type="object",
+                        properties={},
+                        required=[],
+                        additionalProperties=False
+                    )
+                )
+            ),
+            intents=["get all alarms", "list my alarms", "what alarms are set?"],
+            process_output=True
+        )(self.get_alarms)
+
     def start(self):
-        logger.info("Starting...")
+        logger.info("Starting Alarm Clock System...")
         if self._worker_thread and self._worker_thread.is_alive():
             return
 
         def ticker():
             while not self._stop_event.is_set():
-                logger.info("checking alarms")
                 self.check_alarms()
                 time.sleep(1)
 
         self._stop_event.clear()
         self._worker_thread = threading.Thread(target=ticker, daemon=True)
         self._worker_thread.start()
-        logger.success("started")
+        logger.success("Alarm Clock System started")
 
     def stop(self):
-        logger.info("Shutting down")
+        logger.info("Stopping Alarm Clock System...")
         self._stop_event.set()
 
     def set_fixed_time_alarm(self, time: str, description: Optional[str] = None):
         """
         Register a new fixed-time alarm and add it to the list.
 
-        :param time: The fixed time for the alarm in HH:MM format.
+        :param time: The time for the alarm in natural language format (e.g., '5pm tomorrow').
         :param description: Optional description for the alarm.
         :return: A success or error message.
         """
         try:
             if not time:
-                return {"status": "error", "message": "The 'time' field is required for fixed-time alarms."}
+                return {"status": "error", "message": "The 'time' field is required for setting an alarm."}
+
+            # Parse natural language time
+            alarm_time = dateparser.parse(time)
+            if not alarm_time:
+                return {"status": "error", "message": f"Could not parse the time: '{time}'."}
+
+            if alarm_time < datetime.now():
+                return {"status": "error", "message": "Cannot set an alarm for a past time."}
 
             with self._lock:
-                # Parse the provided time (assume "HH:MM" format)
-                try:
-                    if ":" in time:  # Handle "HH:MM" format
-                        alarm_time = datetime.strptime(time, "%H:%M").replace(
-                            year=datetime.now().year, month=datetime.now().month, day=datetime.now().day
-                        )
-                        if alarm_time < datetime.now():  # Adjust for the next day if time has already passed
-                            alarm_time += timedelta(days=1)
-                    else:
-                        return {"status": "error", "message": f"Invalid time format: {time}. Expected HH:MM format."}
-                except ValueError:
-                    return {"status": "error", "message": f"Failed to parse time: {time}. Check the format."}
-
                 # Prevent duplicate alarms
                 for alarm in self.alarms:
                     if alarm["time"] == alarm_time:
                         return {"status": "error", "message": "An alarm is already set for this time."}
 
                 # Add the alarm
-                self.alarms.append({"time": alarm_time, "description": description or "No description"})
+                self.alarms.append(Alarm(alarm_time=alarm_time, description=description or None))
                 return {
                     "status": "success",
                     "message": f"Alarm set for {alarm_time.strftime('%Y-%m-%d %H:%M:%S')}.",
@@ -113,18 +133,37 @@ class AlarmClock(RunnablePlugin):
                 }
         except Exception as e:
             logger.exception(f"Error setting fixed-time alarm: {str(e)}")
-            raise e
+            return {"status": "error", "message": f"An unexpected error occurred: {str(e)}"}
+
+    def get_alarms(self):
+        """
+        Retrieve all currently set alarms.
+
+        :return: A list of alarms with their times and descriptions.
+        """
+        with self._lock:
+            if not self.alarms:
+                return {"status": "success", "message": "No alarms are currently set.", "alarms": []}
+
+            alarms_list = [
+                {"time": alarm.alarm_time.strftime('%Y-%m-%d %H:%M:%S'), "description": alarm.description or None}
+                for alarm in self.alarms
+            ]
+            return {"status": "success", "message": "Currently set alarms:", "alarms": alarms_list}
 
     def check_alarms(self):
         """Check alarms and trigger expired ones."""
         now = datetime.now()
-        expired_alarms = [alarm for alarm in self.alarms if alarm["time"] <= now]
-        self.alarms = [alarm for alarm in self.alarms if alarm["time"] > now]
+        expired_alarms = []
+
+        with self._lock:
+            expired_alarms = [alarm for alarm in self.alarms if alarm["time"] <= now]
+            self.alarms = [alarm for alarm in self.alarms if alarm["time"] > now]
 
         for alarm in expired_alarms:
             self.event_system.publish(EventMessage(
                 "tool",
                 "alarm",
-                "A scheduled alarm has gone off",
+                f"Alarm triggered: {alarm['description']} at {alarm['time'].strftime('%Y-%m-%d %H:%M:%S')}",
                 process_output=True
             ))

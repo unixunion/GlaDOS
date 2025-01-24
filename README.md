@@ -6,6 +6,7 @@ you have been warned! Although you should be ok as long as you use a "safe" llm,
 
 This is under development right now, and lots of stuff is in a state of flux.
 
+
 ## Architecture
 
 This is pretty much a total re-write of the upstream project, using a more modular approach. Features:
@@ -210,3 +211,7 @@ and then add {modelname} to glados_config.yaml as the model. You can find [more 
 ## Common Issues
 New architecture, no idea what gremlins there are.
 
+# Todo
+
+- plugin that can list system events, tool outputs, statuses and errors
+- 

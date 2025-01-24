@@ -15,7 +15,7 @@ from glados import asr, tts, vad
 from glados.config import GladosConfig, DEFAULT_PERSONALITY_PREPROMPT, VAD_SIZE, VAD_MODEL, VAD_THRESHOLD, \
     SAMPLE_RATE
 from trash.llmclient import LLMClient
-from glados.util import cleanup_sentence
+from trash.util import cleanup_sentence
 from plugins.plugin_system.plugin_manager import PluginManager, load_plugins
 
 logger.remove(0)
