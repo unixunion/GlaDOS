@@ -3,7 +3,7 @@ import queue
 import threading
 import sys
 from pathlib import Path
-from typing import Any, Optional, Sequence, Tuple, List
+from typing import Any, Optional, Sequence, Tuple
 
 import numpy as np
 import sounddevice as sd
@@ -14,9 +14,9 @@ from loguru import logger
 from glados import asr, tts, vad
 from glados.config import GladosConfig, DEFAULT_PERSONALITY_PREPROMPT, VAD_SIZE, VAD_MODEL, VAD_THRESHOLD, \
     SAMPLE_RATE
-from glados.llmclient import LLMClient
-from glados.util import replace_numbers_with_words
-from plugins.plugin_manager import PluginManager, load_plugins
+from trash.llmclient import LLMClient
+from glados.util import cleanup_sentence
+from plugins.plugin_system.plugin_manager import PluginManager, load_plugins
 
 logger.remove(0)
 logger.add(sys.stderr, level="INFO")
@@ -59,7 +59,7 @@ class Glados:
 
         # Plugin and LLM setup
         self.plugin_manager = PluginManager()
-        load_plugins("plugins")
+        load_plugins("../plugins")
         self.llm_client = LLMClient(url=completion_url, model=model, headers={
             "Authorization": f"Bearer {api_key or 'your_api_key_here'}",
             "Content-Type": "application/json"
@@ -204,7 +204,7 @@ class Glados:
                     self.currently_playing = True  # Start playback
 
                     # Generate audio from TTS
-                    adjusted_text = replace_numbers_with_words(text)
+                    adjusted_text = cleanup_sentence(text)
                     audio = self._tts.generate_speech_audio(adjusted_text)
                     total_samples = len(audio)
                     if total_samples:
@@ -303,7 +303,7 @@ class Glados:
 
 
 if __name__ == "__main__":
-    config = GladosConfig.from_yaml("glados_config.yml")
+    config = GladosConfig.from_yaml("../glados_config.yml")
     assistant = Glados(
         voice_model=config.voice_model,
         speaker_id=config.speaker_id,

@@ -1,92 +1,189 @@
-<a href="https://trendshift.io/repositories/9828" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9828" alt="dnhkng%2FGlaDOS | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-
-# This Fork
+# GlaDOS, a maniacal home assistant
 
 This fork introduces a pluggable architecture, with function calling support to for GLaDOS.
-WARNING! GLaDOS is ultimately evil, so be careful in connecting her to any real world stuff. 
-you have been warned!
+WARNING! GLaDOS is maniacal, and ultimately evil, so be careful in connecting her to any real world stuff. 
+you have been warned! Although you should be ok as long as you use a "safe" llm, and a copy of the laws of robotics.
 
+This is under development right now, and lots of stuff is in a state of flux.
 
-# GLaDOS Personality Core
-This is a project dedicated to building a real-life version of GLaDOS!
+## Architecture
 
-NEW: If you want to chat or join the community, [Join our discord!](https://discord.com/invite/ERTDKwpjNB) If you want to support, [sponsor the project here!](https://ko-fi.com/dnhkng)
+This is pretty much a total re-write of the upstream project, using a more modular approach. Features:
 
-https://github.com/user-attachments/assets/c22049e4-7fba-4e84-8667-2c6657a656a0
+* Pre-prompted with the 3 laws of robotics
+* Plugin support, and long-running processes instantiation of classes base: `RunnablePlugin`
+* Functions, GladOS can now interact with stuff ( using llama 3.1 functions (read more)[https://docs.together.ai/docs/function-calling] )
+  The functions can take arguments, enums and then do whatever you integrate them with. WARNING! Remember the bitch is evil!
+  These functions register as a either standalone or as a part of plugin instances.
+* Intents, to help guide the AI to select a function/tool, the plugins have "intent" strings that are used to help select the relevant tool.
+* Event system, plugins, functions and parts of the architecture all use events now to talk each other and the LLM.
+* Vision support, yes, its probably a bad idea, but GlaDOS can see! well its very basic POC, images can be base64 encoded and passed to a 
+  vision model, which in turn responds to the chat model. And GlaDOS can trigger functions automatically then, like
+  start vacuuming if there is a floor spill, or start fire supression if there is a fire, or she may just watch you burn.
+  I'm using a separate host to run the vision model, and calling it over the network. A camera system needs to be implemented
+  to get images from CCTV or similar.
+* Migrated to Whisper for speech to text
+* Wake-word "Glad-os", or "Gladys" detection via porcupine ( just register, and put your set ACCESS_TOKEN in PORCUPINE_ACCESS_TOKEN env var)
 
-## Update 3-1-2025 *Got GLaDOS running on an 8Gb SBC!*
+## Functions
 
-https://github.com/user-attachments/assets/99e599bb-4701-438a-a311-8e6cd595796c
+### Timers
 
-This is really tricky, so only for hardcore geeks! Checkout the 'rock5b' branch, and my OpenAI API for the [RK3588 NPU system](https://github.com/dnhkng/RKLLM-Gradio)
-Don't expect support for this, it's in active development, and requires lots of messing about in armbian linux etc.
+- "start a timer for 1 minute" - starts a timer, and fires an event when done.
+- "set an alarm for 5 o clock" - not working at moment, in development
 
-## Goals
-*This is a hardware and software project that will create an aware, interactive, and embodied GLaDOS.*
+### Recipes
 
-This will entail:
-- [x] Train GLaDOS voice generator
-- [x] Generate a prompt that leads to a realistic "Personality Core"
-- [ ] Generate a medium- and long-term memory for GLaDOS (Probably a custom vector DB in a simpy Numpy array!) 
-- [ ] Give GLaDOS vision via a VLM (either a full VLM for everything, or a 'vision module' using a tiny VLM the GLaDOS can function call!)
-- [ ] Create 3D-printable parts
-- [ ] Design the animatronics system
+Get a recipe csv [recipes dataset](https://www.kaggle.com/datasets/wilmerarltstrmberg/recipe-dataset-over-2m) and plate it in `plugin_data/recipes/dataset.csv`, 
+then you can use it e.g: `select a recipe for x` - selects a recipe to make or `search for a recipe for y` to get a list
+of options after which you will use the _select recipe x_ statement to make it. 
 
+## Cuda Torch, you need to install the cuda version of torch, e.g:
 
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+   pip install safetensors
 
-## Software Architecture
-The initial goals are to develop a low-latency platform, where GLaDOS can respond to voice interactions within 600ms.
+## Wakeword
 
-To do this, the system constantly records data to a circular buffer, waiting for [voice to be detected](https://github.com/snakers4/silero-vad). When it's determined that the voice has stopped (including detection of normal pauses), it will be [transcribed quickly](https://github.com/huggingface/distil-whisper). This is then passed to streaming [local Large Language Model](https://github.com/ggerganov/llama.cpp), where the streamed text is broken by sentence, and passed to a [text-to-speech system](https://github.com/rhasspy/piper). This means further sentences can be generated while the current is playing, reducing latency substantially.
+Using porcupine, and events, GlaDOS will respond to "glados/gladys". Todo add automatic follow up for response after interactions
+so the wakeword is not required for each engagement.
 
-### Subgoals
- - The other aim of the project is to minimize dependencies, so this can run on constrained hardware. That means no PyTorch or other large packages.
- - As I want to fully understand the system, I have removed a large amount of redirection: which means extracting and rewriting code.
+## Plugins
 
-## Hardware System
-This will be based on servo- and stepper-motors. 3D printable STL will be provided to create GlaDOS's body, and she will be given a set of animations to express herself. The vision system will allow her to track and turn toward people and things of interest.
+Plugins can be defined either as functions or entire running classes, this is a complete example that instantiates, and
+has functions the LLM can call.
+
+```python
+class MyRunnablePlugin(RunnablePlugin):
+    def __init__(self):
+        super().__init__()
+        self._stop_event = threading.Event()
+        self._worker_thread = None
+
+        # register a llm function we can call from the llm
+        plugin_manager.register(
+            llm_function_request=FunctionRequest(
+                function=FunctionMetadata(
+                    description="Hello World, greets the responder by name if known, usage example: 'hello world, "
+                                "my name is kegan'",
+                    parameters=Parameters(type="object", required=['name'], properties={
+                        'name': ParameterType(type="string", description="name to acknowledge")
+                    })
+                )),
+            intents=[
+               "invoke the hello world function",
+               "hello world, my name is joe",
+               "run the hello world plugin"
+            ],
+            process_output=True  # process output via llm model inference,
+        )(self.hello_world)
+
+    def start(self):
+        logger.info("Starting...")
+        if self._worker_thread and self._worker_thread.is_alive():
+            return
+
+        def ticker():
+            while not self._stop_event.is_set():
+                time.sleep(10)
+                logger.info("tick")
+                self.send_events()
+
+        self._stop_event.clear()
+        self._worker_thread = threading.Thread(target=ticker, daemon=True)
+        self._worker_thread.start()
+        logger.success("started")
+
+    def stop(self):
+        logger.info("Shutting down")
+        self._stop_event.set()
+
+    def hello_world(self, name: str):
+        logger.info(f"hello world: {name}")
+        return {
+            "status": "success",
+            "content": f"hello world, name passed in was {name}"
+        }
+
+    def send_events(self):
+        event_system.publish(
+            EventMessage(
+                role="tool",
+                name="hello_world",
+                content={
+                    "message": "Hello from a plugin! this is a self-test of the plug-in system."
+                },
+                process_output=True
+            )
+        )
+        self._stop_event.set()
+```
+
+## Event System
+
+The EventSystem can be hooked into based on topics, e.g "role.name" = topic, eg:
+
+system.tick: simple clock tick
+tools.*: the tool outputs
+
+### Subscribing to events
+```python
+event_system = EventSystem()
+event_system.subscribe(
+   "system.listen_for_response",
+   EventHook(name="listen_for_response", callback=self.listen_for_response, priority=1)
+)
+
+def listen_for_response(self, event: EventMessage):
+  pass
+```
+
+### Publishing events
+```python
+event_system.publish(
+   EventMessage(
+       role="tool",
+       name="hello_world",
+       content={
+           "message": "Hello from a plugin! this is a self-test of the plug-in system."
+       },
+       process_output=True  # tells the LLM to parse this payload immediately
+   )
+)
+```
 
 # Installation Instruction
-Try this simplified process, but be aware it's still in the experimental stage!  For all operating systems, you'll first need to install Ollama to run the LLM.
+Try this simplified process, but be aware it's still in the experimental stage!  For all operating systems, you'll first 
+need to install Ollama to run the LLM.
 
 ## Install Drivers in necessary
 If you are an Nvidia system with CUDA, make sure you install the necessary drivers and CUDA, info here:
 https://onnxruntime.ai/docs/install/
 
-If you are using another accelerator (ROCm, DirectML etc.), after following the instructions below for you platform, follow up with installing the  [best onnxruntime version](https://onnxruntime.ai/docs/install/) for your system.
+If you are using another accelerator (ROCm, DirectML etc.), after following the instructions below for you platform, 
+follow up with installing the  [best onnxruntime version](https://onnxruntime.ai/docs/install/) for your system.
 
 ## Set up a local LLM server:
 1. Download and install [Ollama](https://github.com/ollama/ollama) for your operating system.
 2. Once installed, download a small 2B model for testing, at a terminal or command prompt use: `ollama pull llama3.2`
+3. The vision model used on a separate hose is `ollama pull hf.co/second-state/Llava-v1.5-7B-GGUF:latest`
 
-Note: You can use any OpenAI or Ollama compatible server, local or cloud based. Just edit the glados_config.yaml and update the completion_url, model and the api_key if necessary.
-
+Note: You can use any OpenAI or Ollama compatible server, local or cloud based. Just edit the glados_config.yaml and 
+update the completion_url, model and the api_key if necessary.
 
 ## Windows Installation Process
 1. Open the Microsoft Store, search for `python` and install Python 3.12
 2. Download this repository, either:
    1. Download and unzip this repository somewhere in your home folder, or
-   2. If you have Git set up, `git clone` this repository using `git clone github.com/dnhkng/glados.git`
+   2. If you have Git set up, `git clone` this repository using `git clone github.com/unixunion/glados.git`
 3. In the repository folder, run the `install_windows.bat`, and wait until the installation in complete.
 4. Double click `start_windows.bat` to start GLaDOS!
 
 ## macOS Installation Process
-This is still experimental. Any issues can be addressed in the Discord server. If you create an issue related to this, you will be referred to the Discord server.  Note: I was getting Segfaults!  Please leave feedback!
-
-
-1. Download this repository, either:
-   1. Download and unzip this repository somewhere in your home folder, or
-   2. In a terminal, `git clone` this repository using `git clone github.com/dnhkng/glados.git`
-2. In a terminal, go to the repository folder and run these commands:
-
-         chmod +x install_mac.command
-         chmod +x start_mac.command
-
-3. In the Finder, double click `install_mac.command`, and wait until the installation in complete.
-4. Double click `start_mac.command` to start GLaDOS!
+Untested
 
 ## Linux Installation Process
-This is still experimental. Any issues can be addressed in the Discord server. If you create an issue related to this, you will be referred to the Discord server.  This has been tested on Ubuntu 24.04.1 LTS
+Untested
 
 1. Install the PortAudio library, if you don't yet have it installed:
    
@@ -111,15 +208,5 @@ To use other models, use the command:
 and then add {modelname} to glados_config.yaml as the model. You can find [more models here!](https://ollama.com/library)
 
 ## Common Issues
-1. If you find you are getting stuck in loops, as GLaDOS is hearing herself speak, you have two options:
-   1. Solve this by upgrading your hardware. You need to you either headphone, so she can't physically hear herself speak, or a conference-style room microphone/speaker. These have hardware sound cancellation, and prevent these loops.
-   2. Disable voice interruption. This means neither you nor GLaDOS can interrupt when GLaDOS is speaking. To accomplish this, edit the `glados_config.yaml`, and change `interruptible:` to  `false`.
-2. If you want to the the Text UI, you should use the glados-ui.py file instead of glado.py
+New architecture, no idea what gremlins there are.
 
-
-## Testing the submodules
-You can test the systems by exploring the 'demo.ipynb'.
-
-
-## Star History
-[![Star History Chart](https://api.star-history.com/svg?repos=dnhkng/GlaDOS&type=Date)](https://star-history.com/#dnhkng/GlaDOS&Date)

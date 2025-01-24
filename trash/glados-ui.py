@@ -20,7 +20,7 @@ from glados_ui.text_resources import aperture, help_text, login_text, recipe
 # This ugly stuff is necessary because there is a `glados` module as well as a `glados`
 # package, so a normal `import glados` does the wrong thing.  If/when this is fixed
 # in the `glados` module this can be simplieifed
-loader = importlib.machinery.SourceFileLoader("glados", "./glados.py")
+loader = importlib.machinery.SourceFileLoader("glados", "glados.py")
 glados = types.ModuleType(loader.name)
 loader.exec_module(glados)
 
@@ -110,7 +110,7 @@ class Typewriter(Static):
 class SplashScreen(Screen):
     """Splash screen shown on startup."""
 
-    with open(Path("./glados_ui/images/splash.ansi"), 'r', encoding='utf-8') as f:
+    with open(Path("../glados_ui/images/splash.ansi"), 'r', encoding='utf-8') as f:
         SPLASH_ANSI = Text.from_ansi(f.read(), no_wrap=True, end="")
 
     def compose(self) -> ComposeResult:
@@ -163,7 +163,7 @@ class GladosUI(App):
             key_display="?",
         ),
     ]
-    CSS_PATH = "glados_ui/glados.tcss"
+    CSS_PATH = "../glados_ui/glados.tcss"
 
     ENABLE_COMMAND_PALETTE = False
 
@@ -171,7 +171,7 @@ class GladosUI(App):
 
     SUB_TITLE = "(c) 1982 Aperture Science, Inc."
 
-    with open(Path("./glados_ui/images/logo.ansi"), 'r', encoding='utf-8') as f:
+    with open(Path("../glados_ui/images/logo.ansi"), 'r', encoding='utf-8') as f:
         LOGO_ANSI = Text.from_ansi(f.read(), no_wrap=True, end="")
 
     def compose(self) -> ComposeResult:

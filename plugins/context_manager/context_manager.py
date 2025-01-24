@@ -6,9 +6,6 @@ from loguru import logger
 from glados.config import GladosConfig
 
 
-
-
-
 class ContextManager:
     _instance = None  # Singleton instance
 
@@ -20,7 +17,9 @@ class ContextManager:
 
     def __init__(self):
         if self._initialized:
+            logger.error("ContextManager is not initialized")
             return  # Skip re-initialization
+        logger.warning("Deprecated, please remove")
         self.contexts: Dict[str, Dict] = {}  # Store contexts and their histories
         self.active_task: Optional[str] = None  # Tracks the current active context
 

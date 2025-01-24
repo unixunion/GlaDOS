@@ -5,7 +5,7 @@ echo Creating Virtual Environment...
 pip install uv
 uv self update
 uv venv --python 3.10.11
-call  venv\Scripts\activate
+call .venv\Scripts\activate
 
 echo Installing Dependencies...
 nvcc --version >nul 2>&1

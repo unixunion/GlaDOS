@@ -41,4 +41,9 @@ humanfriendly~=10.0
 coloredlogs~=15.0.1
 flatbuffers~=24.12.23
 pyreadline3~=3.5.4
-spacy
+spacy~=3.8.4
+openai~=1.59.8
+torch~=2.5.1
+tqdm~=4.67.1
+ollama~=0.4.6
+openai-whisper

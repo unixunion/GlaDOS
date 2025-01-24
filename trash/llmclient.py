@@ -1,11 +1,9 @@
 import inspect
 import json
-import os
 import queue
 import re
-import sys
 import threading
-from typing import Optional, Sequence, List
+from typing import Optional, Sequence, List, Dict, Any
 
 import openai
 from loguru import logger
@@ -13,14 +11,13 @@ from openai import Stream
 from openai.types.chat import ChatCompletionChunk
 
 from glados.config import GladosConfig, MIN_SENTENCE_LENGTH
+from glados.util import cleanup_sentence
 from plugins.context_manager import ContextManager
 from plugins.event_system.event_system import EventSystem
-from plugins.plugin_manager import PluginManager
+from plugins.plugin_system.plugin_manager import PluginManager
 
 plugin_manager = PluginManager()
 context_manager = ContextManager()
-event_system = EventSystem()
-
 
 class LLMClient:
     def __init__(self, url: str, model: str, headers: Optional[dict] = None, config: GladosConfig = None):
@@ -41,7 +38,8 @@ class LLMClient:
 
         logger.info(f"Initializing with mode {self.model}")
 
-        self.client = openai.OpenAI(base_url=config.completion_url, api_key=config.api_key)  # Synchronous client for threading
+        self.client = openai.OpenAI(base_url=config.completion_url,
+                                    api_key=config.api_key)  # Synchronous client for threading
         context_manager.configure(config=config)
 
         # Queues for communication
@@ -51,7 +49,7 @@ class LLMClient:
         # Initialize personality preprompts
         self._messages = []
         for line in config.personality_preprompt:
-            self._messages.append(
+            self._messages.apend(
                 {"role": list(line.keys())[0], "content": list(line.values())[0]}
             )
 
@@ -68,12 +66,23 @@ class LLMClient:
         Compose sentences from tokens, clean, and send to TTS queue.
         """
         # Join tokens into a sentence
-        sentence = " ".join(current_sentence)
+        sentence = "\n ".join(current_sentence)
 
-        # Fix spacing around punctuation
+        # sentence = cleanup_sentence(current_sentence)
+
+        # # Fix spacing around punctuation
         sentence = re.sub(r"\s+([.,!?;:])", r"\1", sentence)  # Remove space before punctuation
         sentence = re.sub(r"([a-zA-Z])\s+'([a-zA-Z])", r"\1'\2", sentence)  # Fix contractions
         sentence = re.sub(r"\s+", " ", sentence).strip()  # Normalize extra spaces
+
+        # the api like to whisper and other crap, remove that.
+        sentence = re.sub(r"\*.*?\*|\(.*?\)", "", sentence)
+        sentence = (
+            sentence.replace("\n\n", ". ")
+            .replace("\n", ". ")
+            .replace("  ", " ")
+            .replace(":", " ")
+        )
 
         if sentence:
             logger.info(f"TTS input text: {sentence}")
@@ -87,12 +96,13 @@ class LLMClient:
         else:
             return current_sentence
 
-    def chat(self, content: str) -> str:
+    def chat(self, content: str, images = None) -> str:
         """
         Communicates with the LLM model using the provided content.
         Handles tool calls if the model invokes them.
 
         Args:
+            images: list of images
             content (str): The user input to the model.
 
         Returns:
@@ -100,11 +110,14 @@ class LLMClient:
         """
         try:
             with self._lock:
-                self._messages.append({"role": "user", "content": content})
+                if images:
+                    self._messages.append({"role": "user", "content": content, "images": images})
+                else:
+                    self._messages.append({"role": "user", "content": content})
                 context_manager.add_message("user", content)
 
             logger.info(f"User input: {content}")
-            logger.info(f"Available plugins/tools: {plugin_manager.get_available_plugins_as_list()}")
+            logger.info(f"Available plugins/tools: {plugin_manager.get_available_tools()}")
 
             # Query the LLM
             # response: Iterator[ChatResponse] = self.client.chat(
@@ -115,20 +128,30 @@ class LLMClient:
             #     stream=True
             # )
 
-            # tool_choice={"type": "function", "function": {"name": "get_current_weather"}}.
-            response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
-                model=self.model,
-                messages=self._messages,
-                stream=True,
-                tools=plugin_manager.get_available_plugins_as_list(),
-                tool_choice="auto"
-            )
+            response = None
+            if images:
+                response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=self._messages,
+                    stream=True,
+                    temperature=0.0,
+                )
+            else:
+                response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=self._messages,
+                    stream=True,
+                    tools=plugin_manager.get_available_tools(),
+                    tool_choice="auto",
+                    temperature=0.0,
+                )
 
             # Initialize variables for response accumulation
             complete_response = ""
             tool_result = None
             tool_error = False
             process_tool_result = True
+            tool_not_found = False
 
             for chunk in response:
                 logger.info(f"choices: {chunk.choices}")
@@ -136,7 +159,8 @@ class LLMClient:
                 if chunk.choices[0].delta.tool_calls:
                     # Handle tool calls in the response
                     for tool in chunk.choices[0].delta.tool_calls:
-                        if function_to_call := plugin_manager.get_available_plugins().get(tool.function.name):
+                        logger.info(f"Getting tool function for tool: {tool.function.name}")
+                        if function_to_call := plugin_manager.get_available_llm_functions().get(tool.function.name):
                             try:
                                 logger.info(
                                     f"Executing tool: {tool.function.name} with args: {tool.function.arguments}")
@@ -164,18 +188,21 @@ class LLMClient:
                                 if process_tool_result:
                                     # Add tool result to messages
                                     with self._lock:
-                                        self._messages.append({
+                                        tool_message = {
                                             "role": "tool",
                                             "name": tool.function.name,
                                             "content": str(tool_result),
-                                        })
+                                        }
+                                        self._messages.append(tool_message)
                                         context_manager.add_tool_output(tool.function.name, content)
+                                        logger.debug(f"tool_message: {tool_message} added to messages")
                                 else:
                                     # just add the output
                                     self._messages.append({
                                         "role": "assistant",
                                         "content": str(tool_result),
                                     })
+                                    logger.debug(f"added to assistant role messages: {self._messages[-1]}")
                                     self.tts_queue.put(f"{tool_result}")
                                     context_manager.add_tool_output(tool.function.name, content)
                             except Exception as e:
@@ -184,13 +211,17 @@ class LLMClient:
                                 self._messages.append({
                                     "role": "tool",
                                     "name": tool.function.name,
-                                    "content": "Calling the tool failed",
+                                    "content": f"Error calling the tool occured, cause: {e}",
                                 })
                                 tool_error = True
                         else:
-                            logger.warning(f"Tool {tool.function.name} not found.")
+                            logger.warning(f"Tool {tool.function.name} not found for {tool}")
+                            tool_not_found = True
                 else:
-                    # If no tool was used, handle the direct response
+                    # If no tool was used, or no tool was found handle the direct response
+                    # but I dont think this is dealing with the stream correctly, as I get weird output
+                    #
+                    logger.info(f"Processing sentence: {chunk.choices[0].delta.content}")
                     current_sentence = ""
                     if chunk.choices[0].delta.content:
                         direct_response = chunk.choices[0].delta.content
@@ -201,11 +232,11 @@ class LLMClient:
                         # Append the chunk directly to the current sentence
                         current_sentence += direct_response
                         complete_response += direct_response
-                        logger.debug(f"Tool current sentence: '{current_sentence}'")
+                        logger.debug(f"current sentence: '{current_sentence}'")
 
                         current_sentence = self.maybe_process_sentence(current_sentence)
 
-                        # todo add result to messags!
+                        # todo add result to messages!
 
                     # Process any remaining text after the loop ends
                     if current_sentence:
@@ -226,7 +257,8 @@ class LLMClient:
                     final_response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
                         model=self.model,
                         messages=self._messages,
-                        stream=True
+                        stream=True,
+                        temperature=0
                     )
 
                     current_sentence = ""
@@ -252,7 +284,42 @@ class LLMClient:
                         self.process_sentence([current_sentence.strip()])
 
                 except Exception as e:
-                    logger.error(f"Error during final LLM query: {type(e).__name__}")
+                    logger.exception(f"Error during final LLM query: {type(e).__name__}")
+
+            # deal with no tool found errors.
+            if tool_not_found:
+                logger.info("Re-querying LLM due to missing tool...")
+                try:
+                    # Query the LLM again with the original messages
+                    fallback_response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=self._messages,
+                        stream=True,
+                        temperature=0.0
+                    )
+
+                    current_sentence = ""
+                    for chunk in fallback_response:
+                        direct_response = chunk.choices[0].delta.content
+
+                        if not direct_response:  # Skip empty or insignificant chunks
+                            logger.warning("Skipping empty chunk during fallback.")
+                            continue
+
+                        # Append the chunk directly to the current sentence
+                        current_sentence += direct_response
+                        complete_response += direct_response
+
+                        logger.debug(f"Fallback current sentence: '{current_sentence}'")
+                        current_sentence = self.maybe_process_sentence(current_sentence)
+
+                    # Process any remaining text after the loop ends
+                    if current_sentence:
+                        logger.info(f"Processing remaining sentence from fallback: '{current_sentence.strip()}'")
+                        self.process_sentence([current_sentence.strip()])
+
+                except Exception as e:
+                    logger.error(f"Error during fallback LLM query: {type(e).__name__}")
 
             logger.info("Journalling assistant response")
             self._messages.append({
@@ -270,3 +337,51 @@ class LLMClient:
                 return self._messages[-1]["content"]
         except Exception as e:
             logger.exception(str(e))
+
+    def handle_event(self, event: Dict[str, Any]):
+        """
+        Handle events from the EventSystem and inject them into the LLM conversation.
+        Filter out irrelevant events to avoid unnecessary responses.
+        """
+
+        # Filter out irrelevant events
+        if event.get("name") == "tick":
+            logger.debug("Ignoring 'tick' event as it is not relevant.")
+            return
+
+        else:
+            logger.info(f"Handling event: {event}")
+
+        # Format the message for the LLM
+        message = {
+            "role": "tool",
+            "name": event.get("name", "event"),
+            "content": json.dumps(event),
+        }
+
+        # Append to messages and add to context manager
+        with self._lock:
+            self._messages.append(message)
+            context_manager.add_tool_output(event.get("name", "event"), event.get("content", ""))
+
+        process_output = plugin_manager.should_process_plugin_output(message.get("name")) or event.get("process_output", False)
+        logger.info(f"process_output: {process_output}")
+
+        if process_output:  # if process_output, run the data via the LLM
+
+            # Provide a clear instruction for handling the event contextually
+            ai_prompt = (
+                f"An asynchronous event from a tool, function or plugin has been received'. "
+                f"Consider the event importance, and respond only if it is something important or time critical."
+            )
+
+            # Trigger the AI's response only if the event is significant
+            if event.get("type") not in {"tick"}:
+                response = self.chat(ai_prompt)
+                logger.info(f"Generated response to event: {response}")
+            else:
+                logger.debug("No response triggered for this event.")
+        else:  # if not process_output, just speak the contents and it will be forgotten
+            event_content = event.get("content", None)
+            if event_content:
+                self.tts_queue.put(f"{event_content}")

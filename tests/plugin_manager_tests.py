@@ -1,7 +1,9 @@
 import unittest
 
-from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParamaterType
-from plugins.plugin_manager import PluginManager
+from loguru import logger
+
+from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParameterType
+from plugins.plugin_system.plugin_manager import PluginManager, LLM_FUNCTION_REQUEST
 
 
 class TestPluginManager(unittest.TestCase):
@@ -10,30 +12,20 @@ class TestPluginManager(unittest.TestCase):
     def setUp(self):
         print("Setting up")
 
-    def test_register_and_execute_plugin(self):
-        """Test registering and executing a plugin."""
-
         @self.manager.register(name="add", description="Add two numbers")
         def add(a, b):
             return a + b
 
-        result = self.manager.execute("add", 2, 3)
-        self.assertEqual(result, 5)
-
-    def test_register_with_function_request(self):
-        """Test registering a plugin with function_request metadata."""
-
-        multiply_definition = FunctionRequest(
+        self.multiply_definition = FunctionRequest(
             type="function",
             function=FunctionMetadata(
-                name="multiply",
-                description="multiply two numbers",
+                description="Multiply two numbers",
                 parameters=Parameters(
                     type="object",
                     required=['a', 'b'],
                     properties={
-                        'a': ParamaterType(type="integer", description="the first number"),
-                        'b': ParamaterType(type="integer", description="the second number")
+                        'a': ParameterType(type="integer", description="the first number"),
+                        'b': ParameterType(type="integer", description="the second number")
                     }
 
                 )
@@ -41,17 +33,25 @@ class TestPluginManager(unittest.TestCase):
         )
 
         @self.manager.register(
-            name="multiply",
-            description="Multiply two numbers",
-            function_request=multiply_definition.to_dict()
+            llm_function_request=self.multiply_definition
         )
         def multiply(a, b):
             return a * b
 
+    def test_simple_register_and_execute_plugin(self):
+        """Test registering and executing a plugin."""
+        result = self.manager.execute("add", 2, 3)
+        self.assertEqual(result, 5)
+
+    def  test_register_with_function_request(self):
+        """Test registering a plugin with function_request metadata."""
+
+
+
         metadata = self.manager.get_plugin_metadata("multiply")
         self.assertEqual(metadata["name"], "multiply")
         self.assertEqual(metadata["description"], "Multiply two numbers")
-        self.assertEqual(metadata["function_request"], multiply_definition.to_dict())
+        self.assertEqual(metadata[LLM_FUNCTION_REQUEST], self.multiply_definition.to_dict())
 
         result = self.manager.execute("multiply", 4, 5)
         self.assertEqual(result, 20)
@@ -74,31 +74,51 @@ class TestPluginManager(unittest.TestCase):
         self.assertIn("subtract", plugins)
         self.assertEqual(plugins["subtract"]["description"], "Subtract two numbers")
 
-    # def test_execute_plugin_and_wait(self):
-    #     """Test executing a plugin synchronously and waiting for its result."""
-    #
-    #     @self.manager.register(name="square", description="Square a number", function_request={"a": "b"})
-    #     def square(x):
-    #         return x * x
-    #
-    #     result = self.manager.execute_plugin_and_wait("square", args=(3,))
-    #     self.assertEqual(result, 9)
-
     def test_should_process_plugin_output(self):
-        @self.manager.register(name="square", description="Square a number", function_request={"a": "b"}, process_output=True)
+        definition = FunctionRequest(
+            type="function",
+            function=FunctionMetadata(
+                description="Square of a two numbers",
+                parameters=Parameters(
+                    type="object",
+                    required=['a', 'b'],
+                    properties={
+                        'a': ParameterType(type="integer", description="the first number"),
+                        'b': ParameterType(type="integer", description="the second number")
+                    }
+
+                )
+            )
+        )
+
+        @self.manager.register(llm_function_request=definition, process_output=True)
         def square(x):
             return x * x
 
         result = self.manager.should_process_plugin_output("square")
         self.assertEqual(result, True)
 
-    def test_get_available_plugins(self):
-        x = self.manager.get_available_plugins()
-        self.assertTrue(callable(x['square']))
+        @self.manager.register(name="square2", description="Square2 a number",
+                               process_output=True)
+        def square2(x):
+            return x * x
 
-    def test_get_available_plugins_as_list(self):
-        x = self.manager.get_available_plugins_as_list()
-        self.assertEqual(x, [{'a': 'b'}])
+        result = self.manager.should_process_plugin_output("square2")
+        self.assertEqual(result, False)
+
+    def test_get_available_plugins(self):
+        # this plugin should not be llm callable
+        @self.manager.register(name="square", description="Square a number")
+        def square(x):
+            return x * x
+
+        # this should be llm callable
+
+    def test_get_available_tools(self):
+        x = self.manager.get_available_tools()
+        self.assertTrue(len(x)>0)
+        self.assertIn(self.multiply_definition.to_dict(), x)
+        # self.assertEqual(x[1], )
 
 
 if __name__ == "__main__":

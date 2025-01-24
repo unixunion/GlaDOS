@@ -12,4 +12,9 @@ num2words
 scikit-learn
 pandas
 numpy~=2.0.2
-spacy
+spacy~=3.8.4
+openai~=1.59.8
+torch~=2.5.1
+tqdm~=4.67.1
+ollama~=0.4.6
+openai-whisper

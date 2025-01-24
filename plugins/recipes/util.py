@@ -3,10 +3,9 @@ import re
 from typing import List, Dict
 
 import numpy as np
+from loguru import logger
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-
-from loguru import logger
 
 
 def load_and_preprocess_recipes(file_path: str):
@@ -28,7 +27,7 @@ def load_and_preprocess_recipes(file_path: str):
     for recipe_id, recipe in data.items():
         # Validate required keys
         if 'title' not in recipe or 'ingredients' not in recipe or 'instructions' not in recipe:
-            print(f"Skipping recipe ID {recipe_id}: Missing required fields.")
+            logger.warning(f"Skipping recipe ID {recipe_id}: Missing required fields.")
             continue
 
         raw_ingredients = recipe["ingredients"]
@@ -50,10 +49,6 @@ def load_and_preprocess_recipes(file_path: str):
     logger.success(f"{ingredient_set}")
     return recipes, ingredient_set
 
-
-import re
-
-import re
 
 def clean_ingredients(raw_ingredients):
     """
@@ -77,7 +72,6 @@ def clean_ingredients(raw_ingredients):
         if ingredient:
             cleaned_ingredients.add(ingredient.lower())
     return cleaned_ingredients
-
 
 
 def find_best_recipe(inquiry: str, recipes: List[Dict]) -> Dict:

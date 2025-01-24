@@ -25,8 +25,7 @@ DEFAULT_PERSONALITY_PREPROMPT = (
 @dataclass
 class PluginConfig:
     name: str
-    description: str
-    intents: List[str]
+    config: dict
 
 @dataclass
 class GladosConfig:
@@ -36,11 +35,15 @@ class GladosConfig:
     wake_word: Optional[str]
     announcement: Optional[str]
     personality_preprompt: List[dict[str, str]]
+    wake_word_sensitivity: float
     interruptible: bool
+    vision_images_path: str = None
+    vision_completion_url: str = None
     voice_model: str = VOICE_MODEL
+    vision_model: str = None
     speaker_id: Optional[int] = None
     contexts: List[str] = None
-    plugin_intent_threshold: float = 0.7
+    plugin_intent_threshold: float = 0.5
     plugins: List[PluginConfig] = field(default_factory=list)
 
     @classmethod
