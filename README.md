@@ -157,6 +157,25 @@ event_system.publish(
 Try this simplified process, but be aware it's still in the experimental stage!  For all operating systems, you'll first 
 need to install Ollama to run the LLM.
 
+## Models
+
+The assistant uses the OpenAI python client, which I use with ollama hosted models locally, you can probably use online 
+OpenAI client compatible services, but I have not tested it. 
+
+### The Chat Model
+
+The main chat model I use is a 8B chat model, e.g: `ollama pull llama3.1`
+
+### The Vision Model
+
+Testing the vision model can be done by running the model on a separate host, but be aware, this is just a POC that can
+look at a directory of images and describe them, and feed that back to the chat model. 
+
+`ollama pull hf.co/second-state/Llava-v1.5-7B-GGUF:latest`
+
+You need to set `OLLAMA_HOST` environment variable on the vision model host to the IP of the host, NOT `0.0.0.0`, e.g: 
+`OLLAMA_HOST=10.0.0.2`
+
 ## Install Drivers in necessary
 If you are an Nvidia system with CUDA, make sure you install the necessary drivers and CUDA, info here:
 https://onnxruntime.ai/docs/install/
@@ -211,7 +230,21 @@ and then add {modelname} to glados_config.yaml as the model. You can find [more 
 ## Common Issues
 New architecture, no idea what gremlins there are.
 
+if you see lots of TTS like this instead of calling functions, it is related to too many plugins in the context or the system
+preprompt is doing something funky with the json internals. 
+`Generating TTS for: {"type" "function","name" "get camera feed","parameters{"query" "","room" ""}}`
+
 # Todo
 
 - plugin that can list system events, tool outputs, statuses and errors
-- 
+- plugin that can serve a HTML page letting you turn any browser device into a camera, such as old phones, ipads, or laptops. 
+- camera support for pan tilt zoom
+- schedule plugin that can set and retrieve a schedule for activities. 
+- A way to send textual data to client device, such as a ipad or laptop or phone for textual input / tweaking 
+- context manager, perhaps switch contexts based on invoked tools, or collect tools in contexts of max 20 tools per context. 
+  also a API to search contexts for a relevant thing, so the AI can figure out which  context to switch to. 
+  ENTERTAINMENT
+  CHORES
+  GENERAL_ENQUIRY
+  COOKING
+  ??? 

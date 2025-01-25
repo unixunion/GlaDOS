@@ -1,8 +1,8 @@
-from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParameterType
-from plugins.plugin_system.plugin_manager import PluginManager
+from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
+from glados.system.plugin import PluginSystem
 from loguru import logger
 
-plugin_manager = PluginManager()
+plugin_manager = PluginSystem()
 
 
 @plugin_manager.register(

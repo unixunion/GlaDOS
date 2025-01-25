@@ -6,13 +6,13 @@ from pathlib import Path
 
 from loguru import logger
 
-from plugins.event_system.event_system import EventSystem
-from plugins.plugin_system.plugin_manager import load_plugins, PluginManager
+from glados.system.event_system import EventSystem
+from glados.system.plugin import load_plugins, PluginSystem
 
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
 
-plugin_manager = PluginManager()
+plugin_manager = PluginSystem()
 load_plugins(f"{parent_dir}/plugins")
 
 from trash.llmclient import LLMClient

@@ -11,10 +11,10 @@ from openai import Stream
 from openai.types.chat import ChatCompletionChunk
 
 from glados.config import GladosConfig, MIN_SENTENCE_LENGTH
-from plugins.context_manager import ContextManager
-from plugins.plugin_system.plugin_manager import PluginManager
+from trash.context_manager import ContextManager
+from glados.system.plugin import PluginSystem
 
-plugin_manager = PluginManager()
+plugin_manager = PluginSystem()
 context_manager = ContextManager()
 
 class LLMClient:

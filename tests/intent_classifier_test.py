@@ -1,6 +1,6 @@
 import unittest
 
-from plugins.intent_classifier import IntentClassifier
+from glados.system.intent_classifier import IntentClassifier
 
 
 class TestIntentClassifier(unittest.TestCase):

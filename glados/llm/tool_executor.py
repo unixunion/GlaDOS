@@ -3,16 +3,16 @@ import json
 
 from loguru import logger
 
-from plugins.event_system.event_system import EventSystem, EventMessage
-from plugins.plugin_system.plugin_manager import PluginManager
+from glados.system.event_system import EventSystem, EventMessage
+from glados.system.plugin import PluginSystem
 
 
 class ToolExecutor:
-    def __init__(self, plugin_manager: PluginManager = None):
+    def __init__(self, plugin_manager: PluginSystem = None):
         self.plugin_manager = plugin_manager
         self.event_system = EventSystem()
 
-    def execute_tool(self, tool_call):
+    def execute_tool(self, tool_call) -> dict:
         function_name = tool_call.function.name
         arguments = tool_call.function.arguments
 
@@ -48,4 +48,4 @@ class ToolExecutor:
                 name=f"{function_name}",
                 content=f"There was a error invoking this tool, the error was: {e}"
             ))
-            return {"error": str(e)}
+            return {"error": str(e), "tool": f"{function_name}"}

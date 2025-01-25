@@ -10,14 +10,14 @@ from loguru import logger
 from rapidfuzz import fuzz
 from tqdm import tqdm
 
-from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParameterType
+from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
 
 # Load the spaCy language model
 nlp = spacy.load("en_core_web_sm")
 
-from plugins.plugin_system.plugin_manager import PluginManager
+from glados.system.plugin import PluginSystem
 
-plugin_manager = PluginManager()
+plugin_manager = PluginSystem()
 plugin_manager.register_system_prompt("When selecting a recipe, interpret the user's selection based on prior results "
                                       "and proceed without restarting the search.")
 
@@ -299,8 +299,7 @@ def select_recipe(query: str) -> dict:
             return {
                 "status": "success",
                 "message": f"Selected recipe: {best_match['title']},"
-                           f"Here are the step-by-step instructions. I will guide you through each step and wait for your "
-                           f"confirmation before proceeding.",
+                           f"Please provide instructions step by step, waiting for confirmation between each step, ingredient and direction",
                 "recipe": best_match,
             }
         else:

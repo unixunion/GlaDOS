@@ -1,12 +1,11 @@
 import threading
-from queue import Queue
 from typing import List
 
 import pvporcupine
 from loguru import logger
 from pvrecorder import PvRecorder
 
-from plugins.event_system.event_system import EventMessage, EventSystem
+from glados.system.event_system import EventMessage, EventSystem
 
 event_system = EventSystem()
 

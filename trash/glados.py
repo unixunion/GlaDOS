@@ -16,7 +16,7 @@ from glados.config import GladosConfig, DEFAULT_PERSONALITY_PREPROMPT, VAD_SIZE,
     SAMPLE_RATE
 from trash.llmclient import LLMClient
 from trash.util import cleanup_sentence
-from plugins.plugin_system.plugin_manager import PluginManager, load_plugins
+from glados.system.plugin import PluginSystem, load_plugins
 
 logger.remove(0)
 logger.add(sys.stderr, level="INFO")
@@ -58,7 +58,7 @@ class Glados:
         self.currently_playing = False
 
         # Plugin and LLM setup
-        self.plugin_manager = PluginManager()
+        self.plugin_manager = PluginSystem()
         load_plugins("../plugins")
         self.llm_client = LLMClient(url=completion_url, model=model, headers={
             "Authorization": f"Bearer {api_key or 'your_api_key_here'}",

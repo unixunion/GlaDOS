@@ -1,7 +1,5 @@
 from loguru import logger
 from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.metrics import classification_report, accuracy_score
-from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import Pipeline
 

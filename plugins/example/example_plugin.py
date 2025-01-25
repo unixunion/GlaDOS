@@ -3,17 +3,18 @@ import time
 
 from loguru import logger
 
-from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParameterType
-from plugins.event_system.event_system import EventSystem, EventMessage
-from plugins.plugin_system.plugin_manager import PluginManager
-from plugins.plugin_system.runnable_plugin import RunnablePlugin
+from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
+from glados.system.event_system import EventSystem, EventMessage
+from glados.system.plugin import PluginSystem
+from glados.system.runnable_plugin import RunnablePlugin
 
-plugin_manager = PluginManager()  # the plugin manager
+plugin_manager = PluginSystem()  # the plugin manager
 event_system = EventSystem()  # allows us to send stuff to the LLM whenever we want
 
 
 class MyRunnablePlugin(RunnablePlugin):
     def __init__(self):
+        return  # intentionally disabled for testing
         super().__init__()
         self._stop_event = threading.Event()
         self._worker_thread = None

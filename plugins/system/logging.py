@@ -2,12 +2,12 @@ from typing import List
 
 from loguru import logger
 
-from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParameterType
-from plugins.event_system.event_system import EventSystem, EventMessage, EventHook
-from plugins.plugin_system.plugin_manager import PluginManager
-from plugins.plugin_system.runnable_plugin import RunnablePlugin
+from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters
+from glados.system.event_system import EventSystem, EventMessage, EventHook
+from glados.system.plugin import PluginSystem
+from glados.system.runnable_plugin import RunnablePlugin
 
-plugin_manager = PluginManager()
+plugin_manager = PluginSystem()
 
 
 class LoggingPlugin(RunnablePlugin):

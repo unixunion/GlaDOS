@@ -19,3 +19,7 @@ tqdm~=4.67.1
 ollama~=0.4.6
 openai-whisper
 dateparser~=1.2.0
+flask~=3.1.0
+flask-socketio
+pillow~=10.2.0
+mistralai

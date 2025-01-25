@@ -7,12 +7,13 @@ import dateparser
 
 from loguru import logger
 
-from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParameterType
-from plugins.event_system.event_system import EventSystem, EventMessage
-from plugins.plugin_system.plugin_manager import PluginManager
-from plugins.plugin_system.runnable_plugin import RunnablePlugin
+from glados.context.activity import Activity
+from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
+from glados.system.event_system import EventSystem, EventMessage
+from glados.system.plugin import PluginSystem
+from glados.system.runnable_plugin import RunnablePlugin
 
-plugin_manager = PluginManager()
+plugin_manager = PluginSystem()
 
 
 @dataclasses.dataclass
@@ -59,7 +60,8 @@ class AlarmClock(RunnablePlugin):
                 "set the alarm for 8:30 am on Sunday",
                 "set an alarm for next Monday at noon"
             ],
-            process_output=True
+            process_output=True,
+            activity=[Activity.UTILITIES, Activity.GENERAL]
         )(self.set_fixed_time_alarm)
 
         plugin_manager.register(
@@ -76,7 +78,8 @@ class AlarmClock(RunnablePlugin):
                 )
             ),
             intents=["get all alarms", "list my alarms", "what alarms are set?"],
-            process_output=True
+            process_output=True,
+            activity=[Activity.UTILITIES, Activity.GENERAL]
         )(self.get_alarms)
 
     def start(self):

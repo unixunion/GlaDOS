@@ -5,14 +5,12 @@ import threading
 import time
 from pathlib import Path
 
-from kokoro_onnx import Kokoro
 from loguru import logger
 
 from glados.llm.cores.chat_client import ChatClient
 from glados.llm.cores.vision_client import VisionClient
 from glados.llm.speech_detection_cores.wakeword_detection_module import WakeWordDetectionModule
 from glados.llm.speech_detection_cores.whisper_detection_module import WhisperVoiceDetectionModule
-from glados.llm.voice_cores.alternative_speech_module import AlternativeSpeechModule
 
 # need to configure the logger before importing all the modules
 logger.remove()
@@ -21,10 +19,10 @@ logger.add(sys.stderr, level="INFO")
 from glados import tts, vad
 from glados.config import GladosConfig, VAD_MODEL
 from glados.llm.voice_cores.glados_speech_module import GladosSpeechModule
-from plugins.event_system.event_system import EventSystem
-from plugins.plugin_system.plugin_manager import PluginManager, load_plugins
+from glados.system.event_system import EventSystem
+from glados.system.plugin import PluginSystem, load_plugins
 
-plugin_manager = PluginManager()
+plugin_manager = PluginSystem()
 load_plugins("plugins")
 
 
@@ -53,7 +51,8 @@ class Glados2:
             tts=self.tts_synthesizer,
             tts_queue=self.client.tts_queue,
             interruptible=self.config.interruptible,
-            speaking_lock=self.speaking_lock
+            speaking_lock=self.speaking_lock,
+            config=self.config
         )
 
 

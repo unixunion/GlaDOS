@@ -3,10 +3,11 @@ from datetime import datetime
 
 from loguru import logger
 
-from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters
-from plugins.plugin_system.plugin_manager import PluginManager
+from glados.context.activity import Activity
+from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters
+from glados.system.plugin import PluginSystem
 
-plugin_manager = PluginManager()
+plugin_manager = PluginSystem()
 
 
 @plugin_manager.register(
@@ -22,7 +23,8 @@ plugin_manager = PluginManager()
         "What is the date",
         "time please",
     ],
-    process_output=True
+    process_output=True,
+    activity=[Activity.SYSTEM]
 )
 def get_current_time() -> int:
     """

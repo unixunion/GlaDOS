@@ -1,4 +1,3 @@
-import queue
 import threading
 
 from loguru import logger
@@ -6,7 +5,7 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletion
 
 from glados.config import GladosConfig
-from plugins.event_system.event_system import EventMessage, EventSystem, EventHook
+from glados.system.event_system import EventMessage, EventSystem, EventHook
 
 
 class VisionClient:
@@ -44,7 +43,7 @@ class VisionClient:
         else:
             logger.warning("Event missing file_name, skipping.")
 
-    def process_image_queue(self):
+    def process_image_queue(self, stop_after_one=False):
         """Continuously process items in the queue."""
         while True:
             file_name, event = None, None
@@ -58,9 +57,13 @@ class VisionClient:
             if file_name and event:
                 logger.info(f"Processing image request for file: {file_name}")
                 self.process_image_request(file_name, event.content)
+                if stop_after_one:  # Exit after processing one item
+                    break
             else:
                 # If the queue is empty, wait for new items
                 threading.Event().wait(0.1)
+                if stop_after_one:  # Exit if no items and stop_after_one is True
+                    break
 
     def process_image_request(self, file_name: str, content: dict):
         """Process a single image request."""

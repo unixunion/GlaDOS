@@ -9,7 +9,7 @@ import sounddevice as sd
 from scipy.signal import resample
 
 from glados.config import SAMPLE_RATE
-from plugins.event_system.event_system import EventSystem, EventMessage
+from glados.system.event_system import EventSystem, EventMessage
 
 
 class AlternativeSpeechModule:

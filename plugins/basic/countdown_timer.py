@@ -1,14 +1,15 @@
 import dataclasses
 from datetime import datetime, timedelta
-from typing import Dict, Optional, Any, List
+from typing import Optional, List
 from loguru import logger
 
-from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParameterType
-from plugins.event_system.event_system import EventSystem, EventMessage, EventHook
-from plugins.plugin_system.plugin_manager import PluginManager
-from plugins.plugin_system.runnable_plugin import RunnablePlugin
+from glados.context.activity import Activity
+from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
+from glados.system.event_system import EventSystem, EventMessage, EventHook
+from glados.system.plugin import PluginSystem
+from glados.system.runnable_plugin import RunnablePlugin
 
-plugin_manager = PluginManager()
+plugin_manager = PluginSystem()
 
 
 def format_duration(total_seconds: int) -> str:
@@ -87,9 +88,8 @@ class CountdownTimer(RunnablePlugin):
                 "Timer for 60 seconds"
             ],
             process_output=True,
+            activity=[Activity.UTILITIES]
         )(self.set_timer)
-
-
 
         plugin_manager.register(
             llm_function_request=FunctionRequest(
@@ -105,6 +105,7 @@ class CountdownTimer(RunnablePlugin):
                 "how much time left on my egg timer"
             ],
             process_output=True,
+            activity=[Activity.UTILITIES]
         )(self.list_timers)
 
     def add_timer(self, alarm_time: datetime, description: str):
@@ -214,166 +215,3 @@ class CountdownTimer(RunnablePlugin):
         logger.info("Stopping CountdownTimer.")
         # self.event_system.unregister_hook(self._check_timers)
 
-# class CountdownTimer(RunnablePlugin):
-#
-#     def __init__(self):
-#         super().__init__()
-#         self.timers = []
-#         logger.info("CountdownTimer system initializing.")
-#
-#         self.event_system = EventSystem()
-#
-#         plugin_manager.register(
-#             llm_function_request=FunctionRequest(
-#                 type="function",
-#                 function=FunctionMetadata(
-#                     description="Set an a timer for a duration of either hours, minutes or seconds or a combination "
-#                                 "of these. Also takes a description for the timer",
-#                     parameters=Parameters(
-#                         type="object",
-#                         properties={
-#                             "hours": ParameterType(
-#                                 type="integer",
-#                                 description="Number of hours for the timer."
-#                             ),
-#                             "minutes": ParameterType(
-#                                 type="integer",
-#                                 description="Number of minutes for the timer.",
-#                             ),
-#                             "seconds": ParameterType(
-#                                 type="integer",
-#                                 description="Number of seconds for the timer."
-#                             ),
-#                             "description": ParameterType(
-#                                 type="string",
-#                                 description="Optional description for the timer"
-#                             ),
-#                         },
-#                         required=[],
-#                         additionalProperties=False
-#                     )
-#                 )),
-#             process_output=False
-#         )(self.set_timer)
-#
-#         plugin_manager.register(
-#             llm_function_request=FunctionRequest(
-#                 type="function",
-#                 function=FunctionMetadata(
-#                     description="List all active timers with their descriptions and expiration times.",
-#                     parameters=Parameters(
-#                         type="object",
-#                         properties={},
-#                         required=[],
-#                         additionalProperties=False
-#                     )
-#                 )),
-#             process_output=False
-#         )(self.list_timers)
-#
-#     def set_timer(
-#             self,
-#             hours: Optional[int] = 0,
-#             minutes: Optional[int] = 0,
-#             seconds: Optional[int] = 0,
-#             description: Optional[str] = None
-#     ):
-#         """
-#         Set a timer for a specific duration.
-#
-#         Args:
-#             hours (int): Number of hours for the timer.
-#             minutes (int): Number of minutes for the timer.
-#             seconds (int): Number of seconds for the timer.
-#             description (str): Optional description for the timer.
-#
-#         Returns:
-#             Dict: A status message about the timer.
-#         """
-#         try:
-#             # Validate and calculate total duration in seconds
-#             total_seconds = timedelta(
-#                 hours=int(hours) or 0,
-#                 minutes=int(minutes) or 0,
-#                 seconds=int(seconds) or 0
-#             ).total_seconds()
-#
-#             if total_seconds <= 0:
-#                 return {"status": "error", "message": "Duration must be greater than 0 seconds."}
-#
-#             # Calculate the alarm time
-#             alarm_time = datetime.now() + timedelta(seconds=total_seconds)
-#
-#             # Generate a default description if none is provided
-#             if not description:
-#                 description = f"the {_format_duration(int(total_seconds))} timer"
-#
-#             # Store the timer
-#             self.timers.append({
-#                 "time": alarm_time,
-#                 "description": description,
-#                 "duration": _format_duration(int(total_seconds))
-#             })
-#
-#             logger.info(f"Timer set for {description}, expires in {_format_duration(int(total_seconds))}.")
-#             return {
-#                 "status": "done",
-#                 "message": f"Timer '{description}' set for {_format_duration(int(total_seconds))}.",
-#                 "expires_in": _format_duration(int(total_seconds))
-#             }
-#
-#         except Exception as e:
-#             logger.error(f"Error setting timer: {e}")
-#             return {"status": "error", "message": str(e)}
-#
-#     def list_timers(self):
-#         """
-#         List all active timers with their descriptions and expiration durations.
-#         """
-#         if not self.timers:
-#             return {"status": "empty", "message": "No active timers."}
-#
-#         now = datetime.now()
-#         timers_info = []
-#         for timer in self.timers:
-#             remaining_time = (timer["time"] - now).total_seconds()
-#             timers_info.append({
-#                 "description": timer["description"],
-#                 "expires_in": _format_duration(int(remaining_time)),
-#             })
-#
-#         return {
-#             "status": "success",
-#             "timers": timers_info
-#         }
-#
-#     def _check_timers(self, *args, **kwargs):
-#         """
-#         Hook to check and handle expired timers.
-#         """
-#         logger.info("Hook called, checking timers")
-#         now = datetime.now()
-#         expired_timers = [timer for timer in self.timers if timer["time"] <= now]
-#         self.timers = [timer for timer in self.timers if timer["time"] > now]
-#
-#         for timer in expired_timers:
-#             logger.info(f"Timer expired: {timer['description']}, firing event")
-#             self.event_system.add_event(EventMessage(
-#                 role="tool",
-#                 name="set_timer",
-#                 content={
-#                     "message": f"A timer has expired: {timer['description']}",
-#                     "trigger_time": timer["time"].isoformat()
-#                 },
-#                 process_output=False
-#             ),
-#                 originating_hook=self._check_timers,
-#             )
-#
-#     def start(self):
-#         logger.info("Registering event system hooks")
-#         self.event_system.register_hook(self._check_timers)
-#
-#     def stop(self):
-#         logger.info("Unregistering event system hooks")
-#         self.event_system.unregister_hook(self._check_timers)

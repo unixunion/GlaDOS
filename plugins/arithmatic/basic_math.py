@@ -1,9 +1,10 @@
 from loguru import logger
 
-from glados.model_functions import FunctionRequest, FunctionMetadata, Parameters, ParameterType
-from plugins.plugin_system.plugin_manager import PluginManager
+from glados.context.activity import Activity
+from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
+from glados.system.plugin import PluginSystem
 
-plugin_manager = PluginManager()
+plugin_manager = PluginSystem()
 
 
 @plugin_manager.register(
@@ -22,7 +23,8 @@ plugin_manager = PluginManager()
         "What is nineteen subtract five",
         "What is fifty two minus seventeen",
     ],
-    process_output=False
+    process_output=False,
+    activity=[Activity.UTILITIES, Activity.COOKING]
 )
 def subtract_two_numbers(a: int, b: int) -> int:
     """
@@ -53,7 +55,8 @@ add_two_numbers_definition = (
             "What is the sum of seven and one hundred and sixty two",
             "Please add 67 and 141",
         ],
-    process_output=False
+    process_output=False,
+    activity=[Activity.UTILITIES, Activity.COOKING]
 )
 def add_two_numbers(a: int, b: int) -> int:
     """

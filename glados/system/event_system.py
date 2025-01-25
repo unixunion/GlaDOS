@@ -94,7 +94,7 @@ class EventSystem:
     def publish(self, event: EventMessage):
         """Publish an event to all subscribers."""
         if self._make_topic(event) != "system.tick":
-            logger.info(f"Enqueue event: {str(event)[0:64]}")
+            logger.info(f"Enqueue event: {str(event)[0:128]}")
         self._event_queue.put(event)
 
     @staticmethod
@@ -120,8 +120,8 @@ class EventSystem:
                         if fnmatch.fnmatch(topic, subscription):
                             logger.debug(f"Topic '{topic}' matches subscription '{subscription}'")
                             for hook in hooks:
-                                if event.name is not 'tick':
-                                    logger.info(f"Sending event: {str(event)[0:64]} to {hook.name}")
+                                if event.name != 'tick':
+                                    logger.info(f"Sending event: {str(event)[0:128]}... to {hook.name}")
                                 hook.trigger(event)
                         else:
                             logger.debug(f"Topic '{topic}' does not match subscription '{subscription}'")

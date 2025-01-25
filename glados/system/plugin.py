@@ -5,10 +5,11 @@ from typing import Callable, List
 
 from loguru import logger
 
-from glados.model_functions import FunctionRequest
-from plugins.event_system.event_system import EventSystem, EventMessage
-from plugins.intent_classifier import IntentClassifier
-from plugins.plugin_system.runnable_plugin import RunnablePlugin
+from glados.context.activity import Activity
+from glados.system.function_calling import FunctionRequest
+from glados.system.event_system import EventSystem, EventMessage
+from glados.system.intent_classifier import IntentClassifier
+from glados.system.runnable_plugin import RunnablePlugin
 
 LLM_FUNCTION_REQUEST = "llm_function_request"
 
@@ -48,7 +49,7 @@ def load_plugins(package_path: str):
                     for attr_name in dir(module):
                         attr = getattr(module, attr_name)
                         if isinstance(attr, type) and issubclass(attr, RunnablePlugin) and attr is not RunnablePlugin:
-                            PluginManager().load_plugin_instance(attr)
+                            PluginSystem().load_plugin_instance(attr)
                             logger.info(f"Loaded plugin instance: {attr_name}")
 
                 except Exception as e:
@@ -61,13 +62,13 @@ def load_plugins(package_path: str):
                     ))
 
 
-class PluginManager:
+class PluginSystem:
     _instance = None  # Singleton instance
-    _system_prompts = []
+    _system_prompts = []  # future thing, so plugins can extend the system prompts.
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
-            cls._instance = super(PluginManager, cls).__new__(cls)
+            cls._instance = super(PluginSystem, cls).__new__(cls)
             cls._instance._initialized = False  # Prevent multiple initializations
         return cls._instance
 
@@ -83,18 +84,20 @@ class PluginManager:
                  llm_function_request: FunctionRequest = None,
                  process_output: bool = True,
                  is_callable: Callable = None,
-                 intents: List = None
+                 intents: List = None,
+                 activity: List[Activity] = None
                  ):
         """
         Decorator to register a plugin with the given name, description, and parameters.
 
         Args:
-            intents: The intents for the plugin
             name (str): The name of the plugin (optional, derived from the function if not provided).
             description (str): A short description of the plugin (optional).
             llm_function_request (FunctionRequest, optional): A function/tool definition.
             process_output (bool): Whether to process the plugin output or pass it directly.
-            is_callable: (bool): A function that can determine if this function is callable at a given moment
+            intents: The intents for the plugin
+            is_callable (bool): A function that can determine if this function is callable at a given moment
+            activity (Activity): The context this tool fits into
         """
 
         def decorator(func: Callable):
@@ -122,7 +125,8 @@ class PluginManager:
                     "description": plugin_description,  # The description of the funtion
                     LLM_FUNCTION_REQUEST: llm_function_request.to_dict() if llm_function_request else {},
                     "process_output": process_output,
-                    "callable": is_callable
+                    "callable": is_callable,
+                    "activity": activity or [Activity.GENERAL]
                 }
                 logger.success(f"Registered plugin: {plugin_name}")
                 logger.debug(f"plugin: {self.plugins[plugin_name]}")
@@ -130,7 +134,7 @@ class PluginManager:
                     "tool",
                     "plugin_system",
                     f"The tool: {plugin_name} has registered with the assistant "
-                    f"architecture, the tool description: {plugin_description}",
+                    f"architecture, the tool's description: {plugin_description}",
                     process_output=False
                 ))
 
@@ -147,9 +151,10 @@ class PluginManager:
                                f"improve tool selection.")
 
             if len(self.plugins) > 20:
-                logger.warning(
-                    "More than 20 plugins are registered. This is not recommended. See https://platform.openai.com/docs/guides/function-calling "
-                    "However mitigations, like the intent system might make this a non-issue."
+                logger.error(
+                    f"{len(self.plugins)} plugins are registered, this is more than 20 which is not recommended. "
+                    f"See https://platform.openai.com/docs/guides/function-calling, However mitigations, like the activity "
+                    f"system will make this a non-issue in future."
                 )
             return func
 
@@ -295,4 +300,3 @@ class PluginManager:
         except Exception as e:
             logger.exception(f"Failed to load plugin instance for {cls.__name__}: {e}")
             return None
-
