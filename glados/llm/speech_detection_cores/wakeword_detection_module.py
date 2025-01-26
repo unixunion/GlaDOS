@@ -1,18 +1,21 @@
+import os
 import threading
-from typing import List
 
 import pvporcupine
 from loguru import logger
 from pvrecorder import PvRecorder
 
+from glados.config import GladosConfig, PorcupineConfig
 from glados.system.event_system import EventMessage, EventSystem
 
 event_system = EventSystem()
 
 
 class WakeWordDetectionModule:
-    def __init__(self, keyword_file_paths: List, sensitivity=0.5, access_key=None, audio_device_index=-1,
-                 interrupt_event=None):
+    def __init__(self,
+                 audio_device_index=-1,
+                 interrupt_event=None,
+                 config: GladosConfig = None):
         """
         Initializes the Wake Word Detection Module using Porcupine.
         Args:
@@ -22,12 +25,32 @@ class WakeWordDetectionModule:
             audio_device_index (int): Index of the input audio device (-1 for default).
             interrupt_event (threading.Event): Shared event to signal interruptions.
         """
-        self.porcupine = pvporcupine.create(
-            access_key=access_key,
-            keyword_paths=keyword_file_paths,
-            keywords=["glad os", "gladys"],
-            sensitivities=[sensitivity, sensitivity],
-        )
+
+        porcupine_config: PorcupineConfig = config.porcupine
+
+        # Transform the wake_words into Porcupine client arguments
+        if porcupine_config and porcupine_config['wake_words']:
+            keyword_file_paths = [word['file'] for word in porcupine_config['wake_words']]
+            keywords = [word['name'] for word in porcupine_config['wake_words']]
+            sensitivities = [word['sensitivity'] for word in porcupine_config['wake_words']]
+
+            access_key = os.environ.get('PORCUPINE_ACCESS_KEY', None)
+            if 'access_key' in porcupine_config and not access_key:
+                access_key = porcupine_config['access_key']
+            if not access_key:
+                raise ValueError(
+                    "Porcupine access key must be set either in the configuration or as an environment variable.")
+
+            # Initialize the Porcupine client
+            self.porcupine = pvporcupine.create(
+                access_key=access_key,
+                keyword_paths=keyword_file_paths,
+                keywords=keywords,
+                sensitivities=sensitivities,
+            )
+        else:
+            raise ValueError("No wake words configured for Porcupine.")
+
         self.sample_rate = self.porcupine.sample_rate
         self.frame_length = self.porcupine.frame_length
         self.audio_device_index = audio_device_index

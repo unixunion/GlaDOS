@@ -86,11 +86,8 @@ class Glados2:
         self.wakeword_interrupt = threading.Event()
 
         self.wakeword_module = WakeWordDetectionModule(
-            keyword_file_paths=["glados/llm/speech_detection_cores/wakeword/Glad-os_en_windows_v3_0_0.ppn",
-                                "glados/llm/speech_detection_cores/wakeword/gladys_en_windows_v3_0_0.ppn"],
-            sensitivity=self.config.wake_word_sensitivity,
-            access_key=os.environ['PORCUPINE_ACCESS_KEY'],
             interrupt_event=self.wakeword_interrupt,
+            config=self.config,
         )
 
         self.voice_detection = WhisperVoiceDetectionModule(

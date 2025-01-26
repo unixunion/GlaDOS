@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass, field
 from typing import Optional, List, Sequence
 
@@ -24,6 +25,19 @@ DEFAULT_PERSONALITY_PREPROMPT = (
     },
 )
 
+class WakeWordConfig:
+    name: str
+    sensitivity: float
+    file: str
+
+@dataclass
+class PorcupineConfig:
+    access_key: str = field(
+        default_factory=lambda: os.environ.get("PORCUPINE_ACCESS_KEY") or
+                                ValueError("Environment variable PORCUPINE_ACCESS_KEY is not set.")
+    )
+    wake_words: List[WakeWordConfig] = field(default_factory=list)
+
 @dataclass
 class PluginConfig:
     name: str
@@ -48,6 +62,7 @@ class GladosConfig:
     speaker_id: Optional[int] = None
     plugin_intent_threshold: float = 0.5
     plugins: List[PluginConfig] = field(default_factory=list)
+    porcupine: PorcupineConfig = None
 
     @classmethod
     def from_yaml(cls, path: str, key_to_config: Sequence[str] | None = ("Glados",)):
