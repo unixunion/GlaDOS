@@ -10,7 +10,7 @@ VAD_MODEL = "silero_vad.onnx"
 VOICE_MODEL = "glados.onnx"
 PAUSE_TIME = 0.05  # Time to wait between processing loops
 SAMPLE_RATE = 16000  # Sample rate for input stream
-VAD_SIZE = 50        # Milliseconds of sample for Voice Activity Detection (VAD)
+VAD_SIZE = 50  # Milliseconds of sample for Voice Activity Detection (VAD)
 VAD_THRESHOLD = 0.9  # Threshold for VAD detection
 BUFFER_SIZE = 400  # Milliseconds of buffer before VAD detection
 PAUSE_LIMIT = 500  # Milliseconds of pause allowed before processing
@@ -25,10 +25,12 @@ DEFAULT_PERSONALITY_PREPROMPT = (
     },
 )
 
+
 class WakeWordConfig:
     name: str
     sensitivity: float
     file: str
+
 
 @dataclass
 class PorcupineConfig:
@@ -38,10 +40,12 @@ class PorcupineConfig:
     )
     wake_words: List[WakeWordConfig] = field(default_factory=list)
 
+
 @dataclass
 class PluginConfig:
     name: str
     config: dict
+
 
 @dataclass
 class GladosConfig:

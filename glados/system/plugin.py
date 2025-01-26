@@ -6,6 +6,7 @@ from typing import Callable, List
 from loguru import logger
 
 from glados.context.activity import Activity
+from glados.llm.client_type import ClientType
 from glados.system.function_calling import FunctionRequest
 from glados.system.event_system import EventSystem, EventMessage
 from glados.system.intent_classifier import IntentClassifier
@@ -174,11 +175,14 @@ class PluginSystem:
                 logger.warning(f"Skipping plugin: {k} that is not configured for LLM")
         return available_functions
 
-    def get_available_tools(self):
+    def get_available_tools(self, architecture=ClientType.OPENAI):
         """Returns all available and executable tools for passing into the LLM when calling it"""
         available_functions = []
         for k in self.plugins:
-            available_functions.append(self.plugins[k][LLM_FUNCTION_REQUEST])
+            if self.plugins[k][LLM_FUNCTION_REQUEST] != {}:
+                available_functions.append(self.plugins[k][LLM_FUNCTION_REQUEST])
+            else:
+                logger.warning(f"function: {k} has no Function definition for {architecture}")
         return available_functions
 
     def should_process_plugin_output(self, name):

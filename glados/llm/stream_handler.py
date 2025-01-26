@@ -1,6 +1,9 @@
+import importlib
+from typing import Optional, Union, Iterator
+
+from langchain_core.messages import BaseMessage, BaseMessageChunk
+from langchain_ollama import ChatOllama
 from loguru import logger
-from mistralai import Mistral, CompletionEvent
-from mistralai.utils.eventstreaming import EventStream
 from openai import OpenAI, NOT_GIVEN, Stream
 from openai.types.chat import ChatCompletionChunk
 
@@ -8,6 +11,25 @@ from glados.config import GladosConfig
 from glados.llm.client_type import ClientType
 from glados.llm.message_manager import MessageManager
 from glados.system.plugin import PluginSystem
+
+from mistralai import Mistral, CompletionEvent
+from mistralai.utils.eventstreaming import EventStream
+
+# Mistral = None
+# EventStream = None
+# CompletionEvent = None
+# try:
+#     Mistral = importlib.import_module("mistral").Mistral
+#     EventStream = importlib.import_module("mistral").EventStream
+#     CompletionEvent = importlib.import_module("mistral").CompletionEvent
+# except ImportError:
+#     print("Mistral module not available.")
+#
+# ChatOllama = None
+# try:
+#     ChatOllama = importlib.import_module("langchain_ollama").ChatOllama
+# except ImportError:
+#     print("Mistral module not available.")
 
 
 class StreamHandler:
@@ -17,7 +39,7 @@ class StreamHandler:
         self.plugin_manager: PluginSystem = PluginSystem()
         self.confidence_threshold = config.plugin_intent_threshold
         self.client_type = config.client_type
-        self.client: Mistral | OpenAI = client
+        self.client: Optional[Union[OpenAI, ChatOllama, Mistral]] = client
 
     def stream_response(self, tools=None, model: str = None, query: str = None, confidence_threshold=0.5) -> EventStream[CompletionEvent] | Stream[ChatCompletionChunk]:
         """
@@ -58,7 +80,7 @@ class StreamHandler:
                     temperature=0.0,
                 )
             elif self.client_type.upper() == ClientType.MISTRAL.name:
-                logger.info("Calling mistral client")
+                logger.error("Calling mistral client, this is not implemented!")
                 response: EventStream[CompletionEvent] = self.client.chat.stream(
                     model=model,
                     messages=self.message_manager.get_messages(),
@@ -66,6 +88,10 @@ class StreamHandler:
                     tool_choice=tool_choice,
                     temperature=0.0,
                 )
+            elif self.client_type.upper() == ClientType.LANGCHAIN.name:
+                logger.info("Calling langchain client")
+                response: Iterator[BaseMessageChunk] = self.client.stream(self.message_manager.get_messages())
+                logger.info(f"Response: {response}")
             else:
                 raise ValueError(f"Unsupported client type: {self.client_type}")
             return response

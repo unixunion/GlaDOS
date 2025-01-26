@@ -2,7 +2,6 @@ import queue
 import threading
 
 from loguru import logger
-from mistralai import Mistral
 from openai import OpenAI
 
 from glados.config import GladosConfig
@@ -22,9 +21,9 @@ event_system = EventSystem()
 
 class ChatClient:
     def __init__(self, config: GladosConfig):
-        self.client = OpenAI(base_url=config.completion_url, api_key=config.api_key)
+        self.client = None
         self.model = config.model
-        self.plugin_manager = PluginSystem()
+        self.plugin_system = PluginSystem()
         self.config: GladosConfig = config
         self.llm_queue: queue.Queue[str] = queue.Queue()
         self.tts_queue: queue.Queue[str] = queue.Queue()
@@ -33,17 +32,24 @@ class ChatClient:
         for line in config.personality_preprompt:
             logger.info(f"role: {list(line.keys())[0]}, content: {list(line.values())[0]}")
             self.message_manager.add_message(list(line.keys())[0], list(line.values())[0])
-
             # Initialize the client based on client type
         if config.client_type.upper() == ClientType.OPENAI.name:
             self.client = OpenAI(base_url=config.completion_url, api_key=config.api_key)
         elif config.client_type.upper() == ClientType.MISTRAL.name:
+            # only import mistral if we need it
+            from mistralai import Mistral
             self.client = Mistral(server_url=config.completion_url, api_key=config.api_key)
+        elif config.client_type.upper() == ClientType.LANGCHAIN.name:
+            from langchain_ollama import ChatOllama
+            self.client = ChatOllama(
+                model=config.model,
+                temperature=0,
+            ).bind_tools(self.plugin_system.get_available_tools(architecture=ClientType.LANGCHAIN))
+            logger.success(f"Client created: {self.client}")
         else:
             raise ValueError(f"Unsupported client type: {config.client_type}")
-
         self.stream_handler = StreamHandler(self.client, self.model, self.message_manager, config)
-        self.tool_executor = ToolExecutor(plugin_manager=self.plugin_manager)
+        self.tool_executor = ToolExecutor(plugin_manager=self.plugin_system)
 
         # Pass the message manager as a callback to the response processor
         self.response_processor = ResponseProcessor(
@@ -53,7 +59,6 @@ class ChatClient:
 
         self.event_handler = EventHandler(self.message_manager)
         self._setup_event_subscriptions()
-
         self.shutdown_event = threading.Event()
         self._llm_thread = threading.Thread(target=self._process_llm_queue, daemon=True)
         self._llm_thread.start()
@@ -178,6 +183,7 @@ class ChatClient:
         try:
             response = self.stream_handler.stream_response(tools, model=model_to_use, query=content)
             for chunk in response:
+                logger.info(f"chunk: {chunk}")
                 if chunk.choices[0].delta.tool_calls:
                     for tool_call in chunk.choices[0].delta.tool_calls:
                         tool_result = self.tool_executor.execute_tool(tool_call)
@@ -205,7 +211,7 @@ class ChatClient:
                 logger.warning("Assistant response is empty before adding to MessageManager!, this can probably be "
                                "ignored once confirmed that there is no loss of data")
         except Exception as e:
-            logger.error(f"Chat error: {e}")
+            logger.exception(f"Chat error: {e}")
 
     def is_tts_queue_empty(self):
         """

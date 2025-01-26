@@ -1,3 +1,4 @@
+from langchain_core.tools import tool
 from loguru import logger
 
 from glados.context.activity import Activity
@@ -39,28 +40,32 @@ add_two_numbers_definition = (
 )
 
 
+@tool
 @plugin_manager.register(
     llm_function_request=FunctionRequest(type="function",
-                    function=FunctionMetadata(
-                        description="Add two numbers together",
-                        parameters=Parameters(type="object", required=['a', 'b'], properties={
-                            'a': ParameterType(type="integer", description="the first number"),
-                            'b': ParameterType(type="integer", description="the second number")
-                        })
-                    )
-                    ),
+                                         function=FunctionMetadata(
+                                             description="Add two numbers together",
+                                             parameters=Parameters(type="object", required=['a', 'b'], properties={
+                                                 'a': ParameterType(type="integer", description="the first number"),
+                                                 'b': ParameterType(type="integer", description="the second number")
+                                             })
+                                         )
+                                         ),
     intents=[
-            "What is 5 plus 7",
-            "Add nine and four together",
-            "What is the sum of seven and one hundred and sixty two",
-            "Please add 67 and 141",
-        ],
+        "What is 5 plus 7",
+        "Add nine and four together",
+        "What is the sum of seven and one hundred and sixty two",
+        "Please add 67 and 141",
+    ],
     process_output=False,
     activity=[Activity.UTILITIES, Activity.COOKING]
 )
 def add_two_numbers(a: int, b: int) -> int:
-    """
-    Add two numbers
+    """Adds two numbers together
+
+    Args:
+        a (int): the first number
+        b (int): the second number
     """
     logger.info(f"Adding two numbers together: {a} and {b}")
     return int(a) + int(b)
