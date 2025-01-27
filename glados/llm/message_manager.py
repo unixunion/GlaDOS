@@ -22,7 +22,6 @@ class MessageManager:
     def add_message(self, role, content, name=None, images=None, activity: Activity = Activity.GENERAL):
         with self._lock:
             message = {"role": role, "content": content}
-            # message = {"role": role, "content": str(content).strip()}
             if images:
                 message["images"] = images
             if name:

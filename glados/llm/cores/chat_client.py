@@ -1,8 +1,11 @@
+import json
 import queue
 import threading
 
 from loguru import logger
 from openai import OpenAI
+from mistralai import Mistral
+from langchain_ollama import ChatOllama
 
 from glados.config import GladosConfig
 from glados.context.activity import Activity
@@ -28,40 +31,50 @@ class ChatClient:
         self.llm_queue: queue.Queue[str] = queue.Queue()
         self.tts_queue: queue.Queue[str] = queue.Queue()
         self.message_manager = MessageManager()
+        self.client_type = None
 
         for line in config.personality_preprompt:
             logger.info(f"role: {list(line.keys())[0]}, content: {list(line.values())[0]}")
             self.message_manager.add_message(list(line.keys())[0], list(line.values())[0])
-            # Initialize the client based on client type
+
         if config.client_type.upper() == ClientType.OPENAI.name:
             self.client = OpenAI(base_url=config.completion_url, api_key=config.api_key)
+            self.client_type = ClientType.OPENAI
         elif config.client_type.upper() == ClientType.MISTRAL.name:
-            # only import mistral if we need it
-            from mistralai import Mistral
             self.client = Mistral(server_url=config.completion_url, api_key=config.api_key)
+            self.client_type = ClientType.MISTRAL
         elif config.client_type.upper() == ClientType.LANGCHAIN.name:
-            from langchain_ollama import ChatOllama
             self.client = ChatOllama(
                 model=config.model,
                 temperature=0,
+                base_url=config.completion_url,
+                seed=42
             ).bind_tools(self.plugin_system.get_available_tools(architecture=ClientType.LANGCHAIN))
-            logger.success(f"Client created: {self.client}")
+            self.client_type = ClientType.LANGCHAIN
         else:
             raise ValueError(f"Unsupported client type: {config.client_type}")
+        logger.success(f"{config.client_type.upper()} client created: {self.client}")
+
         self.stream_handler = StreamHandler(self.client, self.model, self.message_manager, config)
+        logger.success(f"StreamHandler created: {self.stream_handler}")
         self.tool_executor = ToolExecutor(plugin_manager=self.plugin_system)
+        logger.success(f"ToolExecutor created: {self.tool_executor}")
 
         # Pass the message manager as a callback to the response processor
         self.response_processor = ResponseProcessor(
             tts_queue=self.tts_queue,
-            message_callback=self._store_message_in_history
+            message_callback=self._store_message_in_history,
+            client_type=self.client_type
         )
+        logger.success(f"ResponseProcessor created: {self.response_processor}")
 
         self.event_handler = EventHandler(self.message_manager)
+        logger.success(f"EventHandler created: {self.event_handler}")
         self._setup_event_subscriptions()
         self.shutdown_event = threading.Event()
         self._llm_thread = threading.Thread(target=self._process_llm_queue, daemon=True)
         self._llm_thread.start()
+        logger.success("ChatClient initialized successfully! Ready to process messages.")
 
     def start(self):
         """
@@ -184,20 +197,54 @@ class ChatClient:
             response = self.stream_handler.stream_response(tools, model=model_to_use, query=content)
             for chunk in response:
                 logger.info(f"chunk: {chunk}")
-                if chunk.choices[0].delta.tool_calls:
-                    for tool_call in chunk.choices[0].delta.tool_calls:
-                        tool_result = self.tool_executor.execute_tool(tool_call)
-                        process_tool_result = plugin_manager.should_process_plugin_output(tool_call.function.name)
-                        logger.info(f"tool process_output: {process_tool_result}")
-                        self.message_manager.add_message_to_current_context("tool", str(tool_result), name=tool_call.function.name)
-                        if process_tool_result:
-                            self.chat(None, tools=None)
-                        else:
-                            logger.info("Not appending tool output to the messages, but sending it direct to the TTS, "
-                                        "the model will know about it if queried though, since its added to the messages")
-                            self.llm_queue.put(str(tool_result))
-                else:
-                    self.response_processor.process_chunk(chunk)
+                if self.config.client_type.upper() == ClientType.OPENAI.name:
+                    if chunk.choices[0].delta.tool_calls:
+                        for tool_call in chunk.choices[0].delta.tool_calls:
+                            tool_result = self.tool_executor.execute_tool(tool_call)
+                            process_tool_result = plugin_manager.should_process_plugin_output(tool_call.function.name)
+                            logger.info(f"tool process_output: {process_tool_result}")
+                            self.message_manager.add_message_to_current_context("tool", str(tool_result), name=tool_call.function.name)
+                            if process_tool_result:
+                                self.chat(None, tools=None)
+                            else:
+                                logger.info("Not appending tool output to the messages, but sending it direct to the TTS, "
+                                            "the model will know about it if queried though, since its added to the messages")
+                                self.llm_queue.put(str(tool_result))
+                    else:
+                        self.response_processor.process_chunk(chunk)
+                elif self.config.client_type.upper() == ClientType.LANGCHAIN.name:
+                    if chunk.tool_calls:
+                        logger.info(f"tool calls: {chunk.tool_calls}")
+                        for tool_call in chunk.tool_calls:
+                            # Adapt LangChain tool call to your format
+                            adapted_tool_call = {
+                                "function": {
+                                    "name": tool_call["name"],  # Extract name from LangChain tool call
+                                    "arguments": json.dumps(tool_call.get("args", {}))  # Convert args to JSON string
+                                }
+                            }
+
+                            # Execute the tool
+                            tool_result = self.tool_executor.execute_tool(adapted_tool_call)
+
+                            # Add the tool result to the message context
+                            self.message_manager.add_message_to_current_context(
+                                "tool", str(tool_result), name=tool_call["name"]
+                            )
+
+                            # Check if tool result needs further processing
+                            process_tool_result = plugin_manager.should_process_plugin_output(tool_call["name"])
+                            logger.info(f"Should process tool output: {process_tool_result}")
+
+                            if process_tool_result:
+                                self.chat(None, tools=None)  # Recursive call to continue conversation
+                            else:
+                                logger.info("Not appending tool output to messages. Sending it directly to TTS.")
+                                self.llm_queue.put(str(tool_result))
+
+                    else:
+                        logger.info("no tool calls")
+                        self.response_processor.process_chunk(chunk)
 
             # Finalize any remaining sentence
             self.response_processor.finalize_sentence()

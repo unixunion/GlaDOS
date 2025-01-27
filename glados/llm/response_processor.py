@@ -1,11 +1,15 @@
 import queue
 import re
+
+from langchain_core.messages import AIMessageChunk, BaseMessageChunk
 from loguru import logger
 from openai.types.chat import ChatCompletionChunk
 
+from glados.llm.client_type import ClientType
+
 
 class ResponseProcessor:
-    def __init__(self, tts_queue: queue.Queue = None, message_callback=None):
+    def __init__(self, tts_queue: queue.Queue = None, message_callback=None, client_type: ClientType = ClientType.OPENAI):
         """
         Initialize the ResponseProcessor.
 
@@ -16,16 +20,25 @@ class ResponseProcessor:
         self.tts_queue = tts_queue
         self.current_sentence = ""
         self.message_callback = message_callback  # Callback for finalized sentences
+        self.client_type = client_type
 
-    def process_chunk(self, chunk: ChatCompletionChunk):
+    def process_chunk(self, chunk: ChatCompletionChunk | AIMessageChunk):
         """
         Append content from the chunk to the current sentence. Finalize the sentence if it ends with punctuation.
         """
-        if not chunk.choices[0].delta.content:
-            return
 
-        self.current_sentence += chunk.choices[0].delta.content
-        logger.debug(f"Appended chunk: {chunk.choices[0].delta.content}")
+        if self.client_type is ClientType.OPENAI:
+            if not chunk.choices[0].delta.content:
+                return
+            self.current_sentence += chunk.choices[0].delta.content
+            logger.debug(f"Appended chunk: {chunk.choices[0].delta.content}")
+
+        if self.client_type is ClientType.LANGCHAIN:
+            if not chunk.content:
+                return
+            self.current_sentence += chunk.content
+            logger.debug(f"Appended chunk: {chunk.content}")
+
         logger.debug(f"Current sentence: {self.current_sentence}")
 
         # Check if the sentence ends with a punctuation mark

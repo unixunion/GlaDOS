@@ -36,6 +36,7 @@ class Glados2:
 
         # Client for LLM interactions
         self.client = ChatClient(self.config)
+        self.client.chat("Hello Glados, how are you today?")
         self.vision_client = VisionClient(self.config)
 
         # a lock used to mask when the voice module is talking, so the assistant doesnt hear
