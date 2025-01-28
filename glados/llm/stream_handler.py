@@ -38,7 +38,7 @@ class StreamHandler:
         self.message_manager = message_manager
         self.plugin_manager: PluginSystem = PluginSystem()
         self.confidence_threshold = config.plugin_intent_threshold
-        self.client_type = config.client_type
+        self.client_type: ClientType = ClientType[config.client_type]
         self.client: Optional[Union[OpenAI, ChatOllama, Mistral]] = client
 
     def stream_response(self, tools=None, model: str = None, query: str = None, confidence_threshold=0.5) -> EventStream[CompletionEvent] | Stream[ChatCompletionChunk]:
@@ -55,21 +55,25 @@ class StreamHandler:
             Stream[ChatCompletionChunk]: The response stream from the model.
         """
         try:
-            tool_choice = "auto"
+            tool_choice = 'auto'
 
             # Determine the most likely tool choice using the intent classifier if a filter is provided
             # the tool_choice can only be any | auto | none | {"type": "function", "function": {"name": "my_function"}}
-            if query and self.plugin_manager.get_intent_classifier():
-                try:
-                    predicted_intent, confidence = self.plugin_manager.get_intent_classifier().predict_intent(query)
-                    if confidence >= confidence_threshold:
-                        tool_choice = {"type": "function", "function": {"name": predicted_intent}}
-                        logger.info(f"Tool choice '{tool_choice}' selected with confidence {confidence:.2f}")
-                except Exception as e:
-                    logger.exception(f"Intent classifier threw exception, {e}")
+            if self.client_type is ClientType.OPENAI or self.client_type is ClientType.MISTRAL:
+                if query and self.plugin_manager.get_intent_classifier():
+                    try:
+                        predicted_intent, confidence = self.plugin_manager.get_intent_classifier().predict_intent(query)
+                        if confidence >= confidence_threshold:
+                            tool_choice = {"type": "function", "function": {"name": predicted_intent}}
+                            logger.info(f"tool_choice '{tool_choice}' selected with confidence {confidence:.2f}")
+                    except Exception as e:
+                        logger.exception(f"Intent classifier threw exception, {e}")
+
+            else:
+                logger.warning(f"tool_choice not implemented for client_type: {self.client_type}, FIXME")
 
             logger.debug(f"Making request with messages\n\n{self.message_manager.get_messages()}")
-            if self.client_type.upper() == ClientType.OPENAI.name:
+            if self.client_type is ClientType.OPENAI:
                 logger.info("Calling openai client")
                 response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
                     model=model,
@@ -79,7 +83,7 @@ class StreamHandler:
                     tool_choice=tool_choice,
                     temperature=0.0,
                 )
-            elif self.client_type.upper() == ClientType.MISTRAL.name:
+            elif self.client_type is ClientType.MISTRAL:
                 logger.error("Calling mistral client, this is not implemented!")
                 response: EventStream[CompletionEvent] = self.client.chat.stream(
                     model=model,
@@ -88,8 +92,8 @@ class StreamHandler:
                     tool_choice=tool_choice,
                     temperature=0.0,
                 )
-            elif self.client_type.upper() == ClientType.LANGCHAIN.name:
-                logger.info("Calling langchain client")
+            elif self.client_type is ClientType.LANGCHAIN:
+                logger.info("Calling langchain client...")
                 response: Iterator[BaseMessageChunk] = self.client.stream(self.message_manager.get_messages())
                 logger.info(f"Response: {response}")
             else:

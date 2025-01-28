@@ -1,8 +1,10 @@
 import threading
 
+from langchain_core.messages import ToolMessage
 from loguru import logger
 
 from glados.context.activity import Activity
+from glados.llm.client_type import ClientType
 
 
 class MessageManager:
@@ -19,15 +21,22 @@ class MessageManager:
         self.current_context = Activity.GENERAL
         self._lock = threading.Lock()
 
-    def add_message(self, role, content, name=None, images=None, activity: Activity = Activity.GENERAL):
+    def add_message(self, role, content, name=None, images=None, activity: Activity = Activity.GENERAL, architecture=ClientType.OPENAI):
         with self._lock:
-            message = {"role": role, "content": content}
-            if images:
-                message["images"] = images
-            if name:
-                message["name"] = name
-            self._messages[activity].append(message)
-            logger.debug(f"Added message {message}")
+            logger.info(f"Add Message: role:{role}, content:{content}, name:{name}, images:{images}")
+            if architecture is ClientType.OPENAI:
+                message = {"role": role, "content": str(content)}
+                if images:
+                    message["images"] = images
+                if name:
+                    message["name"] = name
+                self._messages[activity].append(message)
+                logger.debug(f"Added message {message}")
+            elif architecture is ClientType.LANGCHAIN:
+                if role == "tool":
+                    self._messages[activity].append(ToolMessage(content=str(content), ))
+            else:
+                logger.error(f"Unkown architecture: {architecture}")
 
     def add_message_to_current_context(self, role, content, name=None, images=None):
         """Helper to add messages to the current context."""

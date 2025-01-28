@@ -1,6 +1,7 @@
 import json
 import queue
 import threading
+import time
 
 from loguru import logger
 from openai import OpenAI
@@ -44,12 +45,14 @@ class ChatClient:
             self.client = Mistral(server_url=config.completion_url, api_key=config.api_key)
             self.client_type = ClientType.MISTRAL
         elif config.client_type.upper() == ClientType.LANGCHAIN.name:
+            tools = self.plugin_system.get_available_tools(architecture=ClientType.LANGCHAIN)
+            logger.debug(f"langchain tools: {tools}")
             self.client = ChatOllama(
                 model=config.model,
                 temperature=0,
                 base_url=config.completion_url,
                 seed=42
-            ).bind_tools(self.plugin_system.get_available_tools(architecture=ClientType.LANGCHAIN))
+            ).bind_tools(tools)
             self.client_type = ClientType.LANGCHAIN
         else:
             raise ValueError(f"Unsupported client type: {config.client_type}")
@@ -100,12 +103,14 @@ class ChatClient:
                 # Retrieve user input from the queue
                 user_input = self.llm_queue.get(timeout=0.1)
                 if user_input:
-                    logger.info(f"Processing input from LLM queue: {user_input}")
-                    self.chat(user_input, tools=plugin_manager.get_available_tools())
+                    tools = plugin_manager.get_available_tools(architecture=self.client_type) or []
+                    logger.info(f"Processing input from LLM queue: {user_input}, tools: {tools}")
+                    self.chat(user_input, tools=tools)
             except queue.Empty:
                 continue
             except Exception as e:
-                logger.error(f"Error processing LLM queue: {e}")
+                logger.exception(f"Error processing LLM queue: {e}")
+            time.sleep(0.1)
 
     def _setup_event_subscriptions(self):
         """Set up subscriptions to the event system."""
@@ -142,7 +147,8 @@ class ChatClient:
         response = f"{additional_prompt}, vision model description of image: {description}"
         logger.info(f"image response {response.strip()}")
         self.message_manager.add_message_to_current_context("tool", response)
-        self.chat(additional_prompt, tools=plugin_manager.get_available_tools())  # tells the llm to run again
+        self.chat(additional_prompt,
+                  tools=plugin_manager.get_available_tools(architecture=self.client_type))  # tells the llm to run again
         logger.info(f"triggered LLM to process results")
 
     def _handle_tool_event(self, event: EventMessage):
@@ -176,7 +182,7 @@ class ChatClient:
         Handles user input and communicates with the LLM.
         """
 
-        logger.info(f"chat content: {content}, tools: {tools}")
+        logger.debug(f"chat content: {content}, tools: {tools}")
 
         if content:
             inferred_activity = self.infer_activity_from_input(content)
@@ -185,47 +191,54 @@ class ChatClient:
         if content:  # Add input to the conversation
             self.message_manager.add_message_to_current_context("user", str(content))
 
-        relevant_tools = [
-            tool for tool in (tools or plugin_manager.get_available_tools())
-            if any(activity in tool.get("activity", []) for activity in [self.message_manager.current_context])
-        ]
+        relevant_tools = plugin_manager.get_available_tools(
+            architecture=self.client_type,
+            activity=self.message_manager.current_context
+        )
         logger.info(f"Proposed relevant_tools: {relevant_tools}")
 
         model_to_use = self.model
 
         try:
             response = self.stream_handler.stream_response(tools, model=model_to_use, query=content)
+            logger.debug(f"response back from stream handler: {response}")
             for chunk in response:
-                logger.info(f"chunk: {chunk}")
+                logger.debug(f"chunk: {chunk}")
                 if self.config.client_type.upper() == ClientType.OPENAI.name:
+                    logger.debug("using openai client type")
                     if chunk.choices[0].delta.tool_calls:
+                        logger.debug("tool calls in chunk")
                         for tool_call in chunk.choices[0].delta.tool_calls:
                             tool_result = self.tool_executor.execute_tool(tool_call)
                             process_tool_result = plugin_manager.should_process_plugin_output(tool_call.function.name)
                             logger.info(f"tool process_output: {process_tool_result}")
-                            self.message_manager.add_message_to_current_context("tool", str(tool_result), name=tool_call.function.name)
+                            self.message_manager.add_message_to_current_context("tool", str(tool_result),
+                                                                                name=tool_call.function.name)
                             if process_tool_result:
                                 self.chat(None, tools=None)
                             else:
-                                logger.info("Not appending tool output to the messages, but sending it direct to the TTS, "
-                                            "the model will know about it if queried though, since its added to the messages")
+                                logger.info(
+                                    "Not appending tool output to the messages, but sending it direct to the TTS, "
+                                    "the model will know about it if queried though, since its added to the messages")
                                 self.llm_queue.put(str(tool_result))
                     else:
                         self.response_processor.process_chunk(chunk)
                 elif self.config.client_type.upper() == ClientType.LANGCHAIN.name:
+                    logger.debug("using langchain client type")
                     if chunk.tool_calls:
                         logger.info(f"tool calls: {chunk.tool_calls}")
                         for tool_call in chunk.tool_calls:
                             # Adapt LangChain tool call to your format
-                            adapted_tool_call = {
-                                "function": {
-                                    "name": tool_call["name"],  # Extract name from LangChain tool call
-                                    "arguments": json.dumps(tool_call.get("args", {}))  # Convert args to JSON string
-                                }
-                            }
+                            # adapted_tool_call = {
+                            #     "function": {
+                            #         "name": tool_call["name"],  # Extract name from LangChain tool call
+                            #         "arguments": json.dumps(tool_call.get("args", {}))  # Convert args to JSON string
+                            #     }
+                            # }
 
                             # Execute the tool
-                            tool_result = self.tool_executor.execute_tool(adapted_tool_call)
+                            tool_result = self.tool_executor.execute_tool(tool_call,
+                                                                          architecture=self.client_type)
 
                             # Add the tool result to the message context
                             self.message_manager.add_message_to_current_context(
@@ -253,7 +266,8 @@ class ChatClient:
             # Store the assistant's complete response
             if self.response_processor.current_sentence.strip():
                 logger.info(f"Final assistant message: {self.response_processor.current_sentence}")
-                self.message_manager.add_message_to_current_context("assistant", self.response_processor.current_sentence)
+                self.message_manager.add_message_to_current_context("assistant",
+                                                                    self.response_processor.current_sentence)
             else:
                 logger.warning("Assistant response is empty before adding to MessageManager!, this can probably be "
                                "ignored once confirmed that there is no loss of data")

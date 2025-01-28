@@ -175,15 +175,30 @@ class PluginSystem:
                 logger.warning(f"Skipping plugin: {k} that is not configured for LLM")
         return available_functions
 
-    def get_available_tools(self, architecture=ClientType.OPENAI):
+    def get_available_tools(self, architecture=ClientType.OPENAI, activity=Activity.GENERAL):
         """Returns all available and executable tools for passing into the LLM when calling it"""
+        logger.info(f"request for tools: architecture: {architecture}, activity: {activity}")
         available_functions = []
-        for k in self.plugins:
-            if self.plugins[k][LLM_FUNCTION_REQUEST] != {}:
-                available_functions.append(self.plugins[k][LLM_FUNCTION_REQUEST])
-            else:
-                logger.warning(f"function: {k} has no Function definition for {architecture}")
-        return available_functions
+        try:
+            for k in self.plugins:
+                if self.plugins[k][LLM_FUNCTION_REQUEST] != {}:
+                    if architecture is ClientType.LANGCHAIN:
+                        logger.debug(f"adding langchain function: {k}")
+                        if activity in self.plugins[k]['activity']:
+                            available_functions.append(self.plugins[k]['function'])
+                        else:
+                            logger.info(f"excluding tool: {k} due to {activity} not in activities: {self.plugins[k]['activity']}")
+                    else:
+                        if activity in self.plugins[k]['activity']:
+                            available_functions.append(self.plugins[k][LLM_FUNCTION_REQUEST])
+                        else:
+                            logger.info(f"excluding tool: {k} due to {activity} not in activities: {self.plugins[k]['activity']}")
+                else:
+                    logger.warning(f"function: {k} has no Function definition for {architecture}")
+        except Exception as e:
+            logger.exception(f"Error adding function: {k}, {e}")
+        finally:
+            return available_functions
 
     def should_process_plugin_output(self, name):
         if name in self.plugins:

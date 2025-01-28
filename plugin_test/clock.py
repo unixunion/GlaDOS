@@ -1,0 +1,39 @@
+from datetime import datetime
+
+from langchain_core.tools import tool
+from loguru import logger
+
+from glados.context.activity import Activity
+from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters
+from glados.system.plugin import PluginSystem
+
+plugin_manager = PluginSystem()
+
+
+@tool
+@plugin_manager.register(
+    llm_function_request=FunctionRequest(type="function",
+                                         function=FunctionMetadata(
+                                             description="The current time and date",
+                                             parameters=Parameters(type="object", required=[], properties={}),
+                                         )
+                                         ),
+    intents=[
+        "What is the time",
+        "tell me the time please",
+        "What is the date",
+        "time please",
+    ],
+    process_output=True,
+    activity=[Activity.GENERAL]
+)
+def get_current_time() -> int:
+    """ Returns the current date and time
+
+    Returns:
+
+    """
+    now = datetime.now()
+    formatted = now.strftime("%H:%M:%S")
+    logger.info(f"Get Current Date: {formatted}")
+    return {"time": formatted}

@@ -42,7 +42,7 @@ class GladosSpeechModule:
         logger.info("Starting SpeechModule...")
         self._stop_event.clear()
         self._thread.start()
-        self._say(self.config.announcement)
+        #self._say(self.config.announcement)
 
     def stop(self):
         """

@@ -40,7 +40,7 @@ class EventHook:
 
     def trigger(self, event: EventMessage) -> None:
         try:
-            logger.debug(f"Triggering hook '{self.name}' with event: {str(event)}")
+            logger.debug(f"Triggering hook '{self.name}' with event: {str(event)[0:256]}")
             self.callback(event)
         except Exception as e:
             logger.error(f"Error in hook '{self.name}': {e}")
@@ -111,7 +111,7 @@ class EventSystem:
             try:
                 event = self._event_queue.get_nowait()
                 topic = self._make_topic(event)
-                logger.debug(f"Dispatching event: {event} with topic '{topic}'")
+                logger.debug(f"Dispatching event: {str(event)[0:128]} with topic '{topic}'")
 
                 # Lock the subscribers dictionary during iteration
                 with self._subscribers_lock:
