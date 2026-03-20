@@ -67,6 +67,7 @@ class GladosConfig:
     plugin_intent_threshold: float = 0.5
     plugins: List[PluginConfig] = field(default_factory=list)
     porcupine: PorcupineConfig = None
+    openwakeword: Optional[dict] = None
 
     @classmethod
     def from_yaml(cls, path: str, key_to_config: Sequence[str] | None = ("Glados",)):

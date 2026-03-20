@@ -46,7 +46,7 @@ openai~=1.59.8
 #torch~=2.5.1
 tqdm~=4.67.1
 ollama~=0.4.6
-openai-whisper~=20240930
+openai-whisper==20240930
 whisper~=1.1.10
 pvporcupine~=3.0.4
 pvrecorder~=1.2.4

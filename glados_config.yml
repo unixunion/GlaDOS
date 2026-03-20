@@ -1,32 +1,32 @@
 Glados:
 #  completion_url: "http://192.168.0.14:11434/v1" # openai client uses different url format for ollama model server
-  completion_url: "http://192.168.0.14:11434/" # langchain client uses different url format for ollama model server
-#  completion_url: "http://192.168.0.28:11434/v1" # openai client uses different url format for ollama model server
-#  model: "hf.co/lmstudio-community/Mistral-Nemo-Instruct-2407-GGUF:Q4_K_M"
-  model: "llama3.1"
+#  completion_url: "http://192.168.0.14:11434/" # langchain client uses different url format for ollama model server
+  completion_url: "http://localhost:1234/v1" # LM Studio OpenAI-compatible endpoint
+  model: "mistralai/magistral-small-2509"
 #  model: "llama3.2"
-#  client_type: OPENAI
-  client_type: LANGCHAIN
+  client_type: OPENAI
+#  client_type: LANGCHAIN
 #  client_type: MISTRAL
-  vision_completion_url: "http://192.168.0.28:11434/v1" # openai client uses different url
-  vision_model: "hf.co/second-state/Llava-v1.5-7B-GGUF:latest"
-  api_key: "Bearer your_api_key_here"
+#  vision_completion_url: "http://192.168.0.28:11434/v1" # openai client uses different url
+  vision_completion_url: "http://localhost:1234/v1" # openai client uses different url
+  vision_model: " qwen/qwen3-vl-8b"
+  api_key: "lm-studio"
   announcement: "system initialized, ohh,, it's you again, how have you been?"
 #  voice_model: "kokoro-82m-onnx/model.onnx"
 #  speaker_id: "bf_isabella"
   wake_word_sensitivity: 0.5
-  porcupine:
+  openwakeword:
+    threshold: 0.5
+    models: []  # empty = use all pre-built models (alexa, hey_jarvis, etc). Add custom .onnx paths here later
+#  porcupine:  # deprecated - picovoice no longer available
 #    access_key: "foo"
-    wake_words:
+#    wake_words:
 #      - name: gladys
 #        sensitivity: 0.6
-#        file: glados/llm/speech_detection_cores/wakeword/Gladys_en_linux_v3_0_0.ppn
-      - name: gladys
-        sensitivity: 0.6
-        file: glados/llm/speech_detection_cores/wakeword/gladys_en_windows_v3_0_0.ppn
-      - name: glados
-        sensitivity: 0.6
-        file: glados/llm/speech_detection_cores/wakeword/Glad-os_en_windows_v3_0_0.ppn
+#        file: glados/llm/speech_detection_cores/wakeword/gladys_en_windows_v3_0_0.ppn
+#      - name: glados
+#        sensitivity: 0.6
+#        file: glados/llm/speech_detection_cores/wakeword/Glad-os_en_windows_v3_0_0.ppn
   vision_images_path: "vision_images"
   interruptible: false
   hardware_echo_cancellation: true

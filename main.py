@@ -5,11 +5,12 @@ import threading
 import time
 from pathlib import Path
 
+import requests
 from loguru import logger
 
 from glados.llm.cores.chat_client import ChatClient
 from glados.llm.cores.vision_client import VisionClient
-from glados.llm.speech_detection_cores.wakeword_detection_module import WakeWordDetectionModule
+from glados.llm.speech_detection_cores.openwakeword_detection_module import OpenWakeWordDetectionModule
 from glados.llm.speech_detection_cores.whisper_detection_module import WhisperVoiceDetectionModule
 
 # need to configure the logger before importing all the modules
@@ -26,6 +27,45 @@ plugin_manager = PluginSystem()
 load_plugins("plugin_test")
 
 
+def discover_models(config: GladosConfig):
+    """Connect to configured endpoints and list available models."""
+    endpoints = {
+        "completion": config.completion_url,
+        "vision": config.vision_completion_url,
+    }
+
+    for name, base_url in endpoints.items():
+        if not base_url:
+            logger.warning(f"No {name} URL configured, skipping model discovery.")
+            continue
+
+        # Strip trailing /v1 or similar to build the models endpoint
+        url = base_url.rstrip("/")
+        if not url.endswith("/models"):
+            url = f"{url}/models"
+
+        logger.info(f"Discovering {name} models at {url}...")
+        try:
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            models = data.get("data", [])
+            if not models:
+                logger.warning(f"No models found at {name} endpoint ({url}).")
+                continue
+
+            logger.success(f"Available {name} models:")
+            for m in models:
+                model_id = m.get("id", "unknown")
+                logger.info(f"  - {model_id}")
+        except requests.ConnectionError:
+            logger.error(f"Could not connect to {name} endpoint at {url}. Is the server running?")
+        except requests.Timeout:
+            logger.error(f"Timeout connecting to {name} endpoint at {url}.")
+        except Exception as e:
+            logger.error(f"Error discovering {name} models: {e}")
+
+
 class Glados2:
     def __init__(self, config_path: str):
         # Load configuration
@@ -33,6 +73,9 @@ class Glados2:
 
         # Event system
         self.event_system = EventSystem()
+
+        # Discover available models before creating clients
+        discover_models(self.config)
 
         # Client for LLM interactions
         self.client = ChatClient(self.config)
@@ -90,7 +133,7 @@ class Glados2:
 
         self.wakeword_interrupt = threading.Event()
 
-        self.wakeword_module = WakeWordDetectionModule(
+        self.wakeword_module = OpenWakeWordDetectionModule(
             interrupt_event=self.wakeword_interrupt,
             config=self.config,
         )
