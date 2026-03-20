@@ -3,6 +3,8 @@ import queue
 import re
 import threading
 
+import numpy as np
+import sounddevice as sd
 from loguru import logger
 from num2words import num2words
 
@@ -34,6 +36,7 @@ class GladosSpeechModule:
         self._speaking_lock = speaking_lock or threading.Event()  # Ensure a default Event is created
         self.stt_enabled = True
         self.config = config
+        self._output_stream = None
 
     def start(self):
         """
@@ -51,6 +54,9 @@ class GladosSpeechModule:
         logger.info("Stopping SpeechModule...")
         self._stop_event.set()
         self._thread.join()
+        if self._output_stream is not None:
+            self._output_stream.close()
+            self._output_stream = None
 
     def _process_queue(self):
         """
@@ -117,15 +123,31 @@ class GladosSpeechModule:
             self._speaking_lock.clear()  # Clear the speaking lock
             logger.debug("TTS playback completed. Re-enabling STT.")
 
+    def _ensure_output_stream(self):
+        """Create or reuse a persistent output stream to avoid pops from stream open/close."""
+        if self._output_stream is None or not self._output_stream.active:
+            if self._output_stream is not None:
+                self._output_stream.close()
+            self._output_stream = sd.OutputStream(
+                samplerate=self._tts.rate,
+                channels=1,
+                dtype='float32',
+            )
+            self._output_stream.start()
+        return self._output_stream
+
     def _play_audio(self, audio):
         """
-        Play the generated TTS audio.
+        Play the generated TTS audio using a persistent output stream.
         """
-        import sounddevice as sd
         try:
             logger.debug("Playing TTS audio...")
-            sd.play(audio, self._tts.rate)
-            sd.wait()  # Wait for playback to complete
+            stream = self._ensure_output_stream()
+            # Ensure audio is the right shape for the stream (N, 1)
+            audio = np.asarray(audio, dtype=np.float32)
+            if audio.ndim == 1:
+                audio = audio.reshape(-1, 1)
+            stream.write(audio)
         except Exception as e:
             logger.error(f"Error during audio playback: {e}")
 

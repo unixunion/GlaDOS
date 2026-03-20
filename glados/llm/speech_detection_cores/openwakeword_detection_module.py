@@ -1,7 +1,7 @@
+import queue
 import threading
 
 import numpy as np
-import sounddevice as sd
 from loguru import logger
 from openwakeword.model import Model as OwwModel
 
@@ -10,19 +10,19 @@ from glados.system.event_system import EventMessage, EventSystem
 
 event_system = EventSystem()
 
-SAMPLE_RATE = 16000
 FRAME_SAMPLES = 1280  # 80ms at 16kHz, recommended by openwakeword
 
 
 class OpenWakeWordDetectionModule:
     def __init__(self,
-                 audio_device_index=None,
                  interrupt_event=None,
-                 config: GladosConfig = None):
+                 config: GladosConfig = None,
+                 speaking_lock: threading.Event = None):
         self.interrupt_event = interrupt_event
+        self.speaking_lock = speaking_lock
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
-        self.audio_device_index = audio_device_index
+        self.audio_queue = queue.Queue(maxsize=100)
 
         oww_config = config.openwakeword if config else {}
         self.threshold = oww_config.get("threshold", 0.5)
@@ -55,39 +55,56 @@ class OpenWakeWordDetectionModule:
         self.thread.join()
         logger.info("OpenWakeWord detection stopped.")
 
+    def push_audio(self, audio_data: np.ndarray):
+        """Push audio data from a shared input stream for wake word processing."""
+        try:
+            self.audio_queue.put_nowait(audio_data)
+        except queue.Full:
+            pass  # Drop frames if we can't keep up
+
     def _run(self):
         try:
             logger.info("Listening for wake word (OpenWakeWord)...")
 
             while not self.stop_event.is_set():
-                try:
-                    # Use a fresh, exclusive stream per read to avoid conflicts
-                    with sd.InputStream(
-                        samplerate=SAMPLE_RATE,
-                        channels=1,
-                        dtype="int16",
-                        blocksize=FRAME_SAMPLES,
-                        device=self.audio_device_index,
-                    ) as stream:
-                        while not self.stop_event.is_set():
-                            audio_data, overflowed = stream.read(FRAME_SAMPLES)
-                            if overflowed:
-                                logger.warning("Audio buffer overflow in wake word detection")
-                            audio_int16 = audio_data[:, 0]
-                            prediction = self.oww_model.predict(audio_int16)
+                # Skip processing while TTS is playing
+                if self.speaking_lock and self.speaking_lock.is_set():
+                    self.oww_model.reset()
+                    # Drain any queued audio
+                    while not self.audio_queue.empty():
+                        try:
+                            self.audio_queue.get_nowait()
+                        except queue.Empty:
+                            break
+                    self.stop_event.wait(timeout=0.1)
+                    continue
 
-                            for model_name in self.model_names:
-                                score = prediction[model_name]
-                                if score >= self.threshold:
-                                    logger.success(f"Wake word '{model_name}' detected! (score: {score:.3f})")
-                                    self.oww_model.reset()
-                                    if self.interrupt_event:
-                                        self.interrupt_event.set()
-                                    if event_system:
-                                        event_system.publish(EventMessage("system", "wake_word_detected", {}))
-                except sd.PortAudioError as e:
-                    logger.error(f"Audio device error: {e}, retrying in 1s...")
-                    self.stop_event.wait(timeout=1.0)
+                try:
+                    audio_data = self.audio_queue.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+
+                # Convert float32 audio to int16 for openwakeword
+                if audio_data.dtype != np.int16:
+                    audio_int16 = (audio_data * 32767).astype(np.int16)
+                else:
+                    audio_int16 = audio_data
+
+                # Flatten if needed
+                if audio_int16.ndim > 1:
+                    audio_int16 = audio_int16[:, 0]
+
+                prediction = self.oww_model.predict(audio_int16)
+
+                for model_name in self.model_names:
+                    score = prediction[model_name]
+                    if score >= self.threshold:
+                        logger.success(f"Wake word '{model_name}' detected! (score: {score:.3f})")
+                        self.oww_model.reset()
+                        if self.interrupt_event:
+                            self.interrupt_event.set()
+                        if event_system:
+                            event_system.publish(EventMessage("system", "wake_word_detected", {}))
 
         except Exception as e:
             logger.error(f"Error in OpenWakeWordDetectionModule: {e}")

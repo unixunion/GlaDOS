@@ -26,8 +26,10 @@ class WhisperVoiceDetectionModule:
             whisper_model_size: str = "base",
             interrupt_event: threading.Event = None,
             speaking_lock: threading.Event = None,
+            wakeword_module=None,
     ):
         self.vad_model = vad_model
+        self.wakeword_module = wakeword_module
         self.client_queue = client_queue
         self.wake_word = wake_word
         self.sample_rate = sample_rate
@@ -115,6 +117,10 @@ class WhisperVoiceDetectionModule:
             if status:
                 logger.warning(f"Audio callback status: {status}")
             data = indata.copy().squeeze()
+
+            # Forward audio to wake word module (always, even during speaking lock)
+            if self.wakeword_module is not None:
+                self.wakeword_module.push_audio(data.copy())
 
             # Skip processing if speaking lock is set
             if self.speaking_lock.is_set():

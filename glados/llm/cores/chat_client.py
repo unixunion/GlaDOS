@@ -5,7 +5,7 @@ import time
 
 from loguru import logger
 from openai import OpenAI
-from mistralai import Mistral
+from mistralai.client import Mistral
 from langchain_ollama import ChatOllama
 
 from glados.config import GladosConfig

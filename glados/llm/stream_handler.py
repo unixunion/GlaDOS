@@ -12,8 +12,9 @@ from glados.llm.client_type import ClientType
 from glados.llm.message_manager import MessageManager
 from glados.system.plugin import PluginSystem
 
-from mistralai import Mistral, CompletionEvent
-from mistralai.utils.eventstreaming import EventStream
+from mistralai.client import Mistral
+from mistralai.client.models import CompletionEvent
+from mistralai.client.utils.eventstreaming import EventStream
 
 # Mistral = None
 # EventStream = None
@@ -64,8 +65,11 @@ class StreamHandler:
                     try:
                         predicted_intent, confidence = self.plugin_manager.get_intent_classifier().predict_intent(query)
                         if confidence >= confidence_threshold:
-                            tool_choice = {"type": "function", "function": {"name": predicted_intent}}
-                            logger.info(f"tool_choice '{tool_choice}' selected with confidence {confidence:.2f}")
+                            # Use "auto" instead of object-style tool_choice for compatibility
+                            # with LM Studio and other OpenAI-compatible endpoints that don't
+                            # support {"type": "function", "function": {"name": ...}} format
+                            tool_choice = "auto"
+                            logger.info(f"Intent classifier matched '{predicted_intent}' with confidence {confidence:.2f}, using tool_choice='auto'")
                     except Exception as e:
                         logger.exception(f"Intent classifier threw exception, {e}")
 

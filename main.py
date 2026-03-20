@@ -136,6 +136,7 @@ class Glados2:
         self.wakeword_module = OpenWakeWordDetectionModule(
             interrupt_event=self.wakeword_interrupt,
             config=self.config,
+            speaking_lock=self.speaking_lock,
         )
 
         self.voice_detection = WhisperVoiceDetectionModule(
@@ -143,7 +144,8 @@ class Glados2:
             client_queue=self.client.llm_queue,
             interrupt_event=self.wakeword_interrupt,
             whisper_model_size="base",
-            speaking_lock=self.speaking_lock
+            speaking_lock=self.speaking_lock,
+            wakeword_module=self.wakeword_module,
         )
 
         # Thread management
@@ -188,20 +190,40 @@ class Glados2:
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="GlaDOS Assistant")
+    parser.add_argument("--text", action="store_true", help="Text input mode (CLI chat, TTS output)")
+    args = parser.parse_args()
+
     # Initialize GLaDOS
     glados = Glados2(config_path="glados_config.yml")
 
     try:
-        glados.start()
+        if args.text:
+            # CLI text mode: type to GlaDOS, she responds via TTS
+            glados.speech_module.start()
+            logger.info("Text mode started. Type your messages below.")
+            print("GlaDOS text mode. Type 'exit' to quit.")
+            while True:
+                try:
+                    user_input = input("You: ")
+                except EOFError:
+                    break
+                if user_input.strip().lower() in ("exit", "quit"):
+                    break
+                if user_input.strip():
+                    glados.chat(user_input)
+        else:
+            glados.start()
 
-        # Main loop to monitor wakeword detection and handle interactions
-        while True:
-            if glados.wakeword_interrupt.wait(timeout=5):
-                logger.debug("wake word detected in main")
-            else:
-                logger.debug("wake word timed out")
+            # Main loop to monitor wakeword detection and handle interactions
+            while True:
+                if glados.wakeword_interrupt.wait(timeout=5):
+                    logger.debug("wake word detected in main")
+                else:
+                    logger.debug("wake word timed out")
 
-            time.sleep(0.1)
+                time.sleep(0.1)
 
     except KeyboardInterrupt:
         print("\nShutting down GLaDOS...")
