@@ -148,7 +148,7 @@ class CameraInputStreamPlugin(RunnablePlugin):
             role="tool",
             name="get_camera_feed",
             content="The camera system is now collecting images from camera's",
-            process_output=True
+            process_output=False
         ))
 
     def stop(self):

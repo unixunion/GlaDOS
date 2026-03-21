@@ -12,7 +12,7 @@ PAUSE_TIME = 0.05  # Time to wait between processing loops
 SAMPLE_RATE = 16000  # Sample rate for input stream
 VAD_SIZE = 50  # Milliseconds of sample for Voice Activity Detection (VAD)
 VAD_THRESHOLD = 0.9  # Threshold for VAD detection
-BUFFER_SIZE = 400  # Milliseconds of buffer before VAD detection
+BUFFER_SIZE = 1200  # Milliseconds of silence before finalizing speech (also pre-wake buffer size)
 PAUSE_LIMIT = 500  # Milliseconds of pause allowed before processing
 SIMILARITY_THRESHOLD = 2  # Threshold for wake word similarity
 MIN_SENTENCE_LENGTH = 3
@@ -59,11 +59,17 @@ class GladosConfig:
     interruptible: bool  # this should mean that if I say wakeword, the tts should stop speaking and listen for more
     client_type: ClientType.OPENAI
     hardware_echo_cancellation: bool = False  # if the speaker features hardware echo_cancellation, we likely dont need to supress recording as much while speaking
+    vision_enabled: bool = True
     vision_images_path: str = None
     vision_completion_url: str = None
     voice_model: str = VOICE_MODEL
     vision_model: str = None
     speaker_id: Optional[int] = None
+    display_port: int = 5001
+    thinking_enabled: bool = False  # Allow models to use [THINK] reasoning tags; disable for faster responses
+    max_context_messages: int = 20  # Max messages per activity context; older messages are trimmed to keep context small and fast
+    music_dir: Optional[str] = None  # Path to music directory for the music player plugin
+    speech_buffer_ms: int = BUFFER_SIZE  # Milliseconds of silence before finalizing speech; also sets the pre-wake audio buffer size
     plugin_intent_threshold: float = 0.5
     plugins: List[PluginConfig] = field(default_factory=list)
     porcupine: PorcupineConfig = None

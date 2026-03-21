@@ -53,6 +53,29 @@ class IntentClassifier:
         if not self.model:
             raise ValueError("The model has not been trained. Cannot predict intents.")
 
+        # With only one class, NaiveBayes always returns 1.0 which is meaningless.
+        # Fall back to simple keyword overlap against intent examples.
+        if len(self.model.classes_) <= 1:
+            if len(self.model.classes_) == 0:
+                return "", 0.0
+            intent_name = self.model.classes_[0]
+            # Find the intent's examples and check word overlap
+            examples = []
+            for intent in self.intents:
+                if intent["name"] == intent_name:
+                    examples = intent["examples"]
+                    break
+            query_words = set(text.lower().split())
+            best_overlap = 0.0
+            for example in examples:
+                example_words = set(example.lower().split())
+                if not example_words:
+                    continue
+                overlap = len(query_words & example_words) / len(example_words)
+                best_overlap = max(best_overlap, overlap)
+            logger.debug(f"Single-class keyword match: '{intent_name}' overlap={best_overlap:.2f}")
+            return intent_name, best_overlap
+
         probabilities = self.model.predict_proba([text])[0]
         max_index = probabilities.argmax()
         intent = self.model.classes_[max_index]

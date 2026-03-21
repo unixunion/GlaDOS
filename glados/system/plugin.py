@@ -119,7 +119,7 @@ class PluginSystem:
                 logger.debug(f"Setting llm_function_request.function.name to {plugin_name}")
                 llm_function_request.function.name = plugin_name
 
-            logger.info(f"Registering plugin: {plugin_name} with llm_function_request: {llm_function_request}")
+            logger.debug(f"Registering plugin: {plugin_name} with llm_function_request: {llm_function_request}")
             if llm_function_request and self.validate_plugin_definition(llm_function_request):
                 self.plugins[plugin_name] = {
                     "function": func,  # the function that the LLM can call
@@ -131,25 +131,21 @@ class PluginSystem:
                 }
                 logger.success(f"Registered plugin: {plugin_name}")
                 logger.debug(f"plugin: {self.plugins[plugin_name]}")
-                event_system.publish(EventMessage(
-                    "tool",
-                    "plugin_system",
-                    f"The tool: {plugin_name} has registered with the assistant "
-                    f"architecture, the tool's description: {plugin_description}",
-                    process_output=False
-                ))
+                # Note: tool registration is NOT published to chat history because
+                # tool definitions are already passed via the 'tools' API parameter
+                # on every LLM call. Publishing here would duplicate them and bloat
+                # the context, slowing down inference.
 
             else:
                 logger.warning(
                     f"Skipping plugin: {plugin_name}, due to validation failure. Check the FunctionRequest object.")
 
             if self.intent_classifier and intents:
-                logger.info(f"Plugin has intents: {intents}, sending them to the intent classifier")
+                logger.debug(f"Plugin has intents: {intents}, sending them to the intent classifier")
                 self.intent_classifier.add_intent(plugin_name, intents)
                 self.intent_classifier.retrain()
             elif not intents:
-                logger.warning(f"The plugin: {plugin_name} has no intents configured, please configure some to "
-                               f"improve tool selection.")
+                logger.debug(f"The plugin: {plugin_name} has no intents configured")
 
             if len(self.plugins) > 20:
                 logger.error(
@@ -172,29 +168,29 @@ class PluginSystem:
                 logger.debug(f"adding {k} to available plugins")
                 available_functions[k] = self.plugins[k]['function']
             else:
-                logger.warning(f"Skipping plugin: {k} that is not configured for LLM")
+                logger.debug(f"Skipping plugin instance '{k}' (no LLM function)")
         return available_functions
 
-    def get_available_tools(self, architecture=ClientType.OPENAI, activity=Activity.GENERAL):
-        """Returns all available and executable tools for passing into the LLM when calling it"""
-        logger.info(f"request for tools: architecture: {architecture}, activity: {activity}")
+    def get_available_tools(self, architecture=ClientType.OPENAI, activity=None):
+        """Returns all available and executable tools for passing into the LLM when calling it.
+        When activity is None, returns all tools regardless of activity filter."""
+        logger.debug(f"request for tools: architecture: {architecture}, activity: {activity}")
         available_functions = []
         try:
             for k in self.plugins:
                 if self.plugins[k][LLM_FUNCTION_REQUEST] != {}:
+                    # If no activity filter, include all tools
+                    if activity is not None and 'activity' in self.plugins[k]:
+                        if activity not in self.plugins[k]['activity']:
+                            logger.debug(f"excluding tool: {k} due to {activity} not in activities: {self.plugins[k]['activity']}")
+                            continue
+
                     if architecture is ClientType.LANGCHAIN:
-                        logger.debug(f"adding langchain function: {k}")
-                        if activity in self.plugins[k]['activity']:
-                            available_functions.append(self.plugins[k]['function'])
-                        else:
-                            logger.info(f"excluding tool: {k} due to {activity} not in activities: {self.plugins[k]['activity']}")
+                        available_functions.append(self.plugins[k]['function'])
                     else:
-                        if activity in self.plugins[k]['activity']:
-                            available_functions.append(self.plugins[k][LLM_FUNCTION_REQUEST])
-                        else:
-                            logger.info(f"excluding tool: {k} due to {activity} not in activities: {self.plugins[k]['activity']}")
+                        available_functions.append(self.plugins[k][LLM_FUNCTION_REQUEST])
                 else:
-                    logger.warning(f"function: {k} has no Function definition for {architecture}")
+                    logger.debug(f"Skipping plugin instance '{k}' (no LLM function definition)")
         except Exception as e:
             logger.exception(f"Error adding function: {k}, {e}")
         finally:

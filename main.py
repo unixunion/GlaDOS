@@ -24,7 +24,7 @@ from glados.system.event_system import EventSystem
 from glados.system.plugin import PluginSystem, load_plugins
 
 plugin_manager = PluginSystem()
-load_plugins("plugin_test")
+load_plugins("plugins")
 
 
 def discover_models(config: GladosConfig):
@@ -67,9 +67,10 @@ def discover_models(config: GladosConfig):
 
 
 class Glados2:
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, speech_enabled: bool = True):
         # Load configuration
         self.config = GladosConfig.from_yaml(config_path)
+        self.speech_enabled = speech_enabled
 
         # Event system
         self.event_system = EventSystem()
@@ -79,74 +80,56 @@ class Glados2:
 
         # Client for LLM interactions
         self.client = ChatClient(self.config)
-        try:
-            self.client.chat("What is the time?")
-        except Exception as e:
-            logger.exception("Something bad with the test prompt.")
+        # Queue the startup announcement so it's processed by the LLM thread
+        # alongside any plugin load events, avoiding duplicate responses
+        self.client.llm_queue.put("You have just been powered on")
 
-        self.vision_client = VisionClient(self.config)
+        if self.config.vision_enabled:
+            self.vision_client = VisionClient(self.config)
+        else:
+            self.vision_client = None
+            logger.info("Vision system disabled by configuration.")
 
         # a lock used to mask when the voice module is talking, so the assistant doesnt hear
         # itself, #TODO find a better fix
         self.speaking_lock = threading.Event()
 
-        # GlaDOS voice
-        self.tts_synthesizer = tts.Synthesizer(
-            model_path=str(Path("models") / self.config.voice_model),
-            speaker_id=self.config.speaker_id,
-        )
-        self.speech_module = GladosSpeechModule(
-            tts=self.tts_synthesizer,
-            tts_queue=self.client.tts_queue,
-            interruptible=self.config.interruptible,
-            speaking_lock=self.speaking_lock,
-            config=self.config
-        )
-
-
-
-        # Alternative Voice system
-        # self.kokoro = Kokoro(
-        #     "models/kokoro-82m-onnx/kokoro-v0_19.onnx",
-        #     voices_path="models/kokoro-82m-onnx/voices.json"
-        # )
-        #
-        # self.speech_module = AlternativeSpeechModule(
-        #     tts=self.kokoro,
-        #     tts_queue=self.client.tts_queue,
-        #     interruptible=self.config.interruptible,
-        #     speaking_lock=self.speaking_lock
-        # )
-
-        # Voice Detection Module
-        # self.voice_detection = AsrVoiceDetectionModule(
-        #     vad_model=vad.VAD(model_path=str(Path.cwd() / "models" / VAD_MODEL)),
-        #     asr_model=asr.AudioTranscriber(),
-        #     client_queue=self.client.llm_queue,
-        #     wake_word=self.config.wake_word,
-        #     sample_rate=SAMPLE_RATE,
-        #     vad_chunk_size_ms=VAD_SIZE,
-        #     buffer_size_ms=BUFFER_SIZE,
-        #     vad_threshold=VAD_THRESHOLD,
-        #     similarity_threshold=SIMILARITY_THRESHOLD,
-        # )
-
+        self.speech_module = None
+        self.wakeword_module = None
+        self.voice_detection = None
         self.wakeword_interrupt = threading.Event()
 
-        self.wakeword_module = OpenWakeWordDetectionModule(
-            interrupt_event=self.wakeword_interrupt,
-            config=self.config,
-            speaking_lock=self.speaking_lock,
-        )
+        if self.speech_enabled:
+            # GlaDOS voice
+            self.tts_synthesizer = tts.Synthesizer(
+                model_path=str(Path("models") / self.config.voice_model),
+                speaker_id=self.config.speaker_id,
+            )
+            self.speech_module = GladosSpeechModule(
+                tts=self.tts_synthesizer,
+                tts_queue=self.client.tts_queue,
+                interruptible=self.config.interruptible,
+                speaking_lock=self.speaking_lock,
+                config=self.config
+            )
 
-        self.voice_detection = WhisperVoiceDetectionModule(
-            vad.VAD(model_path=str(Path.cwd() / "models" / VAD_MODEL)),
-            client_queue=self.client.llm_queue,
-            interrupt_event=self.wakeword_interrupt,
-            whisper_model_size="base",
-            speaking_lock=self.speaking_lock,
-            wakeword_module=self.wakeword_module,
-        )
+            self.wakeword_module = OpenWakeWordDetectionModule(
+                interrupt_event=self.wakeword_interrupt,
+                config=self.config,
+                speaking_lock=self.speaking_lock,
+            )
+
+            self.voice_detection = WhisperVoiceDetectionModule(
+                vad.VAD(model_path=str(Path.cwd() / "models" / VAD_MODEL)),
+                client_queue=self.client.llm_queue,
+                interrupt_event=self.wakeword_interrupt,
+                whisper_model_size="small",
+                speaking_lock=self.speaking_lock,
+                wakeword_module=self.wakeword_module,
+                buffer_size_ms=self.config.speech_buffer_ms,
+            )
+        else:
+            logger.info("Speech disabled — text-only mode. No TTS, VAD, or wake word.")
 
         # Thread management
         self.shutdown_event = threading.Event()
@@ -155,29 +138,29 @@ class Glados2:
         """
         Start the GLaDOS assistant.
         """
-        # Start the wakeword detector
-        self.wakeword_module.start()
-        logger.info("Wake word detection started.")
+        if self.wakeword_module:
+            self.wakeword_module.start()
+            logger.info("Wake word detection started.")
 
-        # Start the Voice Detection Module
-        self.voice_detection.start()
-        logger.info("Voice detection started.")
+        if self.voice_detection:
+            self.voice_detection.start()
+            logger.info("Voice detection started.")
 
-        # Start the Speech Module
-        self.speech_module.start()
-        logger.info("Speech module started.")
+        if self.speech_module:
+            self.speech_module.start()
+            logger.info("Speech module started.")
 
     def stop(self):
         """
         Stop the GLaDOS assistant.
         """
-        # Stop the Voice Detection Module
-        self.voice_detection.stop()
-        logger.info("Voice detection stopped.")
+        if self.voice_detection:
+            self.voice_detection.stop()
+            logger.info("Voice detection stopped.")
 
-        # Stop the Speech Module
-        self.speech_module.stop()
-        logging.info("Speech module stopped.")
+        if self.speech_module:
+            self.speech_module.stop()
+            logger.info("Speech module stopped.")
 
     def chat(self, message: str):
         """
@@ -189,21 +172,57 @@ class Glados2:
         )
 
 
+def _drain_tts_queue_to_console(tts_queue):
+    """Background thread that prints TTS output to console instead of speaking."""
+    while True:
+        try:
+            text = tts_queue.get(timeout=0.1)
+            if text == "<EOS>":
+                print()  # Blank line between responses
+            else:
+                print(f"  GlaDOS: {text}")
+        except Exception:
+            continue
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="GlaDOS Assistant")
     parser.add_argument("--text", action="store_true", help="Text input mode (CLI chat, TTS output)")
+    parser.add_argument("--no-speech", action="store_true",
+                        help="Text-only mode: no TTS, no mic, no wake word. Pure text in/out for testing.")
     args = parser.parse_args()
 
+    speech_enabled = not args.no_speech and not args.text
+
     # Initialize GLaDOS
-    glados = Glados2(config_path="glados_config.yml")
+    glados = Glados2(config_path="glados_config.yml", speech_enabled=speech_enabled or args.text)
 
     try:
-        if args.text:
+        if args.no_speech:
+            # Pure text mode: no audio hardware at all
+            # Drain TTS queue to console in background
+            drain_thread = threading.Thread(
+                target=_drain_tts_queue_to_console, args=(glados.client.tts_queue,), daemon=True
+            )
+            drain_thread.start()
+            logger.info("Text-only mode (no speech). Type your messages below.")
+            print("GlaDOS text-only mode. Type 'exit' to quit.\n")
+            while True:
+                try:
+                    user_input = input("You: ")
+                except EOFError:
+                    break
+                if user_input.strip().lower() in ("exit", "quit"):
+                    break
+                if user_input.strip():
+                    glados.chat(user_input)
+        elif args.text:
             # CLI text mode: type to GlaDOS, she responds via TTS
-            glados.speech_module.start()
+            if glados.speech_module:
+                glados.speech_module.start()
             logger.info("Text mode started. Type your messages below.")
-            print("GlaDOS text mode. Type 'exit' to quit.")
+            print("GlaDOS text mode (with TTS). Type 'exit' to quit.")
             while True:
                 try:
                     user_input = input("You: ")

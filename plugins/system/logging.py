@@ -2,6 +2,7 @@ from typing import List
 
 from loguru import logger
 
+from glados.context.activity import Activity
 from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters
 from glados.system.event_system import EventSystem, EventMessage, EventHook
 from glados.system.plugin import PluginSystem
@@ -11,6 +12,8 @@ plugin_manager = PluginSystem()
 
 
 class LoggingPlugin(RunnablePlugin):
+
+    MAX_LOG_SIZE = 1000
 
     def __init__(self):
         super().__init__()
@@ -34,7 +37,8 @@ class LoggingPlugin(RunnablePlugin):
                 "check logs for errors",
                 "run a self diagnostic"
             ],
-            process_output=True
+            process_output=True,
+            activity=[Activity.SYSTEM]
         )(self.get_logs)
         logger.success("Started")
 
@@ -47,6 +51,8 @@ class LoggingPlugin(RunnablePlugin):
     def journal(self, event: EventMessage):
         logger.info(f"Appending {event} to the log")
         self.event_log.append(event)
+        if len(self.event_log) > self.MAX_LOG_SIZE:
+            self.event_log = self.event_log[-self.MAX_LOG_SIZE:]
 
     def get_logs(self):
         response = []

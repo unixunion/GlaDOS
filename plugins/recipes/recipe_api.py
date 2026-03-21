@@ -10,6 +10,8 @@ from loguru import logger
 from rapidfuzz import fuzz
 from tqdm import tqdm
 
+from glados.context.activity import Activity
+from glados.system.event_system import EventSystem, EventMessage
 from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
 
 # Load the spaCy language model
@@ -17,6 +19,7 @@ nlp = spacy.load("en_core_web_sm")
 
 from glados.system.plugin import PluginSystem
 
+event_system = EventSystem()
 plugin_manager = PluginSystem()
 plugin_manager.register_system_prompt("When selecting a recipe, interpret the user's selection based on prior results "
                                       "and proceed without restarting the search.")
@@ -52,6 +55,12 @@ def load_recipes(file_path: str):
         with open(pickle_file, "rb") as f:
             recipes, ingredient_set = pickle.load(f)
         logger.success(f"Loaded {len(recipes)} recipes from cache.")
+        event_system.publish(EventMessage(
+            "tool",
+            "plugin_system",
+            f"The recip_api has loaded {len(recipes)} recipes from cache.",
+            process_output=False
+        ))
     else:
         logger.info("Processing recipes from CSV file...")
         df = pd.read_csv(file_path)
@@ -150,19 +159,82 @@ def search_by_ingredients(query_ingredients: List[str]) -> List[Dict]:
     return sorted(matching_recipes, key=lambda x: x['match_count'], reverse=True)
 
 
+def convert_fractions(text: str) -> str:
+    """Converts fractions and mixed numbers to TTS-friendly spoken forms.
+
+    Handles: 1/2, 1/4, 3/4, 1/3, 2/3, 1/8, 3/8, mixed like '1 1/2',
+    and arbitrary fractions like '5/6'.
+    """
+    fraction_map = {
+        "1/2": "one half",
+        "1/3": "one third",
+        "2/3": "two thirds",
+        "1/4": "one quarter",
+        "3/4": "three quarters",
+        "1/8": "one eighth",
+        "3/8": "three eighths",
+        "5/8": "five eighths",
+        "7/8": "seven eighths",
+    }
+
+    # Mixed numbers first: "1 1/2" -> "one and a half"
+    def replace_mixed(match):
+        whole = match.group(1)
+        frac = match.group(2)
+        spoken_frac = fraction_map.get(frac)
+        if spoken_frac:
+            return f"{whole} and {spoken_frac}"
+        # Fallback for unknown fractions
+        num, den = frac.split("/")
+        return f"{whole} and {num} over {den}"
+
+    text = re.sub(r"(\d+)\s+(\d+/\d+)", replace_mixed, text)
+
+    # Standalone fractions: "1/2" -> "one half"
+    def replace_fraction(match):
+        frac = match.group(0)
+        if frac in fraction_map:
+            return fraction_map[frac]
+        num, den = frac.split("/")
+        return f"{num} over {den}"
+
+    text = re.sub(r"\d+/\d+", replace_fraction, text)
+
+    return text
+
+
 def convert_abbreviations(text: str) -> str:
-    """Converts common abbreviations to full forms for clarity."""
+    """Converts common cooking abbreviations to full forms for clarity."""
     abbreviation_map = {
         "tsp": "teaspoon",
+        "tsps": "teaspoons",
         "tbl": "tablespoon",
+        "tbls": "tablespoons",
         "tbsp": "tablespoon",
-        "oz": "ounces",
+        "tbsps": "tablespoons",
+        "oz": "ounce",
+        "ozs": "ounces",
         "c": "cup",
         "qt": "quart",
+        "qts": "quarts",
+        "pt": "pint",
+        "pts": "pints",
         "pkg": "package",
+        "pkgs": "packages",
+        "lb": "pound",
+        "lbs": "pounds",
+        "gal": "gallon",
+        "lg": "large",
+        "sm": "small",
+        "med": "medium",
     }
     words = text.split()
     return " ".join([abbreviation_map.get(word.lower(), word) for word in words])
+
+
+def format_ingredient_for_speech(ingredient: str) -> str:
+    """Applies fraction conversion then abbreviation expansion to an ingredient string."""
+    return convert_abbreviations(convert_fractions(ingredient))
 
 
 def safe_parse_list(serialized_list: Any) -> list:
@@ -195,7 +267,9 @@ CURRENT_RECIPES = []
         "find me a recipe for bread",
         "search recipes for chili con carne",
         "what recipes for pizza do you know"
-    ]
+    ],
+    process_output=True,
+    activity=[Activity.COOKING, Activity.GENERAL]
 )
 def search_recipes(query: str) -> dict:
     """
@@ -230,29 +304,20 @@ def search_recipes(query: str) -> dict:
     for score, recipe in matches[:10]:  # Limit to top 10 matches
         try:
             parsed_ingredients = safe_parse_list(recipe["ingredients"])
-            parsed_directions = safe_parse_list(recipe["directions"])
-
-            ingredients_list = ", ".join(convert_abbreviations(ing) for ing in parsed_ingredients)
-            directions_list = "\n".join(
-                f"{i + 1}. {convert_abbreviations(direction)}"
-                for i, direction in enumerate(parsed_directions)
-            )
+            ingredients_list = ", ".join(format_ingredient_for_speech(ing) for ing in parsed_ingredients)
 
             structured_recipe = (
-                f"Title: {recipe['title']}, score: {score}, Ingredients:{ingredients_list}\n\n"
-                # f"Directions:\n{directions_list}\n"
+                f"Title: {recipe['title']}, score: {score}, Ingredients: {ingredients_list}\n\n"
             )
 
             logger.info(f"append recipe: {structured_recipe}")
             result_data.append(structured_recipe)
         except Exception as e:
             logger.warning(f"Skipping recipe: {recipe}, cause: {e}")
-    return (f"The following recipes were found by the recipe search API, filter out all recipes "
-            f"that are unrelated to the query '{query}', and choose which best matches the query "
-            f"query and ask the user to say 'select recipe followed by name of the recipe"
-            f""
-            f"recipes: "
-            f"{result_data}")
+    return (f"The following recipes were found by the recipe search API. Filter out all recipes "
+            f"that are unrelated to the query '{query}', choose which best matches the query, "
+            f"and ask the user to say 'select recipe' followed by the name of the recipe. "
+            f"recipes: {result_data}")
 
 
 @plugin_manager.register(
@@ -272,50 +337,79 @@ def search_recipes(query: str) -> dict:
         "lets make apple pie",
         "select a recipe for banana bread",
         "I want to make american pancakes"
-    ]
+    ],
+    process_output=True,
+    activity=[Activity.COOKING, Activity.GENERAL]
 )
 def select_recipe(query: str) -> dict:
     """
-    Handles user selection of a recipe.
-
-    Args:
-        query: the recipe to search for
-
-    Returns:
-        dict: The selected recipe or a message indicating an error.
+    Handles user selection of a recipe. Returns the recipe formatted for
+    voice interaction with TTS-friendly ingredients and numbered steps.
     """
 
     try:
-
         matches = []
         for recipe in recipes:
             score = fuzz.partial_ratio(query.lower(), recipe['title'].lower())
             if score > 70:
                 matches.append((score, recipe))
 
-        if matches:
-            # Get the recipe with the highest score
-            best_match = max(matches, key=lambda x: x[0])[1]
-            return {
-                "status": "success",
-                "message": f"Selected recipe: {best_match['title']},"
-                           f"Please provide instructions step by step, waiting for confirmation between each step, ingredient and direction",
-                "recipe": best_match,
-            }
-        else:
+        if not matches:
             return {
                 "status": "error",
-                "message": (
-                    "Failed to find a matching recipe. Please try again with a different query, e.g., 'Select Apple Pie'."
-                ),
+                "message": "No matching recipe found. Ask the user to try a different name.",
             }
+
+        best_match = max(matches, key=lambda x: x[0])[1]
+
+        # Format ingredients for speech
+        parsed_ingredients = safe_parse_list(best_match["ingredients"])
+        ingredients_section = "\n".join(
+            f"- {format_ingredient_for_speech(ing)}"
+            for ing in parsed_ingredients
+        )
+
+        # Format directions for speech
+        parsed_directions = safe_parse_list(best_match["directions"])
+        directions_section = "\n".join(
+            f"Step {i + 1}: {format_ingredient_for_speech(step)}"
+            for i, step in enumerate(parsed_directions)
+        )
+
+        # Auto-display recipe on connected screen (iPad)
+        # Use raw ingredient strings with fractions since they're readable on screen
+        display_ingredients = safe_parse_list(best_match["ingredients"])
+        display_directions = safe_parse_list(best_match["directions"])
+        event_system.publish(EventMessage(
+            role="display",
+            name="recipe",
+            content={
+                "title": best_match["title"],
+                "ingredients": display_ingredients,
+                "directions": display_directions,
+            },
+            process_output=False
+        ))
+
+        return {
+            "status": "success",
+            "title": best_match["title"],
+            "ingredients": ingredients_section,
+            "directions": directions_section,
+            "message": (
+                f"Selected recipe: {best_match['title']}. "
+                f"Start by reading the ingredients to the user. "
+                f"The user can ask for all ingredients, one at a time, "
+                f"to repeat ingredients, or to move on to the cooking steps. "
+                f"When giving cooking steps, give only one step at a time and "
+                f"wait for the user to say they are ready for the next step."
+            ),
+        }
 
     except Exception as e:
         return {
             "status": "error",
-            "message": (
-                "An unexpected error occurred while selecting the recipe. Please try again later."
-            ),
+            "message": "An unexpected error occurred while selecting the recipe.",
             "error": str(e),
         }
 

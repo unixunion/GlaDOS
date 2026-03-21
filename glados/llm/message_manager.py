@@ -9,7 +9,7 @@ from glados.llm.client_type import ClientType
 
 class MessageManager:
 
-    def __init__(self):
+    def __init__(self, max_context_messages: int = 20):
         self._messages = {
             Activity.GENERAL: [],
             Activity.CHORES: [],
@@ -19,11 +19,12 @@ class MessageManager:
             Activity.SYSTEM: []
         }
         self.current_context = Activity.GENERAL
+        self.max_context_messages = max_context_messages
         self._lock = threading.Lock()
 
     def add_message(self, role, content, name=None, images=None, activity: Activity = Activity.GENERAL, architecture=ClientType.OPENAI):
         with self._lock:
-            logger.info(f"Add Message: role:{role}, content:{content}, name:{name}, images:{images}")
+            logger.info(f"Add Message: role:{role}, content:{str(content)[:128]}, name:{name}")
             if architecture is ClientType.OPENAI:
                 message = {"role": role, "content": str(content)}
                 if images:
@@ -31,12 +32,39 @@ class MessageManager:
                 if name:
                     message["name"] = name
                 self._messages[activity].append(message)
+                self._trim_context(activity)
                 logger.debug(f"Added message {message}")
             elif architecture is ClientType.LANGCHAIN:
                 if role == "tool":
                     self._messages[activity].append(ToolMessage(content=str(content), ))
+                    self._trim_context(activity)
             else:
-                logger.error(f"Unkown architecture: {architecture}")
+                logger.error(f"Unknown architecture: {architecture}")
+
+    def _trim_context(self, activity: Activity):
+        """Trim the message list to max_context_messages, preserving the system prompt."""
+        msgs = self._messages[activity]
+        if len(msgs) <= self.max_context_messages:
+            return
+
+        # Preserve system messages at the start (personality prompt, etc.)
+        system_prefix = []
+        rest = []
+        for msg in msgs:
+            if not rest and isinstance(msg, dict) and msg.get("role") == "system":
+                system_prefix.append(msg)
+            else:
+                rest.append(msg)
+
+        # Keep system prefix + the most recent messages that fit
+        max_rest = self.max_context_messages - len(system_prefix)
+        if max_rest < 1:
+            max_rest = 1
+        trimmed = len(rest) - max_rest
+        if trimmed > 0:
+            logger.info(f"Trimming {trimmed} old message(s) from {activity.name} context "
+                        f"({len(msgs)} -> {len(system_prefix) + max_rest})")
+            self._messages[activity] = system_prefix + rest[-max_rest:]
 
     def add_message_to_current_context(self, role, content, name=None, images=None):
         """Helper to add messages to the current context."""

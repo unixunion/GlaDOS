@@ -15,14 +15,15 @@ class ToolExecutor:
 
     def execute_tool(self, tool_call, architecture=ClientType.OPENAI) -> dict:
 
-        tools_to_call = [tool_call]
         results = []
 
         if architecture is ClientType.LANGCHAIN and tool_call:
             if isinstance(tool_call, list):
-                tools_to_call.extend(tool_call)  # Extend the list with items
+                tools_to_call = tool_call
             else:
-                tools_to_call.append(tool_call)  # Append the single item
+                tools_to_call = [tool_call]
+        else:
+            tools_to_call = [tool_call]
 
         for tool in tools_to_call:
             logger.info(f"calling tool: {tool}")
@@ -45,6 +46,9 @@ class ToolExecutor:
 
             try:
                 logger.info(f"Executing tool: {function_name} with args: {arguments}")
+                self.event_system.publish(EventMessage(
+                    "status", "tool_call", {"message": f"Using {function_name}", "tool": function_name}
+                ))
                 if architecture is ClientType.OPENAI:
                     args = json.loads(arguments) if arguments else {}
 
@@ -58,8 +62,7 @@ class ToolExecutor:
                         f"Function {function_to_call.__name__} expects arguments but none were provided.")
                 else:
                     result = function_to_call(**args)
-                    results.append({"tool": function_name, "result": result})
-                return {"result": result}
+                results.append({"tool": function_name, "result": result})
             except Exception as e:
                 logger.exception(f"Error executing tool {function_name}: {e}")
                 self.event_system.publish(EventMessage(

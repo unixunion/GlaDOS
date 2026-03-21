@@ -88,7 +88,7 @@ class CountdownTimer(RunnablePlugin):
                 "Timer for 60 seconds"
             ],
             process_output=True,
-            activity=[Activity.UTILITIES]
+            activity=[Activity.UTILITIES, Activity.COOKING]
         )(self.set_timer)
 
         plugin_manager.register(
@@ -105,7 +105,7 @@ class CountdownTimer(RunnablePlugin):
                 "how much time left on my egg timer"
             ],
             process_output=True,
-            activity=[Activity.UTILITIES]
+            activity=[Activity.UTILITIES, Activity.COOKING]
         )(self.list_timers)
 
     def add_timer(self, alarm_time: datetime, description: str):
@@ -205,6 +205,30 @@ class CountdownTimer(RunnablePlugin):
                     process_output=True
                 )
             )
+
+            # Flash timer expiry on the connected display
+            self.event_system.publish(
+                EventMessage(
+                    role="display",
+                    name="timer",
+                    content={
+                        "title": f"{timer.description} - Time's Up!",
+                        "content": "DONE",
+                        "alert": True,
+                    },
+                    process_output=False
+                )
+            )
+
+            # Play audio alert for immediate feedback before TTS
+            try:
+                import subprocess
+                import os
+                alert_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sounds", "timer_alert.wav")
+                if os.path.exists(alert_path):
+                    subprocess.Popen(["afplay", alert_path])
+            except Exception as e:
+                logger.debug(f"Could not play timer alert sound: {e}")
 
     def start(self):
         logger.info("Starting CountdownTimer.")

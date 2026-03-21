@@ -70,6 +70,7 @@ class GladosSpeechModule:
                 if generated_text == "<EOS>":  # End-of-stream signal
                     logger.info("Received end-of-stream signal. Clearing speaking lock.")
                     self._speaking_lock.clear()
+                    self.event_system.publish(EventMessage("status", "idle", {"message": "Ready"}))
                     logger.info("Consider sending event to listen for response for a brief period, TODO")
                     self.event_system.publish(EventMessage(
                         "system",
@@ -84,6 +85,7 @@ class GladosSpeechModule:
 
                 logger.debug(f"Locking speaking thread for TTS: {generated_text}")
                 self._speaking_lock.set()  # Lock the speaking event
+                self.event_system.publish(EventMessage("status", "speaking", {"message": generated_text[:80]}))
                 processed_text = self._process_text(generated_text)
                 self._say(processed_text)
 
@@ -91,6 +93,25 @@ class GladosSpeechModule:
                 continue
             except Exception as e:
                 logger.error(f"Error in SpeechModule: {e}")
+
+    def _split_long_text(self, text: str, max_len: int = 200) -> list:
+        """Split long text into smaller chunks at sentence boundaries to avoid TTS model failures."""
+        if len(text) <= max_len:
+            return [text]
+
+        chunks = []
+        # Split on sentence-ending punctuation followed by space
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        current = ""
+        for sentence in sentences:
+            if current and len(current) + len(sentence) + 1 > max_len:
+                chunks.append(current.strip())
+                current = sentence
+            else:
+                current = f"{current} {sentence}".strip() if current else sentence
+        if current.strip():
+            chunks.append(current.strip())
+        return chunks
 
     def _say(self, text: str):
         """
@@ -101,27 +122,23 @@ class GladosSpeechModule:
             return
 
         try:
-            logger.info(f"Generating TTS for: {text}")
-
             # Disable STT while TTS is playing
             if self.stt_enabled:
                 # self.event_system.publish(EventMessage("system", "disable_stt", {}))
                 self.stt_enabled = False
 
-            # Generate TTS audio
-            audio = self._tts.generate_speech_audio(text)
-            self._play_audio(audio)
+            # Split long text to avoid ONNX CoreML failures on large inputs
+            chunks = self._split_long_text(text)
+            for chunk in chunks:
+                logger.info(f"Generating TTS for: {chunk}")
+                audio = self._tts.generate_speech_audio(chunk)
+                self._play_audio(audio)
 
         except Exception as e:
             logger.error(f"Error during TTS playback: {e}")
-        finally:
-            # Re-enable STT after TTS completes
-            if not self.stt_enabled:
-                # self.event_system.publish(EventMessage("system", "enable_stt", {}))
-                self.stt_enabled = True
-
-            self._speaking_lock.clear()  # Clear the speaking lock
-            logger.debug("TTS playback completed. Re-enabling STT.")
+            # Note: speaking_lock is NOT cleared here — it stays set until EOS
+            # is received in _process_queue, preventing the mic from picking up
+            # TTS audio between sentences.
 
     def _ensure_output_stream(self):
         """Create or reuse a persistent output stream to avoid pops from stream open/close."""
@@ -214,6 +231,17 @@ class GladosSpeechModule:
         text = re.sub(r"(?i)\bplugins\b", "plug-ins", text)  # Match whole words case-insensitively
         text = re.sub(r"(?i)\bplugin\b", "plug-in", text)  # Match whole words case-insensitively
         text = re.sub(r"(?i)\bglados\b", "gladys", text)  # Match 'glados' case-insensitively
+
+        # Replace Unicode characters that crash the TTS phonemizer/ONNX model
+        text = (
+            text.replace("\u2014", ", ")   # em dash —
+                .replace("\u2013", ", ")   # en dash –
+                .replace("\u2018", "'")    # left single curly quote '
+                .replace("\u2019", "'")    # right single curly quote '
+                .replace("\u201c", '"')    # left double curly quote "
+                .replace("\u201d", '"')    # right double curly quote "
+                .replace("\u2026", "...")  # ellipsis …
+        )
 
         # Remove extra whitespace and normalize punctuation
         text = (

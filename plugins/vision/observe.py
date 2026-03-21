@@ -6,6 +6,7 @@ import time
 
 from loguru import logger
 
+from glados.context.activity import Activity
 from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
 from glados.rate_limit import rate_limited
 from glados.system.event_system import EventMessage
@@ -93,6 +94,7 @@ class Observe(RunnablePlugin):
                 "report activity in the hallway",
             ],
             process_output=True,
+            activity=[Activity.GENERAL]
         )(self.get_camera_feed)
 
     def start(self):
@@ -127,18 +129,24 @@ class Observe(RunnablePlugin):
             logger.error(f"Image directory {self.image_directory} does not exist.")
             return "Error loading data feeds from cameras"
 
-        # Iterate through all JPEG images in the directory
-        images = [
-            os.path.join(self.image_directory, file)
-            for file in os.listdir(self.image_directory)
-            if file.lower().endswith((".jpg", ".jpeg"))
-        ]
+        # Iterate through all JPEG images in the directory, skipping stale/cached images
+        now = time.time()
+        images = []
+        for file in os.listdir(self.image_directory):
+            if not file.lower().endswith((".jpg", ".jpeg")):
+                continue
+            path = os.path.join(self.image_directory, file)
+            age = now - os.path.getmtime(path)
+            if age > self.scan_interval:
+                logger.debug(f"Skipping stale image {file} (age: {age:.0f}s)")
+                continue
+            images.append(path)
 
         if not images:
-            logger.warning(f"No images found in {self.image_directory}.")
+            logger.debug(f"No fresh images found in {self.image_directory}.")
             return
 
-        logger.info(f"Found {len(images)} images to process.")
+        logger.info(f"Found {len(images)} fresh images to process.")
         for image_path in images:
             self.process_image(image_path,
                                vision_prompt="Check the image and identify areas that need cleaning, such as floor vacuuming "

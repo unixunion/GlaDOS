@@ -21,8 +21,12 @@ plugin_manager = PluginSystem()
         "what are your functions",
         "list all functions",
         "what are your capabilities",
-        "tell me about your integrations"
+        "tell me about your integrations",
+        "what plugins are loaded",
+        "list available tools",
+        "what can you do"
     ],
+    process_output=True,
     activity=[Activity.SYSTEM]
 )
 def list_plugins() -> dict:

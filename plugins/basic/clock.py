@@ -24,9 +24,9 @@ plugin_manager = PluginSystem()
         "time please",
     ],
     process_output=True,
-    activity=[Activity.SYSTEM]
+    activity=[Activity.SYSTEM, Activity.GENERAL, Activity.COOKING, Activity.UTILITIES]
 )
-def get_current_time() -> int:
+def get_current_time() -> str:
     """
     Returns the current date and time
     """

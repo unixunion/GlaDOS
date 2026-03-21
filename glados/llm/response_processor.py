@@ -19,8 +19,11 @@ class ResponseProcessor:
         """
         self.tts_queue = tts_queue
         self.current_sentence = ""
+        self.full_response = ""  # Accumulates the complete response for message history
         self.message_callback = message_callback  # Callback for finalized sentences
         self.client_type = client_type
+        self._inside_think_block = False  # Track whether we're inside [THINK]...[/THINK]
+        self._think_buffer = ""  # Buffer for partial tag detection at chunk boundaries
 
     def process_chunk(self, chunk: ChatCompletionChunk | AIMessageChunk):
         """
@@ -30,14 +33,22 @@ class ResponseProcessor:
         if self.client_type is ClientType.OPENAI:
             if not chunk.choices[0].delta.content:
                 return
-            self.current_sentence += chunk.choices[0].delta.content
-            logger.debug(f"Appended chunk: {chunk.choices[0].delta.content}")
-
-        if self.client_type is ClientType.LANGCHAIN:
+            content = chunk.choices[0].delta.content
+        elif self.client_type is ClientType.LANGCHAIN:
             if not chunk.content:
                 return
-            self.current_sentence += chunk.content
-            logger.debug(f"Appended chunk: {chunk.content}")
+            content = chunk.content
+        else:
+            return
+
+        # Strip [THINK]...[/THINK] blocks so they aren't sent to TTS.
+        # These arrive as streamed tokens, so we track state across chunks.
+        content = self._strip_think_tags(content)
+        if not content:
+            return
+
+        self.current_sentence += content
+        logger.debug(f"Appended chunk: {content}")
 
         logger.debug(f"Current sentence: {self.current_sentence}")
 
@@ -45,32 +56,135 @@ class ResponseProcessor:
         if re.search(r"[.!?]$", self.current_sentence.strip()):
             self.finalize_sentence()
 
+    # All think tag patterns to detect (case-insensitive matching via upper())
+    _OPEN_TAGS = ["[THINK]", "<THINK>"]
+    _CLOSE_TAGS = ["[/THINK]", "</THINK>"]
+    # Max length of any tag, used for buffering partial tags at chunk boundaries
+    _MAX_TAG_LEN = max(len(t) for t in _OPEN_TAGS + _CLOSE_TAGS)
+
+    def _strip_think_tags(self, text: str) -> str:
+        """Strip think-tagged content from streamed text.
+
+        Supports [THINK]...[/THINK] and <think>...</think> variants.
+        Handles tags split across chunk boundaries by buffering potential
+        partial tags at the end of each chunk.
+        """
+        # Prepend any buffered text from the previous chunk
+        if self._think_buffer:
+            text = self._think_buffer + text
+            self._think_buffer = ""
+
+        # Strip any orphaned think tags (open or close) that the state machine might miss
+        text = re.sub(r'(?i)</?think>', '', text)
+        text = re.sub(r'(?i)\[/?think\]', '', text)
+
+        result = []
+        i = 0
+        upper_text = text.upper()
+
+        while i < len(text):
+            if self._inside_think_block:
+                # Find the earliest closing tag
+                best_end = -1
+                best_tag_len = 0
+                for tag in self._CLOSE_TAGS:
+                    pos = upper_text.find(tag, i)
+                    if pos != -1 and (best_end == -1 or pos < best_end):
+                        best_end = pos
+                        best_tag_len = len(tag)
+
+                if best_end != -1:
+                    self._inside_think_block = False
+                    i = best_end + best_tag_len
+                else:
+                    # Still inside think block, discard rest
+                    break
+            else:
+                # Find the earliest opening tag
+                best_start = -1
+                best_tag_len = 0
+                for tag in self._OPEN_TAGS:
+                    pos = upper_text.find(tag, i)
+                    if pos != -1 and (best_start == -1 or pos < best_start):
+                        best_start = pos
+                        best_tag_len = len(tag)
+
+                if best_start != -1:
+                    result.append(text[i:best_start])
+                    self._inside_think_block = True
+                    i = best_start + best_tag_len
+                else:
+                    # No complete tag found — but the tail of the text might
+                    # be the start of a tag split across chunks (e.g. "[THI")
+                    safe_end = len(text)
+                    if not self._inside_think_block:
+                        # Check if the tail could be the start of any tag
+                        for look_back in range(1, min(self._MAX_TAG_LEN, len(text) - i)):
+                            tail = upper_text[len(text) - look_back:]
+                            if any(tag.startswith(tail) for tag in self._OPEN_TAGS + self._CLOSE_TAGS):
+                                safe_end = len(text) - look_back
+                                self._think_buffer = text[safe_end:]
+                                break
+                    result.append(text[i:safe_end])
+                    break
+
+        return "".join(result)
+
+    # Patterns that indicate the model is narrating its reasoning instead of responding.
+    # These match "thinking out loud" sentences, not normal conversational responses.
+    _META_PATTERNS = re.compile(
+        r"^(The user (is |was |seems |wants )|I should (respond|give|keep|note|acknowledge)"
+        r"|This (seems like|isn't really|is (a system|more of|not))"
+        r"|My scope is |As a home automation|As an? (AI|assistant|home)"
+        r"|Looking at (this|the) |I('ll| will) (give a brief|keep|just respond))",
+        re.IGNORECASE
+    )
+
+    def _is_meta_commentary(self, sentence: str) -> bool:
+        """Detect sentences that are internal reasoning rather than user-facing responses."""
+        return bool(self._META_PATTERNS.match(sentence.strip()))
+
     def finalize_sentence(self):
         """
-        Finalize the current sentence and send it to the TTS queue and the message manager.
+        Finalize the current sentence: send it to the TTS queue.
+        The full response is accumulated and stored in message history
+        only once via finalize_response().
         """
         sentence = self.current_sentence.strip()
         if sentence:
+            # Skip meta-commentary / untagged chain-of-thought
+            if self._is_meta_commentary(sentence):
+                logger.info(f"Stripping meta-commentary: {sentence[:80]}...")
+                self.current_sentence = ""
+                return
+
             logger.debug(f"Finalizing sentence: {sentence}")
+
+            # Accumulate into the full response for later storage
+            if self.full_response:
+                self.full_response += " " + sentence
+            else:
+                self.full_response = sentence
 
             # Send to TTS queue
             if self.tts_queue:
                 self.tts_queue.put(sentence)
             else:
                 logger.warning("TTS queue is not set. Sentence will not be processed.")
-
-            # Trigger the message callback
-            if self.message_callback:
-                logger.debug("Sending finalized sentence to message callback.")
-                self.message_callback(sentence)
-            else:
-                logger.warning("Message callback is not set. Sentence will not be stored.")
         else:
-            logger.warning("Attempted to finalize an empty sentence., this might not be a problem if there was nothing"
-                           " left to process")
+            logger.debug("Finalize called with empty sentence (normal after tool calls)")
 
         # Reset current_sentence after processing
         self.current_sentence = ""
+
+    def finalize_response(self):
+        """Store the complete accumulated response in message history as a single message."""
+        response = self.full_response.strip()
+        if response:
+            logger.debug(f"Storing complete assistant response ({len(response)} chars)")
+            if self.message_callback:
+                self.message_callback(response)
+        self.full_response = ""
 
 
 # import queue

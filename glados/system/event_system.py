@@ -79,8 +79,7 @@ class EventSystem:
                 self._subscribers[topic] = []
             self._subscribers[topic].append(hook)
             self._subscribers[topic].sort(key=lambda h: h.priority, reverse=True)
-            logger.info(f"Subscribed hook '{hook.name}' to topic '{topic}'.")
-            logger.info(f"All subscriptions: {self._subscribers}")
+            logger.debug(f"Subscribed hook '{hook.name}' to topic '{topic}'.")
 
     def unsubscribe(self, topic: str, hook_name: str):
         """Unsubscribe a hook by name."""
@@ -94,7 +93,7 @@ class EventSystem:
     def publish(self, event: EventMessage):
         """Publish an event to all subscribers."""
         if self._make_topic(event) != "system.tick":
-            logger.info(f"Enqueue event: {str(event)[0:128]}")
+            logger.debug(f"Enqueue event: {str(event)[0:128]}")
         self._event_queue.put(event)
 
     @staticmethod
@@ -104,8 +103,8 @@ class EventSystem:
     def _dispatch_events(self):
         """Dispatch events from the queue to subscribers."""
         if len(self._subscribers) == 0:
-            logger.info("No subscribers, bailing out")
-            time.sleep(10)
+            logger.debug("No subscribers, bailing out")
+            return
         logger.debug("Dispatching events")
         while not self._event_queue.empty():
             try:
@@ -121,7 +120,7 @@ class EventSystem:
                             logger.debug(f"Topic '{topic}' matches subscription '{subscription}'")
                             for hook in hooks:
                                 if event.name != 'tick':
-                                    logger.info(f"Sending event: {str(event)[0:128]}... to {hook.name}")
+                                    logger.debug(f"Sending event: {str(event)[0:128]}... to {hook.name}")
                                 hook.trigger(event)
                         else:
                             logger.debug(f"Topic '{topic}' does not match subscription '{subscription}'")
@@ -129,14 +128,13 @@ class EventSystem:
                 break
 
     def start_ticker(self, interval: float = 1.0):
-        logger.info("Starting ticker")
         """Start a thread to periodically dispatch events."""
         if self._ticker_thread and self._ticker_thread.is_alive():
-            logger.warning("Ticker already running, bailing out")
+            logger.debug("Ticker already running, bailing out")
             return  # Ticker is already running
 
         def ticker():
-            logger.info("Starting Ticker")
+            logger.debug("Ticker thread running")
             while not self._stop_event.is_set():
                 tick_event = EventMessage(
                     role="system",
@@ -148,11 +146,10 @@ class EventSystem:
                 self._dispatch_events()
                 time.sleep(interval)
 
-        logger.info("Startnig the ticker thread")
         self._stop_event.clear()
         self._ticker_thread = threading.Thread(target=ticker, daemon=True)
         self._ticker_thread.start()
-        logger.info("Ticker thread started.")
+        logger.debug("Ticker thread started.")
 
     def stop_ticker(self):
         """Stop the ticker thread."""

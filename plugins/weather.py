@@ -1,3 +1,4 @@
+from glados.context.activity import Activity
 from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
 from glados.system.plugin import PluginSystem
 from loguru import logger
@@ -27,12 +28,13 @@ plugin_manager = PluginSystem()
         "what's it like outside",
         "what is the temperature",
         "tell me the weather conditions",
-        "is it cold today?"
+        "is it cold today?",
         "what will the weather be like",
         "when will it rain",
         "is it going to snow tomorrow"
     ],
-    process_output=False,
+    process_output=True,
+    activity=[Activity.GENERAL, Activity.UTILITIES],
 )
 def handle_weather(location: str) -> str:
     logger.success("Handling weather")

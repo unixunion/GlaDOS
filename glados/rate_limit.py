@@ -18,9 +18,11 @@ def rate_limited(seconds: int):
                 return func(*args, **kwargs)
             else:
                 remaining_time = (last_called[0] + timedelta(seconds=seconds) - now).total_seconds()
-                raise RuntimeError(f"Function is rate-limited. Try again in {int(remaining_time)} seconds, if you have previous "
-                                   "context or information, try use that to answer the enquiry, If you cannot answer the "
-                                   "enquiry, just respond with '(silence)'")
+                return {
+                    "status": "rate_limited",
+                    "message": f"This function is rate-limited. Try again in {int(remaining_time)} seconds. "
+                               "Use previous context if available, otherwise respond with '(silence)'."
+                }
 
         return wrapped
 

@@ -41,6 +41,7 @@ class StreamHandler:
         self.confidence_threshold = config.plugin_intent_threshold
         self.client_type: ClientType = ClientType[config.client_type]
         self.client: Optional[Union[OpenAI, ChatOllama, Mistral]] = client
+        self.thinking_enabled: bool = getattr(config, 'thinking_enabled', False)
 
     def stream_response(self, tools=None, model: str = None, query: str = None, confidence_threshold=0.5) -> EventStream[CompletionEvent] | Stream[ChatCompletionChunk]:
         """
@@ -65,11 +66,11 @@ class StreamHandler:
                     try:
                         predicted_intent, confidence = self.plugin_manager.get_intent_classifier().predict_intent(query)
                         if confidence >= confidence_threshold:
-                            # Use "auto" instead of object-style tool_choice for compatibility
-                            # with LM Studio and other OpenAI-compatible endpoints that don't
-                            # support {"type": "function", "function": {"name": ...}} format
-                            tool_choice = "auto"
-                            logger.info(f"Intent classifier matched '{predicted_intent}' with confidence {confidence:.2f}, using tool_choice='auto'")
+                            # Use "required" to force the model to call a tool when intent
+                            # classifier is confident. "auto" lets local models hallucinate
+                            # tool responses instead of actually calling them.
+                            tool_choice = "required"
+                            logger.info(f"Intent classifier matched '{predicted_intent}' with confidence {confidence:.2f}, using tool_choice='required'")
                     except Exception as e:
                         logger.exception(f"Intent classifier threw exception, {e}")
 
@@ -79,13 +80,19 @@ class StreamHandler:
             logger.debug(f"Making request with messages\n\n{self.message_manager.get_messages()}")
             if self.client_type is ClientType.OPENAI:
                 logger.info("Calling openai client")
+                messages = list(self.message_manager.get_messages())
+                # Suppress thinking/reasoning for faster responses when disabled
+                if not self.thinking_enabled and messages and messages[0].get("role") == "system":
+                    messages[0] = dict(messages[0])
+                    messages[0]["content"] += "\n\nIMPORTANT: Do not use thinking tags, internal reasoning, or chain-of-thought. Do not narrate your thought process. Do not say things like 'The user is asking...' or 'I should respond...'. Just respond directly to the user with your answer. No meta-commentary."
                 response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
                     model=model,
-                    messages=self.message_manager.get_messages(),
+                    messages=messages,
                     stream=True,
                     tools=tools or NOT_GIVEN,
-                    tool_choice=tool_choice,
+                    tool_choice=tool_choice if tools else NOT_GIVEN,
                     temperature=0.0,
+                    timeout=30.0,
                 )
             elif self.client_type is ClientType.MISTRAL:
                 logger.error("Calling mistral client, this is not implemented!")

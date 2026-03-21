@@ -98,7 +98,7 @@ class RobotVacuum(RunnablePlugin):
             self.is_vacuuming = False
             event_system.publish(EventMessage(
                 role="tool",
-                name="start_vacuuming",
+                name="stop_vacuuming",
                 content="Robot vacuum has finished"
             ))
             return {'status': 'the robot vacuum is stopped'}

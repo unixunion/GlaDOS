@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>GlaDOS Display</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        #display-container {
+            flex: 1;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Idle view */
+        .view-idle {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .view-idle .brand {
+            font-size: 4rem;
+            font-weight: 700;
+            color: #ff6600;
+            letter-spacing: 0.1em;
+            margin-bottom: 16px;
+        }
+
+        .view-idle .clock {
+            font-size: 5rem;
+            font-weight: 300;
+            color: #cccccc;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .view-idle .date {
+            font-size: 1.4rem;
+            color: #888;
+            margin-top: 8px;
+        }
+
+        /* Title bar */
+        .view-title {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #ff6600;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #333;
+            margin-bottom: 20px;
+        }
+
+        /* Recipe view */
+        .recipe-section-label {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #ff6600;
+            margin: 20px 0 10px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .recipe-section-label:first-of-type {
+            margin-top: 0;
+        }
+
+        .ingredient-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .ingredient-list li {
+            padding: 8px 12px;
+            font-size: 1.1rem;
+            border-bottom: 1px solid #2a2a3e;
+        }
+
+        .ingredient-list li:nth-child(odd) {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .step-list {
+            list-style: none;
+            padding: 0;
+            counter-reset: step-counter;
+        }
+
+        .step-list li {
+            padding: 12px 12px 12px 48px;
+            font-size: 1.1rem;
+            border-bottom: 1px solid #2a2a3e;
+            position: relative;
+            line-height: 1.5;
+            counter-increment: step-counter;
+        }
+
+        .step-list li::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 8px;
+            top: 12px;
+            width: 28px;
+            height: 28px;
+            background: #ff6600;
+            color: #1a1a2e;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        /* Timer view */
+        .timer-display {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .timer-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 32px 48px;
+            margin: 12px 0;
+            text-align: center;
+            min-width: 300px;
+        }
+
+        .timer-name {
+            font-size: 1.3rem;
+            color: #aaa;
+            margin-bottom: 8px;
+        }
+
+        .timer-countdown {
+            font-size: 4rem;
+            font-weight: 300;
+            color: #ff6600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .timer-expires {
+            font-size: 1rem;
+            color: #666;
+            margin-top: 8px;
+        }
+
+        /* Info view */
+        .info-content {
+            font-size: 1.2rem;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            padding: 12px 0;
+        }
+
+        /* Timer alert flash */
+        .flash-alert {
+            animation: flash 0.5s ease-in-out 6;
+        }
+
+        @keyframes flash {
+            0%, 100% { background: #1a1a2e; }
+            50% { background: #4a1a1a; }
+        }
+
+        /* GlaDOS avatar */
+        #glados-avatar {
+            position: fixed;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 33vw;
+            height: auto;
+            object-fit: contain;
+            opacity: 0.8;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        /* Connection status */
+        #connection-status {
+            position: fixed;
+            top: 80px;
+            right: 12px;
+            font-size: 0.8rem;
+            padding: 4px 10px;
+            border-radius: 12px;
+            background: rgba(0,0,0,0.5);
+        }
+
+        .connected { color: #4caf50; }
+        .disconnected { color: #f44336; }
+
+        /* Activity context indicator */
+        #activity-indicator {
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            font-size: 1rem;
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: rgba(255, 102, 0, 0.15);
+            border: 1px solid rgba(255, 102, 0, 0.4);
+            color: #ff6600;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 100;
+        }
+
+        #activity-indicator .activity-icon { font-size: 1.2rem; }
+
+        /* Status toast */
+        #status-toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 24px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
+            z-index: 100;
+            max-width: 80vw;
+        }
+
+        #status-toast.visible {
+            opacity: 1;
+        }
+
+        #status-toast .status-icon {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        #status-toast .status-text {
+            font-size: 0.95rem;
+            color: #ccc;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Status-specific colors */
+        #status-toast.status-listening .status-icon {
+            background: #4caf50;
+            box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+
+        #status-toast.status-thinking .status-icon {
+            background: #ff9800;
+            box-shadow: 0 0 8px rgba(255, 152, 0, 0.6);
+            animation: pulse 0.8s ease-in-out infinite;
+        }
+
+        #status-toast.status-speaking .status-icon {
+            background: #ff6600;
+            box-shadow: 0 0 8px rgba(255, 102, 0, 0.6);
+            animation: pulse 0.6s ease-in-out infinite;
+        }
+
+        #status-toast.status-tool_call .status-icon {
+            background: #2196f3;
+            box-shadow: 0 0 8px rgba(33, 150, 243, 0.6);
+            animation: spin 1s linear infinite;
+        }
+
+        #status-toast.status-idle .status-icon {
+            background: #666;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <img id="glados-avatar" src="/images/glados.gif" alt="GlaDOS">
+    <div id="activity-indicator"></div>
+    <div id="connection-status" class="connected">connected</div>
+    <div id="display-container">
+        <!-- Content rendered by JS -->
+    </div>
+    <div id="status-toast">
+        <div class="status-icon"></div>
+        <div class="status-text"></div>
+    </div>
+
+    <script src="/static/socket.io.min.js"></script>
+    <script>
+        const container = document.getElementById('display-container');
+        const statusEl = document.getElementById('connection-status');
+        let clockInterval = null;
+
+        const socket = io({
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: Infinity,
+            transports: ['websocket', 'polling']
+        });
+
+        socket.on('connect', () => {
+            statusEl.textContent = 'connected';
+            statusEl.className = 'connected';
+        });
+
+        socket.on('disconnect', () => {
+            statusEl.textContent = 'reconnecting...';
+            statusEl.className = 'disconnected';
+        });
+
+        socket.on('display_update', (data) => {
+            if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
+            renderView(data);
+            if (data.alert) {
+                document.body.classList.add('flash-alert');
+                setTimeout(() => document.body.classList.remove('flash-alert'), 3000);
+            }
+        });
+
+        function renderView(data) {
+            const viewType = data.view_type || 'idle';
+
+            switch (viewType) {
+                case 'idle':
+                    renderIdle();
+                    break;
+                case 'recipe':
+                    renderRecipe(data);
+                    break;
+                case 'timer':
+                    renderTimer(data);
+                    break;
+                case 'info':
+                    renderInfo(data);
+                    break;
+                default:
+                    renderIdle();
+            }
+        }
+
+        function renderIdle() {
+            function update() {
+                const now = new Date();
+                const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const date = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+                container.innerHTML = `
+                    <div class="view-idle">
+                        <div class="brand">GlaDOS</div>
+                        <div class="clock">${time}</div>
+                        <div class="date">${date}</div>
+                    </div>`;
+            }
+            update();
+            clockInterval = setInterval(update, 1000);
+        }
+
+        function renderRecipe(data) {
+            const title = data.title || 'Recipe';
+            const content = data.content || '';
+
+            // Try to parse structured recipe data
+            if (data.ingredients && data.directions) {
+                let ingredientsHtml = '';
+                const ingredients = Array.isArray(data.ingredients) ? data.ingredients : data.ingredients.split('\n');
+                ingredients.forEach(ing => {
+                    const cleaned = ing.replace(/^[-\s]*/, '').trim();
+                    if (cleaned) ingredientsHtml += `<li>${cleaned}</li>`;
+                });
+
+                let stepsHtml = '';
+                const directions = Array.isArray(data.directions) ? data.directions : data.directions.split('\n');
+                directions.forEach(step => {
+                    const cleaned = step.replace(/^(Step\s*\d+[:\s]*)/i, '').trim();
+                    if (cleaned) stepsHtml += `<li>${cleaned}</li>`;
+                });
+
+                container.innerHTML = `
+                    <div class="view-title">${escapeHtml(title)}</div>
+                    <div class="recipe-section-label">Ingredients</div>
+                    <ul class="ingredient-list">${ingredientsHtml}</ul>
+                    <div class="recipe-section-label">Directions</div>
+                    <ol class="step-list">${stepsHtml}</ol>`;
+            } else {
+                // Plain text content fallback
+                container.innerHTML = `
+                    <div class="view-title">${escapeHtml(title)}</div>
+                    <div class="info-content">${escapeHtml(content)}</div>`;
+            }
+        }
+
+        function renderTimer(data) {
+            if (data.timers && data.timers.length > 0) {
+                let cards = '';
+                data.timers.forEach(t => {
+                    cards += `
+                        <div class="timer-card">
+                            <div class="timer-name">${escapeHtml(t.description || 'Timer')}</div>
+                            <div class="timer-countdown">${escapeHtml(t.expires_in || '--')}</div>
+                            <div class="timer-expires">until ${escapeHtml(t.expires_at || '')}</div>
+                        </div>`;
+                });
+                container.innerHTML = `
+                    <div class="view-title">${escapeHtml(data.title || 'Timers')}</div>
+                    <div class="timer-display">${cards}</div>`;
+            } else {
+                // Single timer from LLM tool call
+                container.innerHTML = `
+                    <div class="timer-display">
+                        <div class="timer-card">
+                            <div class="timer-name">${escapeHtml(data.title || 'Timer')}</div>
+                            <div class="timer-countdown">${escapeHtml(data.content || '')}</div>
+                        </div>
+                    </div>`;
+            }
+        }
+
+        function renderInfo(data) {
+            container.innerHTML = `
+                <div class="view-title">${escapeHtml(data.title || 'Information')}</div>
+                <div class="info-content">${escapeHtml(data.content || '')}</div>`;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Activity context indicator
+        const activityEl = document.getElementById('activity-indicator');
+        const activityIcons = {
+            GENERAL: '\uD83C\uDFE0',
+            COOKING: '\uD83C\uDF73',
+            UTILITIES: '\u2699\uFE0F',
+            CHORES: '\uD83E\uDDF9',
+            SYSTEM: '\uD83D\uDDA5\uFE0F',
+            ENTERTAINMENT: '\uD83C\uDFB5'
+        };
+
+        // Show GENERAL on load
+        activityEl.innerHTML = '<span class="activity-icon">\uD83C\uDFE0</span>general';
+        activityEl.className = 'visible';
+
+        socket.on('status_toast', (data) => {
+            if (data.status === 'activity') {
+                const name = data.activity || 'GENERAL';
+                const icon = activityIcons[name] || '\uD83C\uDFE0';
+                activityEl.innerHTML = '<span class="activity-icon">' + icon + '</span>' + name.toLowerCase();
+                activityEl.className = 'visible';
+                return;
+            }
+            handleStatusToast(data);
+        });
+
+        // Status toast handling
+        const toastEl = document.getElementById('status-toast');
+        const toastText = toastEl.querySelector('.status-text');
+        let toastHideTimer = null;
+
+        function handleStatusToast(data) {
+            const status = data.status || 'idle';
+            const message = data.message || status;
+
+            // Clear previous hide timer
+            if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
+
+            // Update toast content and style
+            toastEl.className = 'visible status-' + status;
+            toastEl.id = 'status-toast';
+            toastText.textContent = message;
+
+            // Auto-hide idle status after a short delay; others persist until replaced
+            if (status === 'idle') {
+                toastHideTimer = setTimeout(() => {
+                    toastEl.classList.remove('visible');
+                }, 2000);
+            }
+        }
+
+        // Start with idle view
+        renderIdle();
+    </script>
+</body>
+</html>
