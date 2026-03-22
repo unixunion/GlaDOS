@@ -56,8 +56,9 @@ class GladosConfig:
     announcement: Optional[str]
     personality_preprompt: List[dict[str, str]]
     wake_word_sensitivity: float
-    interruptible: bool  # this should mean that if I say wakeword, the tts should stop speaking and listen for more
     client_type: ClientType.OPENAI
+    interruptible: bool = False  # deprecated, use interrupt_on_wakeword instead
+    interrupt_on_wakeword: bool = False  # if true, saying the wake word while GlaDOS is speaking stops TTS and switches to listening
     hardware_echo_cancellation: bool = False  # if the speaker features hardware echo_cancellation, we likely dont need to supress recording as much while speaking
     vision_enabled: bool = True
     vision_images_path: str = None
@@ -74,6 +75,7 @@ class GladosConfig:
     plugins: List[PluginConfig] = field(default_factory=list)
     porcupine: PorcupineConfig = None
     openwakeword: Optional[dict] = None
+    mcp_servers: Optional[List[dict]] = field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, path: str, key_to_config: Sequence[str] | None = ("Glados",)):

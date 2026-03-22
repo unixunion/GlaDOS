@@ -356,6 +356,11 @@ class WhisperVoiceDetectionModule:
 
             logger.info(f"Transcribed text: {detected_text}")
 
+            # Show transcribed text on the display
+            self.event_system.publish(EventMessage(
+                "status", "user_speech", {"message": detected_text.strip()}
+            ))
+
             if not detected_text:
                 logger.warning("No text detected from audio.")
                 return

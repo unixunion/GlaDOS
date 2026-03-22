@@ -11,12 +11,8 @@ import dateparser
 from loguru import logger
 
 from glados.context.activity import Activity
-from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
-from glados.system.event_system import EventSystem, EventMessage, EventHook
-from glados.system.plugin import PluginSystem
-from glados.system.runnable_plugin import RunnablePlugin
-
-plugin_manager = PluginSystem()
+from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
+from glados.system.event_system import EventMessage, EventHook
 
 
 @dataclasses.dataclass
@@ -25,13 +21,12 @@ class Alarm:
     description: str
 
 
-class AlarmClock(RunnablePlugin):
+class AlarmClock(RunnableMCPPlugin):
 
     def __init__(self):
         super().__init__()
         logger.info("Instantiating Alarm Clock System")
         self.alarms: List[Alarm] = []
-        self.event_system = EventSystem()
         self._lock = threading.Lock()
 
         # Ringing state
@@ -60,27 +55,20 @@ class AlarmClock(RunnablePlugin):
                 logger.warning(f"Could not load alarm sound: {e}")
 
         # Register tools
-        plugin_manager.register(
-            llm_function_request=FunctionRequest(
-                type="function",
-                function=FunctionMetadata(
-                    description="Sets an alarm at a fixed time (natural language format).",
-                    parameters=Parameters(
-                        type="object",
-                        properties={
-                            "time": ParameterType(
-                                type="string",
-                                description="The time for the alarm in natural language, e.g., '5pm tomorrow'."
-                            ),
-                            "description": ParameterType(
-                                type="string",
-                                description="Optional description for the alarm."
-                            )
-                        },
-                        required=["time"],
-                        additionalProperties=False
-                    )
-                )),
+        self.register_tool(
+            handler=self.set_fixed_time_alarm,
+            description="Sets an alarm at a fixed time (natural language format).",
+            parameters={
+                "time": {
+                    "type": "string",
+                    "description": "The time for the alarm in natural language, e.g., '5pm tomorrow'."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional description for the alarm."
+                },
+            },
+            required=["time"],
             intents=[
                 "set an alarm for five o clock",
                 "set an alarm for 5pm tomorrow",
@@ -88,45 +76,27 @@ class AlarmClock(RunnablePlugin):
                 "set an alarm for next Monday at noon"
             ],
             process_output=True,
-            activity=[Activity.UTILITIES, Activity.GENERAL, Activity.COOKING]
-        )(self.set_fixed_time_alarm)
+            activity=[Activity.UTILITIES, Activity.GENERAL, Activity.COOKING],
+        )
 
-        plugin_manager.register(
-            llm_function_request=FunctionRequest(
-                type="function",
-                function=FunctionMetadata(
-                    description="Retrieves all currently set alarms.",
-                    parameters=Parameters(
-                        type="object",
-                        properties={},
-                        required=[],
-                        additionalProperties=False
-                    )
-                )
-            ),
+        self.register_tool(
+            handler=self.get_alarms,
+            description="Retrieves all currently set alarms.",
             intents=["get all alarms", "list my alarms", "what alarms are set?"],
             process_output=True,
-            activity=[Activity.UTILITIES, Activity.GENERAL, Activity.COOKING]
-        )(self.get_alarms)
+            activity=[Activity.UTILITIES, Activity.GENERAL, Activity.COOKING],
+        )
 
-        plugin_manager.register(
-            llm_function_request=FunctionRequest(
-                type="function",
-                function=FunctionMetadata(
-                    description="Cancels an alarm by its description or time.",
-                    parameters=Parameters(
-                        type="object",
-                        properties={
-                            "query": ParameterType(
-                                type="string",
-                                description="The alarm description or time to cancel, e.g., 'morning alarm' or '5pm'."
-                            )
-                        },
-                        required=["query"],
-                        additionalProperties=False
-                    )
-                )
-            ),
+        self.register_tool(
+            handler=self.cancel_alarm,
+            description="Cancels an alarm by its description or time.",
+            parameters={
+                "query": {
+                    "type": "string",
+                    "description": "The alarm description or time to cancel, e.g., 'morning alarm' or '5pm'."
+                },
+            },
+            required=["query"],
             intents=[
                 "cancel the alarm",
                 "delete the 5pm alarm",
@@ -134,8 +104,8 @@ class AlarmClock(RunnablePlugin):
                 "cancel my morning alarm"
             ],
             process_output=True,
-            activity=[Activity.UTILITIES, Activity.GENERAL, Activity.COOKING]
-        )(self.cancel_alarm)
+            activity=[Activity.UTILITIES, Activity.GENERAL, Activity.COOKING],
+        )
 
     def start(self):
         logger.info("Starting Alarm Clock System...")
@@ -152,11 +122,9 @@ class AlarmClock(RunnablePlugin):
 
     @staticmethod
     def _format_time_for_speech(dt: datetime) -> str:
-        """Format a datetime for natural speech output."""
         return dt.strftime("%I:%M %p on %A").lstrip("0")
 
     def set_fixed_time_alarm(self, time: str, description: Optional[str] = None):
-        """Register a new fixed-time alarm."""
         try:
             if not time:
                 return {"status": "error", "message": "The 'time' field is required for setting an alarm."}
@@ -187,22 +155,16 @@ class AlarmClock(RunnablePlugin):
             return {"status": "error", "message": f"An unexpected error occurred: {str(e)}"}
 
     def get_alarms(self):
-        """Retrieve all currently set alarms."""
         with self._lock:
             if not self.alarms:
                 return {"status": "success", "message": "No alarms are currently set.", "alarms": []}
-
             alarms_list = [
-                {
-                    "time": self._format_time_for_speech(alarm.alarm_time),
-                    "description": alarm.description,
-                }
+                {"time": self._format_time_for_speech(alarm.alarm_time), "description": alarm.description}
                 for alarm in self.alarms
             ]
             return {"status": "success", "message": "Currently set alarms:", "alarms": alarms_list}
 
     def cancel_alarm(self, query: str) -> dict:
-        """Cancel an alarm matching the query by description or time."""
         query_lower = query.strip().lower()
         with self._lock:
             if not self.alarms:
@@ -222,10 +184,7 @@ class AlarmClock(RunnablePlugin):
 
             return {"status": "error", "message": f"No alarm found matching '{query}'."}
 
-    # --- Ringing ---
-
     def _ring_loop(self):
-        """Loop the alarm tone with a gap between cycles until dismissed."""
         logger.info("Alarm ring loop started.")
         while not self._ring_stop.is_set():
             if self._alert_audio is not None:
@@ -241,31 +200,20 @@ class AlarmClock(RunnablePlugin):
                     stream.close()
                 except Exception as e:
                     logger.debug(f"Ring tone playback error: {e}")
-            # Wait 2 seconds between cycles, but check for stop frequently
             self._ring_stop.wait(timeout=2.0)
         logger.info("Alarm ring loop stopped.")
 
     def _start_ringing(self, alarm: Alarm):
-        """Start the alarm ringing loop and pause music."""
         if self.ringing:
-            return  # Already ringing
-
+            return
         self.ringing = True
         self._ringing_alarm = alarm
         self._ring_stop.clear()
 
-        # Pause music if playing
         self.event_system.publish(EventMessage("system", "music_pause", {}))
-
-        # Flash the display
         self.event_system.publish(EventMessage(
-            role="display",
-            name="timer",
-            content={
-                "title": f"{alarm.description}",
-                "content": "ALARM",
-                "alert": True,
-            },
+            role="display", name="timer",
+            content={"title": f"{alarm.description}", "content": "ALARM", "alert": True},
             process_output=False
         ))
 
@@ -274,31 +222,22 @@ class AlarmClock(RunnablePlugin):
         logger.info(f"Alarm ringing: {alarm.description}")
 
     def dismiss(self) -> bool:
-        """Stop the ringing alarm. Returns True if an alarm was dismissed."""
         if not self.ringing:
             return False
-
         self._ring_stop.set()
         if self._ring_thread and self._ring_thread.is_alive():
             self._ring_thread.join(timeout=3)
         self._ring_thread = None
-
         dismissed = self._ringing_alarm
         self.ringing = False
         self._ringing_alarm = None
-
-        # Resume music if it was paused
         self.event_system.publish(EventMessage("system", "music_resume", {}))
-
         if dismissed:
             logger.info(f"Alarm dismissed: {dismissed.description}")
-
         return True
 
     def _check_alarms(self, event: EventMessage):
-        """Check and trigger expired alarms on each system tick."""
         now = datetime.now()
-
         with self._lock:
             expired = [a for a in self.alarms if a.alarm_time <= now]
             self.alarms = [a for a in self.alarms if a.alarm_time > now]
@@ -306,13 +245,9 @@ class AlarmClock(RunnablePlugin):
         for alarm in expired:
             logger.info(f"Alarm expired: {alarm.description}")
             self._start_ringing(alarm)
-
-            # Notify the LLM
             self.event_system.publish(EventMessage(
-                "tool",
-                "alarm",
+                "tool", "alarm",
                 f"Alarm triggered: {alarm.description}. The alarm is ringing and will continue until the user says stop, cancel, or silence.",
                 process_output=True
             ))
-            # Only ring for the first expired alarm
             break

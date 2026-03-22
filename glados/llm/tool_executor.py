@@ -4,6 +4,7 @@ import json
 from loguru import logger
 
 from glados.llm.client_type import ClientType
+from glados.mcp.server import GladosMCPServer
 from glados.system.event_system import EventSystem, EventMessage
 from glados.system.plugin import PluginSystem
 
@@ -12,6 +13,7 @@ class ToolExecutor:
     def __init__(self, plugin_manager: PluginSystem = None):
         self.plugin_manager = plugin_manager
         self.event_system = EventSystem()
+        self.mcp_server = GladosMCPServer()
 
     def execute_tool(self, tool_call, architecture=ClientType.OPENAI) -> dict:
 
@@ -80,3 +82,38 @@ class ToolExecutor:
 
         logger.info(f"returning results: {results}")
         return {"status": "success", "results": results}
+
+    def execute_tool_via_mcp(self, function_name: str, arguments: dict) -> dict:
+        """Execute a tool through the MCP server.
+
+        This is the MCP-native execution path. Falls back to the legacy
+        PluginSystem path if the tool isn't registered with MCP.
+        """
+        if not self.mcp_server.has_tool(function_name):
+            logger.debug(f"Tool '{function_name}' not in MCP server, falling back to legacy execution")
+            return None
+
+        self.event_system.publish(EventMessage(
+            "status", "tool_call", {"message": f"Using {function_name}", "tool": function_name}
+        ))
+
+        result = self.mcp_server.call_tool(function_name, arguments)
+
+        if result.isError:
+            error_text = result.content[0].text if result.content else "Unknown error"
+            logger.error(f"MCP tool '{function_name}' returned error: {error_text}")
+            self.event_system.publish(EventMessage(
+                role="tool", name=function_name,
+                content=f"There was an error invoking this tool, the error was: {error_text}",
+                process_output=True
+            ))
+            return {"error": error_text, "tool": function_name}
+
+        # Extract text from MCP CallToolResult
+        result_text = result.content[0].text if result.content else ""
+        try:
+            result_data = json.loads(result_text)
+        except (json.JSONDecodeError, TypeError):
+            result_data = result_text
+
+        return {"status": "success", "results": [{"tool": function_name, "result": result_data}]}

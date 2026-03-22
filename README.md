@@ -210,6 +210,10 @@ Glados:
     threshold: 0.5
     models:
       - models/glados_wakeword.onnx
+  mcp_servers:                                   # optional external MCP servers
+    - name: filesystem
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
 ```
 
 ## Cuda Torch, you need to install the cuda version of torch, e.g:
@@ -219,54 +223,127 @@ Glados:
 
 ## Plugins
 
-Plugins can be defined either as functions or entire running classes, this is a complete example that instantiates, and
-has functions the LLM can call.
+Plugins use the MCP (Model Context Protocol) layer for tool registration. There are two patterns:
+
+### Simple function plugin (`@mcp_tool` decorator)
 
 ```python
-class MyRunnablePlugin(RunnablePlugin):
+from glados.context.activity import Activity
+from glados.mcp.decorators import mcp_tool
+
+@mcp_tool(
+    description="Get current weather for a location.",
+    parameters={"location": {"type": "string", "description": "City name"}},
+    required=["location"],
+    intents=["what is the weather", "is it cold today"],
+    process_output=True,
+    activity=[Activity.GENERAL, Activity.UTILITIES],
+    system_prompt="When reporting weather, include temperature and conditions.",
+)
+def handle_weather(location: str) -> str:
+    return f"Sunny, 25C in {location}"
+```
+
+### Stateful plugin (`RunnableMCPPlugin` class)
+
+For plugins that need background processes, event subscriptions, or lifecycle management:
+
+```python
+from glados.context.activity import Activity
+from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
+from glados.system.event_system import EventHook, EventMessage
+
+class MyPlugin(RunnableMCPPlugin):
     def __init__(self):
         super().__init__()
-        self._stop_event = threading.Event()
-        self._worker_thread = None
 
-        # register a llm function we can call from the llm
-        plugin_manager.register(
-            llm_function_request=FunctionRequest(
-                function=FunctionMetadata(
-                    description="Hello World, greets the responder by name if known, usage example: 'hello world, "
-                                "my name is kegan'",
-                    parameters=Parameters(type="object", required=['name'], properties={
-                        'name': ParameterType(type="string", description="name to acknowledge")
-                    })
-                )),
-            intents=[
-               "invoke the hello world function",
-               "hello world, my name is joe",
-               "run the hello world plugin"
-            ],
-            process_output=True,  # process output via llm model inference
-            activity=[Activity.GENERAL]  # which activity contexts this tool is available in
-        )(self.hello_world)
+        # Plugin config is auto-loaded from glados_config.yml
+        self.greeting = self.plugin_config.get("greeting", "hello")
+
+        # Add guidance to the system prompt
+        self.register_system_prompt("When greeting, always use the user's name.")
+
+        self.register_tool(
+            handler=self.hello_world,
+            description="Greets someone by name",
+            parameters={"name": {"type": "string", "description": "Name to greet"}},
+            required=["name"],
+            intents=["hello world", "greet someone"],
+            process_output=True,
+            activity=[Activity.GENERAL],
+        )
 
     def start(self):
-        logger.info("Starting...")
-        # subscribe to system tick instead of running own thread
         self.event_system.subscribe(
             "system.tick",
             EventHook("my_tick", callback=self._on_tick, priority=1)
         )
 
     def stop(self):
-        logger.info("Shutting down")
         self.event_system.unsubscribe("system.tick", "my_tick")
 
     def hello_world(self, name: str):
-        logger.info(f"hello world: {name}")
-        return {
-            "status": "success",
-            "content": f"hello world, name passed in was {name}"
-        }
+        return {"status": "success", "content": f"{self.greeting} {name}"}
+
+    def _on_tick(self, event: EventMessage):
+        pass  # periodic background work
 ```
+
+### Plugin Configuration
+
+Plugins can load config from `glados_config.yml` under the `plugins` key. The `name` field is matched
+against the **class name** (case-insensitive, underscores ignored):
+
+```yaml
+plugins:
+  - name: music_player      # matches class MusicPlayer
+    config:
+      default_volume: 50
+  - name: sarcasm_core       # matches class SarcasmCore
+    config:
+      enabled: true
+  - name: three_laws         # matches class ThreeLaws
+    config:
+      enabled: true
+```
+
+- **RunnableMCPPlugin**: config is auto-loaded into `self.plugin_config` dict
+- **Function plugins**: use `RunnableMCPPlugin.get_plugin_config("name")` (matches same way)
+
+### System Prompt Additions
+
+Plugins can append text to the system prompt to guide LLM behavior:
+
+- **`@mcp_tool(system_prompt="...")`** — decorator param for function plugins
+- **`self.register_system_prompt("...")`** — method on `RunnableMCPPlugin` for class plugins
+
+These are appended as system messages to all activity contexts after the personality preprompt.
+
+### Legacy decorator (still supported)
+
+The old `@plugin_manager.register(FunctionRequest(...))` pattern still works and automatically
+registers tools with the MCP server. See `glados/mcp/README.md` for full MCP integration details.
+
+## MCP (Model Context Protocol)
+
+GlaDOS uses MCP for standardized tool registration and execution. All plugin tools (both `@mcp_tool` and legacy)
+are registered with an in-process `GladosMCPServer` that provides:
+
+- MCP-standard tool schemas (`mcp.types.Tool`)
+- Direct in-process tool execution (no transport overhead)
+- OpenAI format conversion for passing to the LLM
+- Activity-based tool filtering via `ToolMetadataRegistry`
+
+External MCP servers can be connected via `glados_config.yml`:
+
+```yaml
+mcp_servers:
+  - name: filesystem
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
+```
+
+See `glados/mcp/README.md` for detailed API documentation and examples.
 
 ## Event System
 

@@ -39,9 +39,17 @@ class ChatClient:
         for line in config.personality_preprompt:
             role = list(line.keys())[0]
             content = list(line.values())[0]
-            logger.info(f"role: {role}, content: {content}")
+            logger.info(f"System prompt ({role}): {str(content)[:80]}...")
             for activity in Activity:
                 self.message_manager.add_message(role, content, activity=activity)
+
+        # Append plugin-registered system prompt additions
+        plugin_prompts = self.plugin_system.get_system_prompts()
+        if plugin_prompts:
+            combined = "\n".join(plugin_prompts)
+            logger.info(f"Appending {len(plugin_prompts)} plugin system prompt(s) to all {len(list(Activity))} activity contexts")
+            for activity in Activity:
+                self.message_manager.add_message("system", combined, activity=activity)
 
         if config.client_type.upper() == ClientType.OPENAI.name:
             self.client = OpenAI(base_url=config.completion_url, api_key=config.api_key)

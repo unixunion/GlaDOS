@@ -4,12 +4,8 @@ from typing import Optional, List
 from loguru import logger
 
 from glados.context.activity import Activity
-from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
-from glados.system.event_system import EventSystem, EventMessage, EventHook
-from glados.system.plugin import PluginSystem
-from glados.system.runnable_plugin import RunnablePlugin
-
-plugin_manager = PluginSystem()
+from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
+from glados.system.event_system import EventMessage, EventHook
 
 
 def format_duration(total_seconds: int) -> str:
@@ -42,14 +38,14 @@ class Timer:
     description: str = None
 
 
-class CountdownTimer(RunnablePlugin):
+class CountdownTimer(RunnableMCPPlugin):
     _instance = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             logger.info("Instantiating singleton")
             cls._instance = super(CountdownTimer, cls).__new__(cls)
-            cls._instance._initialized = False  # Ensure this is only done once
+            cls._instance._initialized = False
         return cls._instance
 
     def __init__(self):
@@ -58,29 +54,17 @@ class CountdownTimer(RunnablePlugin):
         self._initialized = True
         super().__init__()
         self.timers: List[Timer] = []
-        self.event_system = EventSystem()
         logger.info("CountdownTimer system initializing.")
 
-        # Register LLM functions
-        plugin_manager.register(
-            llm_function_request=FunctionRequest(
-                type="function",
-                function=FunctionMetadata(
-                    description="Set a timer for a specified duration and an optional description.",
-                    parameters=Parameters(
-                        type="object",
-                        properties={
-                            "hours": ParameterType(type="integer", description="Number of hours for the timer."),
-                            "minutes": ParameterType(type="integer", description="Number of minutes for the timer."),
-                            "seconds": ParameterType(type="integer", description="Number of seconds for the timer."),
-                            "description": ParameterType(type="string",
-                                                         description="Optional description for the timer."),
-                        },
-                        required=[],
-                        additionalProperties=False,
-                    ),
-                ),
-            ),
+        self.register_tool(
+            handler=self.set_timer,
+            description="Set a timer for a specified duration and an optional description.",
+            parameters={
+                "hours": {"type": "integer", "description": "Number of hours for the timer."},
+                "minutes": {"type": "integer", "description": "Number of minutes for the timer."},
+                "seconds": {"type": "integer", "description": "Number of seconds for the timer."},
+                "description": {"type": "string", "description": "Optional description for the timer."},
+            },
             intents=[
                 "Set a timer for twelve minutes",
                 "Start a countdown timer for 45 seconds",
@@ -88,42 +72,26 @@ class CountdownTimer(RunnablePlugin):
                 "Timer for 60 seconds"
             ],
             process_output=True,
-            activity=[Activity.UTILITIES, Activity.COOKING]
-        )(self.set_timer)
+            activity=[Activity.UTILITIES, Activity.COOKING],
+        )
 
-        plugin_manager.register(
-            llm_function_request=FunctionRequest(
-                type="function",
-                function=FunctionMetadata(
-                    description="List all active timers with their descriptions and expiration times.",
-                    parameters=Parameters(type="object", properties={}, required=[], additionalProperties=False),
-                ),
-            ),
+        self.register_tool(
+            handler=self.list_timers,
+            description="List all active timers with their descriptions and expiration times.",
             intents=[
                 "list all timers",
                 "what timers are active",
                 "how much time left on my egg timer"
             ],
             process_output=True,
-            activity=[Activity.UTILITIES, Activity.COOKING]
-        )(self.list_timers)
+            activity=[Activity.UTILITIES, Activity.COOKING],
+        )
 
     def add_timer(self, alarm_time: datetime, description: str):
-        """
-        Add a new timer to the list.
-        """
-
-        self.timers.append(Timer(
-            alarm_time=alarm_time,
-            description=description
-        ))
-
+        self.timers.append(Timer(alarm_time=alarm_time, description=description))
         logger.info(f"Added timer: {description}, expires at {format_time_for_tts(alarm_time)}.")
 
     def remove_expired_timers(self):
-        """
-        Remove expired timers and return them for further processing.
-        """
         now = datetime.now()
         expired_timers = [timer for timer in self.timers if timer.alarm_time <= now]
         self.timers = [timer for timer in self.timers if timer.alarm_time > now]
@@ -134,11 +102,7 @@ class CountdownTimer(RunnablePlugin):
                   minutes: Optional[int] = 0,
                   seconds: Optional[int] = 0,
                   description: Optional[str] = None):
-        """
-        Set a timer for a specific duration.
-        """
         try:
-            # Validate duration
             total_seconds = timedelta(
                 hours=int(hours or 0),
                 minutes=int(minutes or 0),
@@ -147,14 +111,9 @@ class CountdownTimer(RunnablePlugin):
             if total_seconds <= 0:
                 return {"status": "error", "message": "Duration must be greater than 0 seconds."}
 
-            # Calculate alarm time
             alarm_time = datetime.now() + timedelta(seconds=total_seconds)
             duration_str = format_duration(int(total_seconds))
-
-            # Generate default description
             description = description or f"the {duration_str} timer"
-
-            # Add the timer
             self.add_timer(alarm_time, description)
 
             return {
@@ -167,9 +126,6 @@ class CountdownTimer(RunnablePlugin):
             return {"status": "error", "message": str(e)}
 
     def list_timers(self):
-        """
-        List all active timers with their descriptions and expiration durations.
-        """
         if not self.timers:
             return {"status": "empty", "message": "No active timers."}
 
@@ -182,13 +138,9 @@ class CountdownTimer(RunnablePlugin):
             }
             for timer in self.timers
         ]
-
         return {"status": "success", "timers": timers_info}
 
     def _check_timers(self, event: EventMessage):
-        """
-        Hook to check and handle expired timers.
-        """
         logger.debug("Checking timers")
         expired_timers = self.remove_expired_timers()
 
@@ -199,14 +151,11 @@ class CountdownTimer(RunnablePlugin):
                 EventMessage(
                     role="tool",
                     name="set_timer",
-                    content={
-                        "message": f"A timer called: '{timer.description}' has expired."
-                    },
+                    content={"message": f"A timer called: '{timer.description}' has expired."},
                     process_output=True
                 )
             )
 
-            # Flash timer expiry on the connected display
             self.event_system.publish(
                 EventMessage(
                     role="display",
@@ -220,7 +169,6 @@ class CountdownTimer(RunnablePlugin):
                 )
             )
 
-            # Play audio alert for immediate feedback before TTS
             try:
                 import subprocess
                 import os
@@ -233,9 +181,6 @@ class CountdownTimer(RunnablePlugin):
     def start(self):
         logger.info("Starting CountdownTimer.")
         self.event_system.subscribe("system.tick", EventHook("check_timers", callback=self._check_timers, priority=5))
-        # self.event_system.register_hook(self._check_timers)
 
     def stop(self):
         logger.info("Stopping CountdownTimer.")
-        # self.event_system.unregister_hook(self._check_timers)
-

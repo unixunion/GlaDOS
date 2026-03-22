@@ -6,27 +6,15 @@ import time
 
 from loguru import logger
 
+from glados.config import GladosConfig
 from glados.context.activity import Activity
-from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
+from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
 from glados.rate_limit import rate_limited
 from glados.system.event_system import EventMessage
-from glados.system.event_system import EventSystem
-from glados.system.plugin import PluginSystem
-from glados.system.runnable_plugin import RunnablePlugin
-
-plugin_manager = PluginSystem()  # Plugin manager instance
-event_system = EventSystem()  # Event system instance
 
 
-class Observe(RunnablePlugin):
+class Observe(RunnableMCPPlugin):
     def __init__(self, image_directory: str = "vision_images", scan_interval: int = 900):
-        """
-        Initialize the Observe plugin.
-
-        Args:
-            image_directory (str): The directory containing JPEG images from cameras.
-            scan_interval (int): Time interval (in seconds) to scan the directory.
-        """
         logger.info("Initializing the Observer")
         super().__init__()
         self.image_directory = image_directory
@@ -36,48 +24,23 @@ class Observe(RunnablePlugin):
         self._worker_thread = None
         self._last_called = datetime.datetime.now()
 
-        # plugin_manager.register(
-        #     llm_function_request=FunctionRequest(
-        #         type="function",
-        #         function=FunctionMetadata(
-        #             description="Returns textual data describing room occupancy, and overall condition of rooms.",
-        #             parameters=Parameters(
-        #                 type="object",
-        #                 properties={},
-        #                 required=[],
-        #                 additionalProperties=False,
-        #             ),
-        #         ),
-        #     ),
-        #     intents=[
-        #         "observe all cameras",
-        #         "what can you see",
-        #         "go find something to do",
-        #         "does anything need doing?"
-        #     ],
-        #     process_output=True,
-        # )(self.identify_chores)
-
-        plugin_manager.register(
-            llm_function_request=FunctionRequest(
-                type="function",
-                function=FunctionMetadata(
-                    description="This function observes the various rooms of the household, or can be used to describe an "
-                                "object in any room for general purposes, such as determining a response relevant to a "
-                                "request which relates to a specific room or person.",
-                    parameters=Parameters(type="object", required=['query'], properties={
-                        'room': ParameterType(
-                            type="string",
-                            description="The room in which to make the observation.",
-                            enum=["OFFICE", "CLASSROOM", "KITCHEN", "HALL", "LIVING_ROOM", "BEDROOM", "DINING_ROOM"],
-                        ),
-                        'query': ParameterType(
-                            type="string",
-                            description="The observation related to the room that is to be made.",
-                        )
-                    })
-                ),
-            ),
+        self.register_tool(
+            handler=self.get_camera_feed,
+            description="This function observes the various rooms of the household, or can be used to describe an "
+                        "object in any room for general purposes, such as determining a response relevant to a "
+                        "request which relates to a specific room or person.",
+            parameters={
+                "room": {
+                    "type": "string",
+                    "description": "The room in which to make the observation.",
+                    "enum": ["OFFICE", "CLASSROOM", "KITCHEN", "HALL", "LIVING_ROOM", "BEDROOM", "DINING_ROOM"],
+                },
+                "query": {
+                    "type": "string",
+                    "description": "The observation related to the room that is to be made.",
+                },
+            },
+            required=["query"],
             intents=[
                 "what is going on in the office",
                 "which room's are occupied",
@@ -94,11 +57,19 @@ class Observe(RunnablePlugin):
                 "report activity in the hallway",
             ],
             process_output=True,
-            activity=[Activity.GENERAL]
-        )(self.get_camera_feed)
+            activity=[Activity.GENERAL],
+        )
 
     def start(self):
-        """Start the Observe plugin."""
+        # Respect vision_enabled config
+        try:
+            config = GladosConfig.from_yaml("glados_config.yml")
+            if not config.vision_enabled:
+                logger.info("Vision disabled in config — Observe plugin will not start background scanning")
+                return
+        except Exception:
+            pass  # If config can't be loaded, start normally
+
         logger.info("Starting observation...")
         if self._worker_thread and self._worker_thread.is_alive():
             return
@@ -115,7 +86,6 @@ class Observe(RunnablePlugin):
         logger.success("Observation started")
 
     def stop(self):
-        """Stop the Observe plugin."""
         logger.info("Stopping observation...")
         self._stop_event.set()
         if self._worker_thread:
@@ -123,13 +93,11 @@ class Observe(RunnablePlugin):
         logger.success("Observation stopped")
 
     def identify_chores(self):
-        """Scan the directory and send images for processing."""
         logger.info("Looking for chores based on observations")
         if not os.path.exists(self.image_directory):
             logger.error(f"Image directory {self.image_directory} does not exist.")
             return "Error loading data feeds from cameras"
 
-        # Iterate through all JPEG images in the directory, skipping stale/cached images
         now = time.time()
         images = []
         for file in os.listdir(self.image_directory):
@@ -159,8 +127,6 @@ class Observe(RunnablePlugin):
 
     @rate_limited(600)
     def get_camera_feed(self, room: str = None, query: str = None) -> dict:
-        """Scan the directory and send images for processing. and then observes """
-
         logger.info(f"Performing observations for room: {room if room else 'ALL ROOMS'}")
 
         if query:
@@ -169,14 +135,13 @@ class Observe(RunnablePlugin):
 
         if not os.path.exists(self.image_directory):
             logger.error(f"Image directory {self.image_directory} does not exist.")
-            return {"status": "Error: Unable to access the vision images repository. Please ensure the directory exists and is accessible."}
+            return {"status": "Error: Unable to access the vision images repository."}
 
-        # Iterate through all JPEG images in the directory
         images = [
             os.path.join(self.image_directory, file)
             for file in os.listdir(self.image_directory)
             if file.lower().endswith((".jpg", ".jpeg"))
-               and (not room or file.lower().startswith(room.lower()))  # Filter by room prefix if provided
+               and (not room or file.lower().startswith(room.lower()))
         ]
 
         if not images:
@@ -190,10 +155,9 @@ class Observe(RunnablePlugin):
                                    vision_prompt=query or "Identify and describe the contents of the image "
                                                           "relevant to observing the state of a room,"
                                                           "such as the presence of people, objects, items out of "
-                                                          "place, or any unusual activities. Focus on details that "
-                                                          "might indicate actions or responses needed within the room.",
+                                                          "place, or any unusual activities.",
                                    additional_prompt="Descibe in detail what is observed in the description in relation to "
-                                                     f"the request: '{query or None}'. Invoke any functions that seem relevant to the enquiry.",
+                                                     f"the request: '{query or None}'. Invoke any functions that seem relevant.",
                                    )
             except Exception as e:
                 logger.error(f"Error processing image {image_path}: {e}")
@@ -201,21 +165,11 @@ class Observe(RunnablePlugin):
         return {"status": "pending, the tool will call back with the information when it is ready"}
 
     def process_image(self, image_path: str, vision_prompt: str = None, additional_prompt: str = None):
-        """
-        Encode the image and send it to the LLM for processing.
-
-        Args:
-            vision_prompt: the prompt to the vision model
-            additional_prompt: the prompt back to the llm when interpreting vision model description
-            image_path (str): Path to the image file.
-        """
         try:
-            # Encode the image as Base64
             with open(image_path, "rb") as image_file:
                 base64_image = base64.b64encode(image_file.read()).decode("utf-8")
 
-            # Publish an event to the LLM with the image
-            event_system.publish(
+            self.event_system.publish(
                 EventMessage(
                     role="vision",
                     name="request",
@@ -225,12 +179,8 @@ class Observe(RunnablePlugin):
                         "file_name": f"{image_path}",
                         "room": f"{image_path}",
                         "description": f"Observing image from {os.path.basename(image_path)}",
-                        "vision_prompt": vision_prompt or "identify contents of image relevant for a home assistant automation system, such as "
-                                                          "observations, dirt, spills or anything that might require triggering robot vacuum cleaner. ",
-                        "additional_prompt": (
-                                additional_prompt or "automatically trigger the start_vacuuming tool if dirt or spills are identified in the image description "
-                                                     "and if the tool has not already been started. No comment or reply is required for this request"
-                        ),
+                        "vision_prompt": vision_prompt or "identify contents of image relevant for a home assistant",
+                        "additional_prompt": additional_prompt or "automatically trigger the start_vacuuming tool if dirt or spills are identified",
                     },
                     process_output=True,
                 )

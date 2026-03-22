@@ -1,28 +1,18 @@
-from glados.context.activity import Activity
-from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
-from glados.system.plugin import PluginSystem
 from loguru import logger
 
-plugin_manager = PluginSystem()
+from glados.context.activity import Activity
+from glados.mcp.decorators import mcp_tool
 
 
-@plugin_manager.register(
-    llm_function_request=FunctionRequest(
-        type="function",
-        function=FunctionMetadata(
-            description="Get current weather for a location.",
-            parameters=Parameters(
-                type="object",
-                properties={
-                    "location": ParameterType(
-                        type="string",
-                        description="The location for which to check the weather conditions"
-                    ),
-                },
-                required=["location"],
-                additionalProperties=False
-            )
-        )),
+@mcp_tool(
+    description="Get current weather for a location.",
+    parameters={
+        "location": {
+            "type": "string",
+            "description": "The location for which to check the weather conditions",
+        },
+    },
+    required=["location"],
     intents=[
         "what is the weather",
         "what's it like outside",

@@ -24,7 +24,10 @@ class MessageManager:
 
     def add_message(self, role, content, name=None, images=None, activity: Activity = Activity.GENERAL, architecture=ClientType.OPENAI):
         with self._lock:
-            logger.info(f"Add Message: role:{role}, content:{str(content)[:128]}, name:{name}")
+            if role == "system":
+                logger.debug(f"Add Message: role:{role}, content:{str(content)[:80]}..., activity:{activity}")
+            else:
+                logger.info(f"Add Message: role:{role}, content:{str(content)[:128]}, name:{name}")
             if architecture is ClientType.OPENAI:
                 message = {"role": role, "content": str(content)}
                 if images:
@@ -72,7 +75,28 @@ class MessageManager:
 
     def get_messages(self):
         with self._lock:
-            return self._messages[self.current_context].copy()
+            msgs = self._messages[self.current_context].copy()
+
+            # Ensure tool messages don't appear before the first user message.
+            # Some model templates (e.g., Qwen) require a user message first.
+            # Drop any tool messages that arrive before the first user message —
+            # these are typically just startup notifications (e.g., "loaded 148 recipes").
+            first_user_idx = None
+            for i, msg in enumerate(msgs):
+                if isinstance(msg, dict) and msg.get("role") == "user":
+                    first_user_idx = i
+                    break
+
+            if first_user_idx is not None and first_user_idx > 0:
+                filtered = [
+                    msg for i, msg in enumerate(msgs)
+                    if not (i < first_user_idx and isinstance(msg, dict) and msg.get("role") == "tool")
+                ]
+                if len(filtered) < len(msgs):
+                    logger.debug(f"Dropped {len(msgs) - len(filtered)} tool message(s) before first user message")
+                    msgs = filtered
+
+            return msgs
 
     def switch_context(self, activity: Activity):
         """Switch the current context to a specific activity."""

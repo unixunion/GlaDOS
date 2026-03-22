@@ -1,23 +1,18 @@
 from loguru import logger
 
 from glados.context.activity import Activity
-from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters
-from glados.system.event_system import EventSystem, EventMessage
-from glados.system.plugin import PluginSystem
-from glados.system.runnable_plugin import RunnablePlugin
-
-plugin_manager = PluginSystem()
-event_system = EventSystem()
+from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
+from glados.system.event_system import EventMessage
 
 
-class RobotVacuum(RunnablePlugin):
+class RobotVacuum(RunnableMCPPlugin):
     _instance = None
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             logger.info("Instantiating singleton")
             cls._instance = super(RobotVacuum, cls).__new__(cls)
-            cls._instance._initialized = False  # Ensure this is only done once
+            cls._instance._initialized = False
         return cls._instance
 
     def __init__(self):
@@ -28,20 +23,9 @@ class RobotVacuum(RunnablePlugin):
         self.is_vacuuming = False
         logger.info("RobotVacuum system initializing.")
 
-        # Register LLM functions
-        plugin_manager.register(
-            llm_function_request=FunctionRequest(
-                type="function",
-                function=FunctionMetadata(
-                    description="Start the robot vacuum cleaner to clean the floors and carpets",
-                    parameters=Parameters(
-                        type="object",
-                        properties={},
-                        required=[],
-                        additionalProperties=False,
-                    ),
-                ),
-            ),
+        self.register_tool(
+            handler=self.start_vacuuming,
+            description="Start the robot vacuum cleaner to clean the floors and carpets",
             intents=[
                 "Start vacuuming",
                 "start the vacuum cleaner",
@@ -52,22 +36,12 @@ class RobotVacuum(RunnablePlugin):
                 "Send the vacuum robot to the kitchen"
             ],
             process_output=True,
-            activity=[Activity.CHORES]
-        )(self.start_vacuuming)
+            activity=[Activity.CHORES],
+        )
 
-        plugin_manager.register(
-            llm_function_request=FunctionRequest(
-                type="function",
-                function=FunctionMetadata(
-                    description="Stops the robot vacuum cleaner",
-                    parameters=Parameters(
-                        type="object",
-                        properties={},
-                        required=[],
-                        additionalProperties=False,
-                    ),
-                ),
-            ),
+        self.register_tool(
+            handler=self.stop_vacuuming,
+            description="Stops the robot vacuum cleaner",
             intents=[
                 "Stop vacuuming",
                 "Send the vacuum cleaner to the doc",
@@ -77,13 +51,13 @@ class RobotVacuum(RunnablePlugin):
                 "stop the roomba"
             ],
             process_output=True,
-            activity=[Activity.CHORES]
-        )(self.stop_vacuuming)
+            activity=[Activity.CHORES],
+        )
 
     def start_vacuuming(self) -> dict:
         if not self.is_vacuuming:
             self.is_vacuuming = True
-            event_system.publish(EventMessage(
+            self.event_system.publish(EventMessage(
                 role="tool",
                 name="start_vacuuming",
                 content="Robot vacuum started"
@@ -96,7 +70,7 @@ class RobotVacuum(RunnablePlugin):
     def stop_vacuuming(self) -> dict:
         if self.is_vacuuming:
             self.is_vacuuming = False
-            event_system.publish(EventMessage(
+            self.event_system.publish(EventMessage(
                 role="tool",
                 name="stop_vacuuming",
                 content="Robot vacuum has finished"

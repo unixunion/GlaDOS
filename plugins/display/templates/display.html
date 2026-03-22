@@ -25,7 +25,7 @@
 
         #display-container {
             flex: 1;
-            padding: 24px;
+            padding: 56px 24px 24px 24px; /* top padding clears the activity indicator pill */
             display: flex;
             flex-direction: column;
         }
@@ -204,7 +204,7 @@
         /* Connection status */
         #connection-status {
             position: fixed;
-            top: 80px;
+            top: 44px;
             right: 12px;
             font-size: 0.8rem;
             padding: 4px 10px;
@@ -215,24 +215,49 @@
         .connected { color: #4caf50; }
         .disconnected { color: #f44336; }
 
+        /* Wiki link */
+        #wiki-link {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            font-size: 0.8rem;
+            padding: 6px 14px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #aaa;
+            text-decoration: none;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            transition: color 0.2s, background 0.2s;
+        }
+        #wiki-link:hover {
+            color: #ff6600;
+            background: rgba(255, 102, 0, 0.1);
+            border-color: rgba(255, 102, 0, 0.3);
+        }
+
         /* Activity context indicator */
         #activity-indicator {
             position: fixed;
             top: 12px;
             left: 12px;
-            font-size: 1rem;
-            padding: 8px 16px;
-            border-radius: 20px;
-            background: rgba(255, 102, 0, 0.15);
-            border: 1px solid rgba(255, 102, 0, 0.4);
+            font-size: 0.85rem;
+            padding: 6px 14px;
+            border-radius: 16px;
+            background: rgba(255, 102, 0, 0.12);
+            border: 1px solid rgba(255, 102, 0, 0.3);
             color: #ff6600;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             z-index: 100;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
         }
 
         #activity-indicator .activity-icon { font-size: 1.2rem; }
@@ -307,6 +332,16 @@
             background: #666;
         }
 
+        #status-toast.status-user_speech .status-icon {
+            background: #80cbc4;
+            box-shadow: 0 0 8px rgba(128, 203, 196, 0.6);
+        }
+
+        #status-toast.status-user_speech .status-text {
+            color: #e0f2f1;
+            font-style: italic;
+        }
+
         @keyframes pulse {
             0%, 100% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.5; transform: scale(0.8); }
@@ -321,6 +356,7 @@
 <body>
     <img id="glados-avatar" src="/images/glados.gif" alt="GlaDOS">
     <div id="activity-indicator"></div>
+    <a id="wiki-link" href="/wiki">Wiki</a>
     <div id="connection-status" class="connected">connected</div>
     <div id="display-container">
         <!-- Content rendered by JS -->
@@ -515,11 +551,16 @@
             toastEl.id = 'status-toast';
             toastText.textContent = message;
 
-            // Auto-hide idle status after a short delay; others persist until replaced
+            // Auto-hide idle and user_speech after a delay; others persist until replaced
             if (status === 'idle') {
                 toastHideTimer = setTimeout(() => {
                     toastEl.classList.remove('visible');
                 }, 2000);
+            } else if (status === 'user_speech') {
+                toastText.textContent = '\u201C' + message + '\u201D';
+                toastHideTimer = setTimeout(() => {
+                    toastEl.classList.remove('visible');
+                }, 5000);
             }
         }
 

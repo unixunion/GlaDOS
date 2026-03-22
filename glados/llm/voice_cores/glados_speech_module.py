@@ -9,7 +9,7 @@ from loguru import logger
 from num2words import num2words
 
 from glados.config import GladosConfig
-from glados.system.event_system import EventSystem, EventMessage
+from glados.system.event_system import EventSystem, EventHook, EventMessage
 
 
 
@@ -37,6 +37,7 @@ class GladosSpeechModule:
         self.stt_enabled = True
         self.config = config
         self._output_stream = None
+        self._interrupted = threading.Event()  # Set when TTS should stop mid-playback
 
     def start(self):
         """
@@ -44,8 +45,17 @@ class GladosSpeechModule:
         """
         logger.info("Starting SpeechModule...")
         self._stop_event.clear()
+        self._interrupted.clear()
+
+        # Subscribe to interrupt events (wake word during TTS)
+        if getattr(self.config, 'interrupt_on_wakeword', False):
+            self.event_system.subscribe(
+                "system.interrupt_tts",
+                EventHook("tts_interrupt", callback=self._on_interrupt, priority=10)
+            )
+            logger.info("TTS interruption on wake word enabled")
+
         self._thread.start()
-        #self._say(self.config.announcement)
 
     def stop(self):
         """
@@ -58,6 +68,33 @@ class GladosSpeechModule:
             self._output_stream.close()
             self._output_stream = None
 
+    def _on_interrupt(self, event: EventMessage):
+        """Handle TTS interruption from wake word during speech."""
+        logger.info("TTS interrupted by wake word")
+        self._interrupted.set()
+
+        # Flush remaining text from the TTS queue
+        flushed = 0
+        while not self._tts_queue.empty():
+            try:
+                self._tts_queue.get_nowait()
+                flushed += 1
+            except queue.Empty:
+                break
+        if flushed:
+            logger.info(f"Flushed {flushed} queued TTS item(s)")
+
+        # Stop any active audio output immediately
+        if self._output_stream is not None and self._output_stream.active:
+            try:
+                self._output_stream.abort()
+            except Exception as e:
+                logger.debug(f"Error aborting audio stream: {e}")
+
+        # Clear speaking lock so the mic activates
+        self._speaking_lock.clear()
+        self.event_system.publish(EventMessage("status", "idle", {"message": "Interrupted"}))
+
     def _process_queue(self):
         """
         Continuously process text from the TTS queue and play audio.
@@ -66,6 +103,20 @@ class GladosSpeechModule:
             try:
                 # Wait for text from the queue with a timeout
                 generated_text = self._tts_queue.get(timeout=0.1)
+
+                # Check if we were interrupted while waiting
+                if self._interrupted.is_set():
+                    self._interrupted.clear()
+                    # Drain anything left in the queue
+                    while not self._tts_queue.empty():
+                        try:
+                            item = self._tts_queue.get_nowait()
+                            if item == "<EOS>":
+                                break
+                        except queue.Empty:
+                            break
+                    self._speaking_lock.clear()
+                    continue
 
                 if generated_text == "<EOS>":  # End-of-stream signal
                     logger.info("Received end-of-stream signal. Clearing speaking lock.")
@@ -156,7 +207,11 @@ class GladosSpeechModule:
     def _play_audio(self, audio):
         """
         Play the generated TTS audio using a persistent output stream.
+        Stops early if interrupted by wake word.
         """
+        if self._interrupted.is_set():
+            return
+
         try:
             logger.debug("Playing TTS audio...")
             stream = self._ensure_output_stream()
@@ -166,7 +221,10 @@ class GladosSpeechModule:
                 audio = audio.reshape(-1, 1)
             stream.write(audio)
         except Exception as e:
-            logger.error(f"Error during audio playback: {e}")
+            if self._interrupted.is_set():
+                logger.debug("Audio playback aborted by interrupt")
+            else:
+                logger.error(f"Error during audio playback: {e}")
 
     def _process_text(self, text: str) -> str:
         """
@@ -230,7 +288,8 @@ class GladosSpeechModule:
         # Fix pronunciation of some words
         text = re.sub(r"(?i)\bplugins\b", "plug-ins", text)  # Match whole words case-insensitively
         text = re.sub(r"(?i)\bplugin\b", "plug-in", text)  # Match whole words case-insensitively
-        text = re.sub(r"(?i)\bglados\b", "gladys", text)  # Match 'glados' case-insensitively
+        text = re.sub(r"(?i)\bglados\b", "glad-oss", text)  # Pronunciation hint for TTS
+        text = re.sub(r"%", " percent", text)  # Replace % with spoken form
 
         # Replace Unicode characters that crash the TTS phonemizer/ONNX model
         text = (

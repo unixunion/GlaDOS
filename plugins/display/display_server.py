@@ -1,6 +1,7 @@
 import os
 import threading
 
+import markdown
 from flask import Flask, render_template, send_from_directory
 from flask_socketio import SocketIO
 from loguru import logger
@@ -38,6 +39,13 @@ class DisplayPlugin(RunnablePlugin):
         self._configure_routes()
         self._register_tools()
 
+        plugin_manager.register_system_prompt(
+            "When you use the show_on_display tool to put content on the screen, "
+            "do NOT read or repeat that content aloud. Just briefly confirm it is "
+            "displayed, e.g. 'I've put that on the screen' or 'It's on the display now', "
+            "and let the user read it themselves."
+        )
+
     def _configure_routes(self):
         @self._flask_app.route("/")
         def index():
@@ -48,6 +56,50 @@ class DisplayPlugin(RunnablePlugin):
             images_dir = os.path.join(os.getcwd(), "glados_ui", "images")
             logger.debug(f"Serving image from: {images_dir}/{filename}")
             return send_from_directory(images_dir, filename)
+
+        @self._flask_app.route("/wiki")
+        @self._flask_app.route("/wiki/")
+        @self._flask_app.route("/wiki/<page>")
+        def wiki(page="index"):
+            wiki_dir = os.path.join(os.path.dirname(__file__), "wiki")
+            # Sanitize page name
+            page = page.replace("..", "").replace("/", "").replace("\\", "")
+            md_path = os.path.join(wiki_dir, f"{page}.md")
+
+            if not os.path.exists(md_path):
+                content_html = "<h1>Page Not Found</h1><p>This wiki page does not exist.</p>"
+                title = "Not Found"
+            else:
+                with open(md_path, "r", encoding="utf-8") as f:
+                    md_content = f.read()
+                content_html = markdown.markdown(
+                    md_content,
+                    extensions=["tables", "fenced_code", "codehilite", "toc"],
+                )
+                # Extract title from first h1
+                title = page.replace("_", " ").title()
+                if md_content.startswith("# "):
+                    title = md_content.split("\n")[0].lstrip("# ").strip()
+
+            # Build sidebar from index.md links
+            sidebar_pages = []
+            index_path = os.path.join(wiki_dir, "index.md")
+            if os.path.exists(index_path):
+                with open(index_path, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("- ["):
+                            # Parse "- [Title](slug)" format
+                            import re
+                            m = re.match(r"- \[(.+?)\]\((.+?)\)", line)
+                            if m:
+                                sidebar_pages.append({"title": m.group(1), "slug": m.group(2)})
+
+            return render_template("wiki.html",
+                                   title=title,
+                                   content=content_html,
+                                   sidebar_pages=sidebar_pages,
+                                   current_page=page)
 
         @self._socketio.on("connect")
         def handle_connect():
@@ -95,7 +147,7 @@ class DisplayPlugin(RunnablePlugin):
             llm_function_request=FunctionRequest(
                 type="function",
                 function=FunctionMetadata(
-                    description="Display content on the connected screen (iPad). Use this to show recipes, timers, lists, or any visual content.",
+                    description="Display content on the connected screen. Use this to show recipes, timers, lists, or any visual content.",
                     parameters=Parameters(
                         type="object",
                         properties={
@@ -124,11 +176,13 @@ class DisplayPlugin(RunnablePlugin):
                 "display the timer",
                 "show that on the iPad",
                 "clear the screen",
+                "clear the display",
+                "reset the display",
                 "put that on the display",
                 "show the recipe on screen",
             ],
             process_output=True,
-            activity=[Activity.COOKING, Activity.GENERAL, Activity.UTILITIES, Activity.CHORES]
+            activity=[Activity.COOKING, Activity.GENERAL, Activity.UTILITIES, Activity.CHORES, Activity.SYSTEM, Activity.ENTERTAINMENT]
         )(self.show_on_display)
 
     def show_on_display(self, view_type: str, title: str = "", content: str = ""):

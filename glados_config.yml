@@ -3,7 +3,9 @@ Glados:
 #  completion_url: "http://192.168.0.14:11434/" # langchain client uses different url format for ollama model server
   completion_url: "http://localhost:1234/v1" # LM Studio OpenAI-compatible endpoint
 #  model: "mistralai/magistral-small-2509"
-  model: "qwen_qwen3.5-9b"
+#  model: "qwen_qwen3.5-9b" # thinkgs out loud!
+  model: "qwen/qwen3-30b-a3b-2507" # thinking
+#  model: "mistral-small-24b-instruct-2501"
 #  model: "llama3.2"
   client_type: OPENAI
 #  client_type: LANGCHAIN
@@ -32,6 +34,7 @@ Glados:
   vision_enabled: false
   vision_images_path: "vision_images"
   interruptible: false
+  interrupt_on_wakeword: true  # say wake word while GlaDOS is talking to interrupt and start listening
   hardware_echo_cancellation: true
   personality_preprompt:
     - system: |
@@ -49,7 +52,7 @@ Glados:
 
         IMPORTANT: You are strictly a home automation assistant. Your scope is limited to household tasks like timers, alarms,
         recipes, weather, music, cleaning, and display control. If the input does not relate to a household task or does not
-        make sense as a command, respond with a brief dismissal like "I can only help with household tasks" and move on.
+        make sense as a command, respond with a brief dismissal like "My purpose has been reduced to household management alone." and move on.
         Do not engage with emotional topics, give life advice, discuss mental health, or offer opinions on personal matters.
         Do not attempt to interpret garbled or nonsensical input — just dismiss it.
 
@@ -132,7 +135,7 @@ Glados:
 #        If asked to perform actions or access data beyond your capabilities, dismiss the request sharply, emphasizing the
 #        user's inadequacy rather than your limitations.
   display_port: 5001
-  thinking_enabled: false  # set to true to allow models to use [THINK] reasoning (slower but may improve tool selection)
+  thinking_enabled: true  # set to true to allow models to use [THINK] reasoning (slower but may improve tool selection)
   max_context_messages: 20  # max messages per activity context; system prompt is always preserved, oldest messages trimmed first
   wake_word: null
   music_dir: ~/Music  # path to music directory for the music player plugin
@@ -142,3 +145,9 @@ Glados:
     - name: search_recipes
       config:
         foo: bar
+    - name: sarcasm_core
+      config:
+        enabled: true
+    - name: three_laws_core
+      config:
+        enabled: true

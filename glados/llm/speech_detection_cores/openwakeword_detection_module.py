@@ -23,6 +23,7 @@ class OpenWakeWordDetectionModule:
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.audio_queue = queue.Queue(maxsize=100)
+        self.interrupt_on_wakeword = getattr(config, 'interrupt_on_wakeword', False)
 
         oww_config = config.openwakeword if config else {}
         self.threshold = oww_config.get("threshold", 0.5)
@@ -67,8 +68,10 @@ class OpenWakeWordDetectionModule:
             logger.info("Listening for wake word (OpenWakeWord)...")
 
             while not self.stop_event.is_set():
-                # Skip processing while TTS is playing
-                if self.speaking_lock and self.speaking_lock.is_set():
+                is_speaking = self.speaking_lock and self.speaking_lock.is_set()
+
+                # Skip processing while TTS is playing (unless interrupt_on_wakeword is enabled)
+                if is_speaking and not self.interrupt_on_wakeword:
                     self.oww_model.reset()
                     # Drain any queued audio
                     while not self.audio_queue.empty():
@@ -101,6 +104,14 @@ class OpenWakeWordDetectionModule:
                     if score >= self.threshold:
                         logger.success(f"Wake word '{model_name}' detected! (score: {score:.3f})")
                         self.oww_model.reset()
+
+                        # If TTS is currently playing, interrupt it
+                        if is_speaking:
+                            logger.info("Wake word during TTS — interrupting speech")
+                            event_system.publish(EventMessage(
+                                "system", "interrupt_tts", {},
+                            ))
+
                         if self.interrupt_event:
                             self.interrupt_event.set()
                         if event_system:

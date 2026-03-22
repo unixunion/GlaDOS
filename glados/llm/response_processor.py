@@ -74,10 +74,6 @@ class ResponseProcessor:
             text = self._think_buffer + text
             self._think_buffer = ""
 
-        # Strip any orphaned think tags (open or close) that the state machine might miss
-        text = re.sub(r'(?i)</?think>', '', text)
-        text = re.sub(r'(?i)\[/?think\]', '', text)
-
         result = []
         i = 0
         upper_text = text.upper()
@@ -94,6 +90,9 @@ class ResponseProcessor:
                         best_tag_len = len(tag)
 
                 if best_end != -1:
+                    stripped = text[i:best_end].strip()
+                    if stripped:
+                        logger.info(f"Stripped think content: {stripped[:120]}{'...' if len(stripped) > 120 else ''}")
                     self._inside_think_block = False
                     i = best_end + best_tag_len
                 else:
@@ -111,6 +110,7 @@ class ResponseProcessor:
 
                 if best_start != -1:
                     result.append(text[i:best_start])
+                    logger.info("Model entered think block — stripping reasoning")
                     self._inside_think_block = True
                     i = best_start + best_tag_len
                 else:
@@ -130,19 +130,10 @@ class ResponseProcessor:
 
         return "".join(result)
 
-    # Patterns that indicate the model is narrating its reasoning instead of responding.
-    # These match "thinking out loud" sentences, not normal conversational responses.
-    _META_PATTERNS = re.compile(
-        r"^(The user (is |was |seems |wants )|I should (respond|give|keep|note|acknowledge)"
-        r"|This (seems like|isn't really|is (a system|more of|not))"
-        r"|My scope is |As a home automation|As an? (AI|assistant|home)"
-        r"|Looking at (this|the) |I('ll| will) (give a brief|keep|just respond))",
-        re.IGNORECASE
-    )
-
     def _is_meta_commentary(self, sentence: str) -> bool:
-        """Detect sentences that are internal reasoning rather than user-facing responses."""
-        return bool(self._META_PATTERNS.match(sentence.strip()))
+        """No-op. Think tag stripping is handled by _strip_think_tags().
+        Use a proper instruct model that doesn't leak reasoning."""
+        return False
 
     def finalize_sentence(self):
         """

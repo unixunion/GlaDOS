@@ -7,6 +7,7 @@ from loguru import logger
 
 from glados.context.activity import Activity
 from glados.llm.client_type import ClientType
+from glados.mcp.adapter import MCPPluginAdapter
 from glados.system.function_calling import FunctionRequest
 from glados.system.event_system import EventSystem, EventMessage
 from glados.system.intent_classifier import IntentClassifier
@@ -78,6 +79,7 @@ class PluginSystem:
             return
         self.plugins = {}
         self.intent_classifier = IntentClassifier()
+        self.mcp_adapter = MCPPluginAdapter()
         self._initialized = True
 
     def register(self, name: str = None,
@@ -136,6 +138,17 @@ class PluginSystem:
                 # on every LLM call. Publishing here would duplicate them and bloat
                 # the context, slowing down inference.
 
+                # Also register with MCP adapter for MCP-compatible tool access
+                self.mcp_adapter.register_tool(
+                    name=plugin_name,
+                    handler=func,
+                    llm_function_request=llm_function_request,
+                    intents=intents,
+                    activity=activity or [Activity.GENERAL],
+                    process_output=process_output,
+                    callable_check=is_callable,
+                )
+
             else:
                 logger.warning(
                     f"Skipping plugin: {plugin_name}, due to validation failure. Check the FunctionRequest object.")
@@ -173,7 +186,8 @@ class PluginSystem:
 
     def get_available_tools(self, architecture=ClientType.OPENAI, activity=None):
         """Returns all available and executable tools for passing into the LLM when calling it.
-        When activity is None, returns all tools regardless of activity filter."""
+        When activity is None, returns all tools regardless of activity filter.
+        SYSTEM tools are always included in every context."""
         logger.debug(f"request for tools: architecture: {architecture}, activity: {activity}")
         available_functions = []
         try:
@@ -181,8 +195,10 @@ class PluginSystem:
                 if self.plugins[k][LLM_FUNCTION_REQUEST] != {}:
                     # If no activity filter, include all tools
                     if activity is not None and 'activity' in self.plugins[k]:
-                        if activity not in self.plugins[k]['activity']:
-                            logger.debug(f"excluding tool: {k} due to {activity} not in activities: {self.plugins[k]['activity']}")
+                        plugin_activities = self.plugins[k]['activity']
+                        # SYSTEM tools are always available in every context
+                        if activity not in plugin_activities and Activity.SYSTEM not in plugin_activities:
+                            logger.debug(f"excluding tool: {k} due to {activity} not in activities: {plugin_activities}")
                             continue
 
                     if architecture is ClientType.LANGCHAIN:
