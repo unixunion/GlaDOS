@@ -266,7 +266,18 @@ CURRENT_RECIPES = []
     intents=[
         "find me a recipe for bread",
         "search recipes for chili con carne",
-        "what recipes for pizza do you know"
+        "what recipes for pizza do you know",
+        "search for a recipe",
+        "look up a recipe for cookies",
+        "recipe search for lasagna",
+        "find a recipe for soup",
+        "do you have a recipe for cake",
+        "search recipes for pecan pralines",
+        "recipe for tacos",
+        "what can I cook with chicken",
+        "find recipes for dinner",
+        "look up recipes",
+        "I need a recipe",
     ],
     process_output=True,
     activity=[Activity.COOKING, Activity.GENERAL]
@@ -336,7 +347,22 @@ def search_recipes(query: str) -> dict:
     intents=[
         "lets make apple pie",
         "select a recipe for banana bread",
-        "I want to make american pancakes"
+        "I want to make american pancakes",
+        "lets cook spaghetti",
+        "I want to cook dinner",
+        "lets make something to eat",
+        "cook some dinner",
+        "select the pizza recipe",
+        "choose the lasagna recipe",
+        "make that recipe",
+        "I want to bake cookies",
+        "lets prepare a meal",
+        "select pecan pralines",
+        "select the first one",
+        "select that one",
+        "choose that recipe",
+        "lets make pecan pralines",
+        "make the cookies recipe",
     ],
     process_output=True,
     activity=[Activity.COOKING, Activity.GENERAL]
@@ -462,3 +488,74 @@ def extract_relevant_terms_nlp(query: str) -> str:
 
 # Load recipes at initialization
 load_recipes(data_file)
+
+
+# -- NLP mode handlers ---------------------------------------------------------
+def _recipe_query_extract(text: str) -> dict:
+    """Extract recipe query from natural language."""
+    # Try several prefix-stripping patterns in order
+    for pattern in [
+        r"^(?:please\s+)?(?:find|search|look up|get)\s+(?:me\s+)?(?:a\s+)?(?:recipes?\s+)?(?:for\s+)?",
+        r"^(?:what\s+recipes?\s+(?:for|do you know)\s+)",
+        r"^(?:I\s+need\s+(?:a\s+)?recipe\s+(?:for\s+)?)",
+        r"^(?:do\s+you\s+have\s+(?:a\s+)?recipe\s+(?:for\s+)?)",
+        r"^(?:recipe\s+(?:search\s+)?(?:for\s+)?)",
+    ]:
+        stripped = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+        if stripped and stripped != text:
+            return {"query": stripped}
+    return {"query": text}
+
+
+def _search_recipes_nlp_response(result) -> str:
+    if isinstance(result, str):
+        if "No recipes found" in result:
+            return "I couldn't find any matching recipes."
+        # Extract recipe titles from the result string
+        titles = re.findall(r"Title:\s*([^,]+)", result)
+        if titles:
+            # Speak the top matches (limit to 5 for brevity)
+            top = titles[:5]
+            listing = ", ".join(top[:-1]) + f", and {top[-1]}" if len(top) > 1 else top[0]
+            return (f"I found {len(titles)} recipes. The top matches are: {listing}. "
+                    f"Say lets make followed by the recipe name to select one.")
+        return "I found some recipes. Which one would you like?"
+    if isinstance(result, dict) and result.get("status") == "error":
+        return result.get("message", "Recipe search failed.")
+    return "I found some recipes. Which one would you like?"
+
+
+def _select_recipe_extract(text: str) -> dict:
+    """Extract recipe name for selection."""
+    query = re.sub(
+        r"^(?:please\s+)?(?:let'?s\s+(?:make|cook|prepare|bake)"
+        r"|select\s+(?:a\s+)?(?:the\s+)?(?:recipe\s+)?(?:for\s+)?"
+        r"|I\s+want\s+to\s+(?:make|cook|bake|prepare)"
+        r"|(?:cook|make|bake|prepare)\s+(?:some\s+)?(?:the\s+)?(?:recipe\s+)?(?:for\s+)?)\s*",
+        "", text, flags=re.IGNORECASE
+    ).strip()
+    return {"query": query or text}
+
+
+def _select_recipe_nlp_response(result: dict) -> str:
+    if result.get("status") == "error":
+        return result.get("message", "Couldn't find that recipe.")
+    title = result.get("title", "the recipe")
+    return (f"Selected {title}. It has been displayed on screen. "
+            f"You can ask me to list ingredients, read the steps, or go step by step.")
+
+
+# Register NLP handlers for recipe tools
+from glados.nlp.handler import NLPHandler, NLPHandlerRegistry
+
+_nlp_registry = NLPHandlerRegistry()
+_nlp_registry.register(NLPHandler(
+    tool_name="search_recipes",
+    extract_fn=_recipe_query_extract,
+    response_fn=_search_recipes_nlp_response,
+))
+_nlp_registry.register(NLPHandler(
+    tool_name="select_recipe",
+    extract_fn=_select_recipe_extract,
+    response_fn=_select_recipe_nlp_response,
+))

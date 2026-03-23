@@ -37,6 +37,7 @@ class RobotVacuum(RunnableMCPPlugin):
             ],
             process_output=True,
             activity=[Activity.CHORES],
+            nlp_response=lambda r: r.get("status", "Vacuum started."),
         )
 
         self.register_tool(
@@ -52,6 +53,7 @@ class RobotVacuum(RunnableMCPPlugin):
             ],
             process_output=True,
             activity=[Activity.CHORES],
+            nlp_response=lambda r: r.get("status", "Vacuum stopped."),
         )
 
     def start_vacuuming(self) -> dict:

@@ -106,7 +106,109 @@ These are injected as system messages into all activity contexts.
 | `activity` | list | Activity contexts where this tool is available |
 | `process_output` | bool | True = LLM processes result, False = result goes direct to TTS |
 | `system_prompt` | str | Text appended to LLM system prompt (decorator only) |
+| `nlp_extractors` | dict | NLP mode: param name → regex patterns for extraction |
+| `nlp_response` | callable | NLP mode: formats tool result as spoken text |
+| `nlp_extract_fn` | callable | NLP mode: custom function to extract params from text |
+
+The `nlp_*` parameters enable [NLP mode](nlp-mode) support, allowing the tool to work without an LLM. See the [NLP Mode](nlp-mode) page for details.
+
+## Adding NLP Support
+
+NLP support lets your tool work in NLP mode (without an LLM). There are three approaches depending on complexity:
+
+### Parameterless tools — just add `nlp_response`
+
+```python
+@mcp_tool(
+    description="Get current time",
+    intents=["what is the time", "what time is it"],
+    nlp_response=lambda r: f"The time is {json.loads(r)['time']}.",
+)
+def get_current_time() -> str:
+    return json.dumps({"time": datetime.now().strftime("%H:%M:%S")})
+```
+
+### Regex extraction — for simple parameter patterns
+
+Use `nlp_extractors` with named groups matching your parameter names:
+
+```python
+@mcp_tool(
+    description="Get weather for a location.",
+    parameters={"location": {"type": "string", "description": "City name"}},
+    required=["location"],
+    intents=["what is the weather", "weather in london"],
+    nlp_extractors={
+        "location": [
+            re.compile(r"\b(?:in|for|at)\s+(?P<location>.+?)$", re.IGNORECASE),
+        ],
+    },
+    nlp_response=lambda r: f"The weather is {r}.",
+)
+def handle_weather(location: str) -> str:
+    ...
+```
+
+### Custom extraction — for complex parsing
+
+Use `nlp_extract_fn` when regex isn't enough:
+
+```python
+def _convert_extract(text: str) -> dict:
+    m = re.search(r"(\d+)\s+(\w+)\s+(?:to|in)\s+(\w+)", text)
+    if m:
+        return {"value": float(m.group(1)), "from_unit": m.group(2), "to_unit": m.group(3)}
+    return {}
+
+@mcp_tool(
+    description="Convert units",
+    parameters={...},
+    intents=["convert 100 fahrenheit to celsius", ...],
+    nlp_extract_fn=_convert_extract,
+    nlp_response=lambda r: r.get("message", "Done."),
+)
+def convert_units(value: float, from_unit: str, to_unit: str) -> dict:
+    ...
+```
+
+### NLP-only handlers (no LLM tool)
+
+For commands that don't call external tools (like cooking step navigation), register directly with the handler registry. These auto-register at import time during `load_plugins()`:
+
+```python
+from glados.nlp.handler import NLPHandler, NLPHandlerRegistry
+from glados.system.intent_classifier import IntentClassifier
+
+def register_my_intents():
+    classifier = IntentClassifier()
+    classifier.add_intent("_nlp_my_command", ["do the thing", "trigger it"])
+    classifier.retrain()
+
+    NLPHandlerRegistry().register(NLPHandler(
+        tool_name="_nlp_my_command",
+        extract_fn=lambda text: {},
+        response_fn=lambda _: "Done!",
+        activity=[Activity.GENERAL],
+    ))
+
+# Auto-register at import time
+register_my_intents()
+```
+
+The `NLPDispatcher` is available via `NLPHandlerRegistry().dispatcher` for accessing session state.
+
+### Intent training tips
+
+The IntentClassifier uses Naive Bayes with bag-of-words:
+
+1. **10-15 examples per intent** is ideal. 4 is the minimum.
+2. Use **distinctive words** — "weather forecast" is better than "what is the weather" (too generic).
+3. Include **variations**: "set a timer", "start a countdown", "timer for 5 minutes".
+4. **Avoid collisions** — if two tools share words like "next" (music skip vs cooking next step), rely on activity scoping to disambiguate.
+5. Run `pytest tests/test_nlp.py -v` after adding intents to check for regressions.
 
 ## Plugin Discovery
 
-Plugins are auto-discovered from the `plugins/` directory on startup. Any module with a `RunnablePlugin` or `RunnableMCPPlugin` subclass is instantiated and started automatically.
+Plugins are auto-discovered from the `plugins/` directory on startup. Any `.py` file is imported, and any `RunnablePlugin` or `RunnableMCPPlugin` subclass found is instantiated and started automatically. Function plugins (`@mcp_tool`, `@plugin_manager.register`) register at import time.
+
+NLP-only modules (like `cooking_context.py`) also auto-register their intents at import time — no explicit wiring needed in core code.

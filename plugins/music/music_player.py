@@ -8,7 +8,69 @@ from spotipy.oauth2 import SpotifyOAuth
 
 from glados.context.activity import Activity
 from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
+from glados.nlp.extractors import extract_music_action
 from glados.system.event_system import EventHook
+
+
+def _music_nlp_extract(text: str) -> dict:
+    """Extract music action and query from natural language."""
+    action, query = extract_music_action(text)
+    params = {"action": action}
+    if query:
+        params["query"] = query
+    return params
+
+
+def _music_nlp_response(result: dict) -> str:
+    status = result.get("status", "")
+    if status == "error":
+        return result.get("message", "Music playback error.")
+    if status == "playing":
+        track = result.get("track", "")
+        artist = result.get("artist", "")
+        playlist = result.get("playlist", "")
+        if track and artist:
+            return f"Now playing {track} by {artist}."
+        if artist:
+            return f"Now playing {artist}."
+        if playlist:
+            return f"Now playing playlist {playlist}."
+        return "Playing now."
+    if status in ("paused", "stopped"):
+        return "Music paused."
+    if status == "resumed":
+        return "Resuming playback."
+    if status == "skipped":
+        return "Skipped to next track."
+    if status == "previous":
+        return "Playing previous track."
+    return result.get("message", "Done.")
+
+
+def _list_devices_nlp_response(result: dict) -> str:
+    if result.get("status") == "error":
+        return result.get("message", "Couldn't list devices.")
+    devices = result.get("devices", [])
+    if not devices:
+        return "No Spotify devices found."
+    names = [d["name"] for d in devices]
+    active = [d["name"] for d in devices if d.get("active")]
+    listing = ", ".join(names)
+    response = f"Available devices: {listing}."
+    if active:
+        response += f" {active[0]} is currently active."
+    return response
+
+
+def _now_playing_nlp_response(result: dict) -> str:
+    if result.get("status") == "idle":
+        return "No music is currently playing."
+    if result.get("status") == "error":
+        return result.get("message", "Couldn't check what's playing.")
+    track = result.get("track", "Unknown")
+    artist = result.get("artist", "Unknown")
+    status = "playing" if result.get("status") == "playing" else "paused"
+    return f"Currently {status}: {track} by {artist}."
 
 # Spotify OAuth scopes needed for playback control
 SPOTIFY_SCOPES = "user-modify-playback-state user-read-playback-state user-read-currently-playing"
@@ -110,6 +172,8 @@ class MusicPlayer(RunnableMCPPlugin):
             ],
             process_output=True,
             activity=[Activity.ENTERTAINMENT, Activity.GENERAL],
+            nlp_extract_fn=_music_nlp_extract,
+            nlp_response=_music_nlp_response,
         )
 
         self.register_tool(
@@ -119,9 +183,18 @@ class MusicPlayer(RunnableMCPPlugin):
                 "what song is playing",
                 "what is this song",
                 "what track is on",
+                "name this song",
+                "what's playing",
+                "what song is this",
+                "tell me the song name",
+                "what am I listening to",
+                "what music is on",
+                "which song is this",
+                "what's currently playing",
             ],
             process_output=True,
             activity=[Activity.ENTERTAINMENT, Activity.GENERAL],
+            nlp_response=_now_playing_nlp_response,
         )
 
         self.register_tool(
@@ -132,9 +205,16 @@ class MusicPlayer(RunnableMCPPlugin):
                 "what devices are available",
                 "which speaker is active",
                 "show me my speakers",
+                "list music devices",
+                "what speakers are connected",
+                "show available devices",
+                "which devices can play music",
+                "list playback devices",
+                "where can I play music",
             ],
             process_output=True,
             activity=[Activity.ENTERTAINMENT, Activity.GENERAL],
+            nlp_response=_list_devices_nlp_response,
         )
 
     @property

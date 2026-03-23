@@ -82,6 +82,49 @@ class IntentClassifier:
         confidence = probabilities[max_index]
         return intent, confidence
 
+    def predict_intent_scoped(self, text: str, tool_names: list[str]) -> tuple[str, float]:
+        """Predicts the intent for a given text, restricted to a subset of tool names.
+
+        Filters the probability vector to only the given tool names and returns
+        the best match from that scoped set. Returns ("", 0.0) if no tools qualify.
+        """
+        if not self.model or not tool_names:
+            return "", 0.0
+
+        classes = list(self.model.classes_)
+
+        # Find which class indices are in our scoped set
+        scoped_indices = [i for i, cls in enumerate(classes) if cls in tool_names]
+        if not scoped_indices:
+            return "", 0.0
+
+        # Single-class edge case: if only one scoped tool exists in the model
+        if len(scoped_indices) == 1:
+            intent_name = classes[scoped_indices[0]]
+            examples = []
+            for intent in self.intents:
+                if intent["name"] == intent_name:
+                    examples = intent["examples"]
+                    break
+            query_words = set(text.lower().split())
+            best_overlap = 0.0
+            for example in examples:
+                example_words = set(example.lower().split())
+                if not example_words:
+                    continue
+                overlap = len(query_words & example_words) / len(example_words)
+                best_overlap = max(best_overlap, overlap)
+            logger.debug(f"Scoped single-class keyword match: '{intent_name}' overlap={best_overlap:.2f}")
+            return intent_name, best_overlap
+
+        probabilities = self.model.predict_proba([text])[0]
+
+        # Find the best among scoped indices
+        best_idx = max(scoped_indices, key=lambda i: probabilities[i])
+        intent = classes[best_idx]
+        confidence = probabilities[best_idx]
+        return intent, confidence
+
     def add_intents(self, new_intents: list[dict]):
         """Adds multiple intents to the existing model and retrains it."""
         for intent in new_intents:

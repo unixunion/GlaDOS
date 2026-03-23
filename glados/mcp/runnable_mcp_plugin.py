@@ -1,3 +1,4 @@
+import re
 from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
@@ -5,6 +6,7 @@ from loguru import logger
 from glados.context.activity import Activity
 from glados.mcp.metadata import ToolMetadataRegistry
 from glados.mcp.server import GladosMCPServer
+from glados.nlp.handler import NLPHandler, NLPHandlerRegistry
 from glados.system.event_system import EventSystem
 from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
 from glados.system.intent_classifier import IntentClassifier
@@ -114,6 +116,9 @@ class RunnableMCPPlugin(RunnablePlugin):
         activity: Optional[List[Activity]] = None,
         process_output: bool = True,
         name: Optional[str] = None,
+        nlp_extractors: Optional[Dict[str, list]] = None,
+        nlp_response: Optional[Callable[[Any], str]] = None,
+        nlp_extract_fn: Optional[Callable[[str], dict]] = None,
     ):
         """Register a tool with MCP server and all GlaDOS systems.
 
@@ -193,5 +198,21 @@ class RunnableMCPPlugin(RunnablePlugin):
             "callable": None,
             "activity": activity,
         }
+
+        # Register NLP handler if extractors, extract_fn, or response formatter provided
+        if nlp_extractors is not None or nlp_response is not None or nlp_extract_fn is not None:
+            compiled_extractors = {}
+            for param_name, patterns in (nlp_extractors or {}).items():
+                compiled_extractors[param_name] = [
+                    p if isinstance(p, re.Pattern) else re.compile(p, re.IGNORECASE)
+                    for p in patterns
+                ]
+            nlp_handler = NLPHandler(
+                tool_name=tool_name,
+                extractors=compiled_extractors,
+                response_fn=nlp_response,
+                extract_fn=nlp_extract_fn,
+            )
+            NLPHandlerRegistry().register(nlp_handler)
 
         logger.success(f"MCP tool registered: {tool_name} (from {self.__class__.__name__})")

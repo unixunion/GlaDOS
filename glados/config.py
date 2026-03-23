@@ -79,6 +79,8 @@ class GladosConfig:
     memory_enabled: bool = False
     memory_db_path: str = "data/memory_db"
     memory_top_k: int = 5
+    nlp_mode: bool = False
+    nlp_confidence_threshold: float = 0.4
     mcp_servers: Optional[List[dict]] = field(default_factory=list)
 
     @classmethod

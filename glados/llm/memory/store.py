@@ -140,6 +140,19 @@ class VectorMemoryStore:
 
         return memories
 
+    def clear_all(self) -> int:
+        """Delete all documents from the memory store. Returns the count deleted."""
+        count = self._collection.count()
+        if count == 0:
+            logger.info("[MemoryStore] Collection already empty")
+            return 0
+        # ChromaDB doesn't have a bulk delete-all, so we get all IDs and delete them
+        all_ids = self._collection.get()["ids"]
+        if all_ids:
+            self._collection.delete(ids=all_ids)
+        logger.success(f"[MemoryStore] Cleared {count} documents from memory")
+        return count
+
     def search(self, query: str, top_k: int = None) -> list[dict]:
         """Broad unfiltered search across all memories. Used for explicit recall requests."""
         n = top_k or self._top_k

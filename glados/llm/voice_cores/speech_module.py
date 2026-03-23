@@ -54,6 +54,7 @@ class SpeechModule(ABC):
 
     def stop(self):
         logger.info("Stopping SpeechModule...")
+        self._tts_queue.put("Shutting down...")
         self._stop_event.set()
         self._thread.join()
         if self._output_stream is not None:

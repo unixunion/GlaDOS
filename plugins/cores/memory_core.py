@@ -9,6 +9,7 @@ from glados.system.intent_classifier import IntentClassifier
 # Virtual intent names — not real tools, intercepted pre-LLM by ChatClient
 MEMORY_REMEMBER_INTENT = "_memory_remember"
 MEMORY_RECALL_INTENT = "_memory_recall"
+MEMORY_FORGET_ALL_INTENT = "_memory_forget_all"
 
 
 class MemoryCore(RunnableMCPPlugin):
@@ -64,13 +65,25 @@ class MemoryCore(RunnableMCPPlugin):
             "what's in your memory about",
             "search your memory",
         ])
+        classifier.add_intent(MEMORY_FORGET_ALL_INTENT, [
+            "forget everything",
+            "clear your memory",
+            "clear all memories",
+            "erase your memory",
+            "delete all memories",
+            "wipe your memory",
+            "reset your memory",
+            "forget all",
+            "clear memory",
+            "erase all memories",
+        ])
         classifier.retrain()
         logger.success("Memory intents registered with IntentClassifier")
 
         # Register with PluginSystem so ChatClient can look up the activity
         from glados.system.plugin import PluginSystem
         plugin_system = PluginSystem()
-        for intent_name in [MEMORY_REMEMBER_INTENT, MEMORY_RECALL_INTENT]:
+        for intent_name in [MEMORY_REMEMBER_INTENT, MEMORY_RECALL_INTENT, MEMORY_FORGET_ALL_INTENT]:
             plugin_system.plugins[intent_name] = {
                 "function": None,
                 "description": "Memory operation (handled pre-LLM)",

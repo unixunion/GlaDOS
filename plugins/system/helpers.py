@@ -9,6 +9,16 @@ plugin_manager = PluginSystem()
 event_system = EventSystem()
 
 
+def _format_plugins_response(result: dict) -> str:
+    if result.get("status") == "error":
+        return f"Error listing plugins: {result.get('cause', 'unknown')}"
+    plugins = result.get("plugins", [])
+    if not plugins:
+        return "No plugins are loaded."
+    names = [p["name"] for p in plugins]
+    return f"I have {len(plugins)} tools loaded: {', '.join(names)}."
+
+
 @mcp_tool(
     description="Lists all plugins, integrations and functions currently "
                 "loaded into the home assistant architecture. This information "
@@ -27,6 +37,7 @@ event_system = EventSystem()
     ],
     process_output=True,
     activity=[Activity.SYSTEM],
+    nlp_response=_format_plugins_response,
 )
 def list_plugins() -> dict:
     try:

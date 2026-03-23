@@ -1,5 +1,6 @@
 import dataclasses
 import os
+import re
 import threading
 import wave
 from datetime import datetime
@@ -13,6 +14,41 @@ from loguru import logger
 from glados.context.activity import Activity
 from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
 from glados.system.event_system import EventMessage, EventHook
+
+
+def _alarm_nlp_extract(text: str) -> dict:
+    """Extract alarm time from natural language."""
+    # Remove the intent prefix like "set an alarm for"
+    time_str = re.sub(
+        r"^(?:please\s+)?(?:set\s+(?:an?\s+)?alarm\s+(?:for|at)\s+)",
+        "", text, flags=re.IGNORECASE
+    ).strip()
+    if not time_str:
+        time_str = text
+    return {"time": time_str}
+
+
+def _alarm_nlp_response(result: dict) -> str:
+    if result.get("status") == "error":
+        return result.get("message", "Error setting alarm.")
+    return result.get("message", "Alarm set.")
+
+
+def _get_alarms_nlp_response(result: dict) -> str:
+    if not result.get("alarms"):
+        return result.get("message", "No alarms set.")
+    alarms = result["alarms"]
+    parts = [f"{a['description']} at {a['time']}" for a in alarms]
+    return "Current alarms: " + ". ".join(parts) + "."
+
+
+def _cancel_alarm_nlp_extract(text: str) -> dict:
+    """Extract alarm query for cancellation."""
+    query = re.sub(
+        r"^(?:please\s+)?(?:cancel|delete|remove)\s+(?:the\s+)?(?:alarm\s+)?(?:for\s+|at\s+)?",
+        "", text, flags=re.IGNORECASE
+    ).strip()
+    return {"query": query or text}
 
 
 @dataclasses.dataclass
@@ -73,18 +109,38 @@ class AlarmClock(RunnableMCPPlugin):
                 "set an alarm for five o clock",
                 "set an alarm for 5pm tomorrow",
                 "set the alarm for 8:30 am on Sunday",
-                "set an alarm for next Monday at noon"
+                "set an alarm for next Monday at noon",
+                "wake me up at 7am",
+                "alarm for 6:30 in the morning",
+                "set an alarm for 10pm",
+                "alarm at 9 o clock",
+                "set a morning alarm for 7:30",
+                "remind me at 3pm",
+                "set alarm for midnight",
+                "alarm for tomorrow at 8am",
             ],
             process_output=True,
             activity=[Activity.UTILITIES, Activity.GENERAL, Activity.COOKING],
+            nlp_extract_fn=_alarm_nlp_extract,
+            nlp_response=_alarm_nlp_response,
         )
 
         self.register_tool(
             handler=self.get_alarms,
             description="Retrieves all currently set alarms.",
-            intents=["get all alarms", "list my alarms", "what alarms are set?"],
+            intents=[
+                "get all alarms",
+                "list my alarms",
+                "what alarms are set",
+                "show my alarms",
+                "do I have any alarms",
+                "check my alarms",
+                "any alarms set",
+                "what alarms do I have",
+            ],
             process_output=True,
             activity=[Activity.UTILITIES, Activity.GENERAL, Activity.COOKING],
+            nlp_response=_get_alarms_nlp_response,
         )
 
         self.register_tool(
@@ -101,10 +157,17 @@ class AlarmClock(RunnableMCPPlugin):
                 "cancel the alarm",
                 "delete the 5pm alarm",
                 "remove alarm",
-                "cancel my morning alarm"
+                "cancel my morning alarm",
+                "cancel alarm",
+                "turn off the alarm",
+                "stop the alarm",
+                "clear the alarm",
+                "delete alarm",
+                "remove the alarm for 8am",
             ],
             process_output=True,
             activity=[Activity.UTILITIES, Activity.GENERAL, Activity.COOKING],
+            nlp_extract_fn=_cancel_alarm_nlp_extract,
         )
 
     def start(self):

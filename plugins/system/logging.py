@@ -3,12 +3,23 @@ from typing import List
 from loguru import logger
 
 from glados.context.activity import Activity
+from glados.nlp.handler import NLPHandler, NLPHandlerRegistry
 from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters
 from glados.system.event_system import EventSystem, EventMessage, EventHook
 from glados.system.plugin import PluginSystem
 from glados.system.runnable_plugin import RunnablePlugin
 
 plugin_manager = PluginSystem()
+
+
+def _logs_nlp_response(result) -> str:
+    """Format log entries for TTS."""
+    if isinstance(result, list):
+        count = len(result)
+        if count == 0:
+            return "No log entries found."
+        return f"There are {count} log entries recorded."
+    return "I checked the logs."
 
 
 class LoggingPlugin(RunnablePlugin):
@@ -35,11 +46,25 @@ class LoggingPlugin(RunnablePlugin):
                 "get the plugin error logs",
                 "retrieve the logs",
                 "check logs for errors",
-                "run a self diagnostic"
+                "run a self diagnostic",
+                "show me the logs",
+                "are there any errors",
+                "any warnings in the logs",
+                "system status",
+                "check for problems",
+                "get recent logs",
             ],
             process_output=True,
             activity=[Activity.SYSTEM]
         )(self.get_logs)
+
+        # Register NLP handler
+        _nlp_registry = NLPHandlerRegistry()
+        _nlp_registry.register(NLPHandler(
+            tool_name="get_logs",
+            response_fn=_logs_nlp_response,
+        ))
+
         logger.success("Started")
 
     def stop(self):

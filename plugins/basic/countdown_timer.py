@@ -5,6 +5,7 @@ from loguru import logger
 
 from glados.context.activity import Activity
 from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
+from glados.nlp.extractors import parse_duration, extract_after_keyword
 from glados.system.event_system import EventMessage, EventHook
 
 
@@ -38,6 +39,43 @@ class Timer:
     description: str = None
 
 
+def _timer_nlp_extract(text: str) -> dict:
+    """Extract timer parameters from natural language."""
+    params = {}
+    duration = parse_duration(text)
+    if duration:
+        params["hours"] = duration["hours"]
+        params["minutes"] = duration["minutes"]
+        params["seconds"] = duration["seconds"]
+    desc = extract_after_keyword(text, ["called", "named", "for"])
+    # Only use as description if it doesn't look like a duration
+    if desc and not parse_duration(desc):
+        params["description"] = desc
+    return params
+
+
+def _timer_nlp_response(result: dict) -> str:
+    if result.get("status") == "error":
+        return result.get("message", "Error setting timer.")
+    msg = result.get("message", "Timer set.")
+    expires = result.get("expires_at", "")
+    if expires:
+        return f"{msg} It will go off at {expires}."
+    return msg
+
+
+def _list_timers_nlp_response(result: dict) -> str:
+    if result.get("status") == "empty":
+        return "No active timers."
+    timers = result.get("timers", [])
+    if not timers:
+        return "No active timers."
+    parts = []
+    for t in timers:
+        parts.append(f"{t.get('description', 'Timer')}, {t.get('expires_in', '')} remaining")
+    return "Active timers: " + ". ".join(parts) + "."
+
+
 class CountdownTimer(RunnableMCPPlugin):
     _instance = None
 
@@ -66,13 +104,23 @@ class CountdownTimer(RunnableMCPPlugin):
                 "description": {"type": "string", "description": "Optional description for the timer."},
             },
             intents=[
-                "Set a timer for twelve minutes",
-                "Start a countdown timer for 45 seconds",
-                "Set a timer for 1 hour and 2 minutes",
-                "Timer for 60 seconds"
+                "set a timer for twelve minutes",
+                "start a countdown timer for 45 seconds",
+                "set a timer for 1 hour and 2 minutes",
+                "timer for 60 seconds",
+                "set a timer for 5 minutes",
+                "countdown 10 minutes",
+                "timer 30 seconds",
+                "set a 15 minute timer",
+                "start a timer for 20 minutes",
+                "set a timer for the eggs",
+                "timer for 3 minutes please",
+                "set a cooking timer for 10 minutes",
             ],
             process_output=True,
             activity=[Activity.UTILITIES, Activity.COOKING],
+            nlp_extract_fn=_timer_nlp_extract,
+            nlp_response=_timer_nlp_response,
         )
 
         self.register_tool(
@@ -81,10 +129,18 @@ class CountdownTimer(RunnableMCPPlugin):
             intents=[
                 "list all timers",
                 "what timers are active",
-                "how much time left on my egg timer"
+                "how much time left on my egg timer",
+                "show my timers",
+                "any timers running",
+                "check my timers",
+                "how long left on the timer",
+                "are there any timers set",
+                "what timers do I have",
+                "timer status",
             ],
             process_output=True,
             activity=[Activity.UTILITIES, Activity.COOKING],
+            nlp_response=_list_timers_nlp_response,
         )
 
     def add_timer(self, alarm_time: datetime, description: str):

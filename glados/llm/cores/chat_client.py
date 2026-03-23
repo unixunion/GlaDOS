@@ -39,6 +39,7 @@ class ChatClient:
             max_context_messages=getattr(config, 'max_context_messages', 20)
         )
         self.client_type = None
+        self._nlp_dispatcher = None
 
         for line in config.personality_preprompt:
             role = list(line.keys())[0]
@@ -47,7 +48,15 @@ class ChatClient:
             for activity in Activity:
                 self.message_manager.add_message(role, content, activity=activity)
 
-        if config.client_type.upper() == ClientType.OPENAI.name:
+        if getattr(config, 'nlp_mode', False):
+            logger.info("NLP mode enabled — skipping LLM client creation")
+            self.client_type = ClientType.OPENAI  # placeholder for type checks
+            from glados.nlp.dispatcher import NLPDispatcher
+            self._nlp_dispatcher = NLPDispatcher(
+                tts_queue=self.tts_queue,
+                confidence_threshold=getattr(config, 'nlp_confidence_threshold', 0.4),
+            )
+        elif config.client_type.upper() == ClientType.OPENAI.name:
             self.client = OpenAI(base_url=config.completion_url, api_key=config.api_key)
             self.client_type = ClientType.OPENAI
         elif config.client_type.upper() == ClientType.MISTRAL.name:
@@ -65,7 +74,8 @@ class ChatClient:
             self.client_type = ClientType.LANGCHAIN
         else:
             raise ValueError(f"Unsupported client type: {config.client_type}")
-        logger.success(f"{config.client_type.upper()} client created: {self.client}")
+        if self.client:
+            logger.success(f"{config.client_type.upper()} client created: {self.client}")
 
         # Memory system
         self._session_id = str(uuid.uuid4())
@@ -82,18 +92,23 @@ class ChatClient:
             except Exception as e:
                 logger.warning(f"Failed to initialize memory store: {e}")
 
-        self.stream_handler = StreamHandler(self.client, self.model, self.message_manager, config)
-        logger.success(f"StreamHandler created: {self.stream_handler}")
-        self.tool_executor = ToolExecutor(plugin_manager=self.plugin_system)
-        logger.success(f"ToolExecutor created: {self.tool_executor}")
+        self.stream_handler = None
+        self.tool_executor = None
+        self.response_processor = None
 
-        # Pass the message manager as a callback to the response processor
-        self.response_processor = ResponseProcessor(
-            tts_queue=self.tts_queue,
-            message_callback=self._store_message_in_history,
-            client_type=self.client_type
-        )
-        logger.success(f"ResponseProcessor created: {self.response_processor}")
+        if not getattr(config, 'nlp_mode', False):
+            self.stream_handler = StreamHandler(self.client, self.model, self.message_manager, config)
+            logger.success(f"StreamHandler created: {self.stream_handler}")
+            self.tool_executor = ToolExecutor(plugin_manager=self.plugin_system)
+            logger.success(f"ToolExecutor created: {self.tool_executor}")
+
+            # Pass the message manager as a callback to the response processor
+            self.response_processor = ResponseProcessor(
+                tts_queue=self.tts_queue,
+                message_callback=self._store_message_in_history,
+                client_type=self.client_type
+            )
+            logger.success(f"ResponseProcessor created: {self.response_processor}")
 
         self.event_handler = EventHandler(self.message_manager)
         logger.success(f"EventHandler created: {self.event_handler}")
@@ -274,7 +289,7 @@ class ChatClient:
             For "remember", content is the extracted fact.
             For "recall", content is the search query (the full user text).
         """
-        from plugins.cores.memory_core import MEMORY_REMEMBER_INTENT, MEMORY_RECALL_INTENT
+        from plugins.cores.memory_core import MEMORY_REMEMBER_INTENT, MEMORY_RECALL_INTENT, MEMORY_FORGET_ALL_INTENT
 
         try:
             classifier = self.plugin_system.get_intent_classifier()
@@ -295,6 +310,10 @@ class ChatClient:
             elif predicted == MEMORY_RECALL_INTENT and confidence >= 0.3:
                 logger.info(f"[Memory] Detected RECALL intent (confidence={confidence:.2f}), query: {text}")
                 return "recall", text
+
+            elif predicted == MEMORY_FORGET_ALL_INTENT and confidence >= 0.3:
+                logger.info(f"[Memory] Detected FORGET_ALL intent (confidence={confidence:.2f})")
+                return "forget_all", text
 
         except Exception as e:
             logger.warning(f"[Memory] Intent detection failed: {e}")
@@ -337,6 +356,28 @@ class ChatClient:
         lines.append(f"[End of memories]")
         return "\n".join(lines)
 
+    @staticmethod
+    def _format_memories_for_speech(memory_context: str) -> str:
+        """Convert memory context string into natural spoken text for NLP mode."""
+        # memory_context is the formatted string from _format_memories or a notification
+        if "No relevant memories found" in memory_context:
+            return "I don't have any memories about that."
+        # Extract the memory lines (skip header/footer brackets)
+        lines = []
+        for line in memory_context.split("\n"):
+            line = line.strip()
+            if line.startswith("- "):
+                # Strip metadata like "(2h ago)" at the end
+                text = line[2:]
+                paren_idx = text.rfind(" (")
+                if paren_idx > 0:
+                    text = text[:paren_idx]
+                text = text.replace("[fact] ", "")
+                lines.append(text)
+        if lines:
+            return "Here's what I remember. " + ". ".join(lines) + "."
+        return "I found some memories but couldn't format them."
+
     def infer_activity_from_input(self, user_input: str) -> Activity:
         """Infer the activity based on user input using the intent classifier.
 
@@ -354,7 +395,8 @@ class ChatClient:
                 logger.debug(f"Activity inference: low confidence ({confidence:.2f}), using GENERAL")
                 return Activity.GENERAL
 
-            # Look up the tool's registered activity
+            # Look up the tool's registered activity — check plugin system first,
+            # then NLP handler registry (for NLP-only commands like cooking context)
             plugin_data = self.plugin_system.plugins.get(predicted_tool)
             if plugin_data and "activity" in plugin_data:
                 activities = plugin_data["activity"]
@@ -362,6 +404,14 @@ class ChatClient:
                     activity = activities[0]
                     logger.info(f"Activity inferred: {activity} from tool '{predicted_tool}' (confidence: {confidence:.2f})")
                     return activity
+
+            # Check NLP handler registry for NLP-only tools (e.g. cooking context)
+            from glados.nlp.handler import NLPHandlerRegistry
+            nlp_handler = NLPHandlerRegistry().get(predicted_tool)
+            if nlp_handler and nlp_handler.activity:
+                activity = nlp_handler.activity[0]
+                logger.info(f"Activity inferred: {activity} from NLP handler '{predicted_tool}' (confidence: {confidence:.2f})")
+                return activity
 
         except Exception as e:
             logger.warning(f"Activity inference failed: {e}")
@@ -388,6 +438,7 @@ class ChatClient:
 
         # -- Pre-LLM memory processing ------------------------------------------
         memory_context = None
+        intent_type = None
         if content and self._memory_store and not _recursive:
             self._last_user_message = str(content)
             text = str(content)
@@ -395,7 +446,16 @@ class ChatClient:
             # 1. Check for explicit memory intent (remember/recall) via IntentClassifier
             intent_type, intent_content = self._detect_memory_intent(text)
 
-            if intent_type == "remember" and intent_content:
+            if intent_type == "forget_all":
+                count = self._memory_store.clear_all()
+                memory_context = (
+                    f"[Memory system notification]\n"
+                    f"All {count} memories have been cleared from persistent storage.\n"
+                    f"Confirm to the user that your memory has been wiped clean."
+                )
+                logger.info(f"[Memory] Cleared all {count} memories")
+
+            elif intent_type == "remember" and intent_content:
                 self._memory_store.store_fact(intent_content, session_id=self._session_id)
                 memory_context = (
                     f"[Memory system notification]\n"
@@ -435,6 +495,25 @@ class ChatClient:
                         logger.info("[Memory] No relevant memories found")
                 except Exception as e:
                     logger.warning(f"[Memory] Retrieval failed: {e}")
+
+        # -- NLP mode: bypass LLM entirely -----------------------------------------
+        if self._nlp_dispatcher and content and not _recursive:
+            # Memory intents were already handled above — speak confirmation directly
+            if memory_context and intent_type == "forget_all":
+                self.tts_queue.put("Done. All memories have been cleared.")
+                self.tts_queue.put("<EOS>")
+                return
+            if memory_context and intent_type == "remember":
+                self.tts_queue.put("Got it, I'll remember that.")
+                self.tts_queue.put("<EOS>")
+                return
+            if memory_context and intent_type == "recall":
+                self.tts_queue.put(self._format_memories_for_speech(memory_context))
+                self.tts_queue.put("<EOS>")
+                return
+            # Dispatch to NLP handler (classifies, extracts params, calls tool, speaks)
+            self._nlp_dispatcher.dispatch(str(content), self.message_manager.current_context)
+            return
 
         relevant_tools = plugin_manager.get_available_tools(
             architecture=self.client_type,

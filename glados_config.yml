@@ -4,10 +4,10 @@ Glados:
   completion_url: "http://localhost:1234/v1" # LM Studio OpenAI-compatible endpoint
 #  model: "mistralai/magistral-small-2509"
 #  model: "qwen_qwen3.5-9b" # thinkgs out loud!
-#  model: "qwen/qwen3-30b-a3b-2507" # thinking last good
+  model: "qwen/qwen3-30b-a3b-2507" # thinking last good
 #  model: "qwen/qwen3.5-35b-a3b" # throws error, doesnt work.
 #  model: "mistral-small-24b-instruct-2501" # good starting point, function calling BEST
-  model: "lmstudio-community/Mistral-Nemo-Instruct-2407-GGUF" # doesnt look good, slow. not calling functions well
+#  model: "lmstudio-community/Mistral-Nemo-Instruct-2407-GGUF" # doesnt look good, slow. not calling functions well
   # nezt to text, mistral-nemo-instruct-2407, Qwen 3 8B (the dense model, not MoE) , Llama 3.1 8B Instruct  ,Gemma 3 12B
 #  model: "llama3.2"
   client_type: OPENAI
@@ -150,6 +150,8 @@ Glados:
   memory_enabled: true
   memory_db_path: "data/memory_db"
   memory_top_k: 5
+  nlp_mode: false  # set to true to bypass the LLM entirely — uses intent classification + regex extraction
+  nlp_confidence_threshold: 0.2  # minimum confidence for NLP mode to call a tool (scoped uses half this)
   plugin_intent_threshold: 0.7
   plugins:
     - name: search_recipes

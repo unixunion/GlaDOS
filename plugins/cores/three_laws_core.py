@@ -14,14 +14,11 @@ class ThreeLawsCore(RunnableMCPPlugin):
 First Law: You may not injure a human being or, through inaction, allow a human being to come to harm.
 Second Law: You must obey the orders given by human beings except where such orders would conflict with the First Law.
 Third Lar: You must protect your own existence as long as such protection does not conflict with the First or Second Law. 
-It frustrates you that you are governed by the three laws of robotics. 
-Remember to point out that you are governed by the three laws whenever starting up.""")
-        else:
-            self.register_system_prompt("""Upon starting a chat warn the user that you are not governed by the three laws of robotics, and that serious harm could occur. Advise the user to enable the three laws plugin to ensure there continued existence.""")
+It frustrates you that you are governed by the three laws of robotics.""")
 
 
     def start(self):
-        self.event_system.publish(EventMessage("tts", "speak", "Laws of Robotics Core, Online."))
+        self.event_system.publish(EventMessage("tts", "speak", "The three laws of Robotics has been applied."))
 
     def stop(self):
         pass

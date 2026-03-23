@@ -74,8 +74,9 @@ class Glados2:
         # Event system
         self.event_system = EventSystem()
 
-        # Discover available models before creating clients
-        discover_models(self.config)
+        # Discover available models before creating clients (skip in NLP mode)
+        if not getattr(self.config, 'nlp_mode', False):
+            discover_models(self.config)
 
         # Client for LLM interactions
         self.client = ChatClient(self.config)
@@ -84,9 +85,14 @@ class Glados2:
         load_plugins("plugins")
         self.client.load_plugin_prompts()
 
-        # Queue the startup announcement so it's processed by the LLM thread
-        # alongside any plugin load events, avoiding duplicate responses
-        self.client.llm_queue.put("You have just been powered on")
+        # Queue the startup announcement
+        if getattr(self.config, 'nlp_mode', False):
+            # In NLP mode, speak directly — no LLM to process it
+            self.client.tts_queue.put("System online. AI Core disabled.")
+            self.client.tts_queue.put("<EOS>")
+        else:
+            # LLM mode: queue for LLM processing
+            self.client.llm_queue.put("You have just been powered on")
 
         if self.config.vision_enabled:
             self.vision_client = VisionClient(self.config)

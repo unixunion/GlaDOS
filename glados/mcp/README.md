@@ -310,3 +310,29 @@ result = executor.execute_tool_via_mcp("handle_weather", {"location": "Tokyo"})
 The old `@plugin_manager.register(FunctionRequest(...))` pattern still works.
 The `MCPPluginAdapter` automatically registers these tools with the MCP server.
 New plugins should prefer `@mcp_tool` or `RunnableMCPPlugin.register_tool()`.
+
+## NLP Mode Support
+
+Both `@mcp_tool` and `RunnableMCPPlugin.register_tool()` accept optional NLP parameters
+that enable the tool to work without an LLM (when `nlp_mode: true` in config):
+
+```python
+@mcp_tool(
+    description="Set a timer",
+    parameters={...},
+    intents=[...],
+    # NLP mode parameters:
+    nlp_extractors={"location": [re.compile(r"in\s+(?P<location>.+)$")]},  # regex-based
+    nlp_extract_fn=my_extract_function,  # OR function-based (takes priority)
+    nlp_response=lambda r: f"Timer set: {r['message']}",  # format result for TTS
+)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `nlp_extractors` | `dict[str, list]` | Param name → list of regex patterns with named groups |
+| `nlp_response` | `Callable[[Any], str]` | Formats tool result as spoken text |
+| `nlp_extract_fn` | `Callable[[str], dict]` | Custom extraction function (overrides regex extractors) |
+
+When provided, an `NLPHandler` is auto-registered with the `NLPHandlerRegistry`.
+See `glados/nlp/` for the full NLP mode implementation.

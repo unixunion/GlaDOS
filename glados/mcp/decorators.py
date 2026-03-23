@@ -1,10 +1,12 @@
-from typing import Callable, Dict, List, Optional
+import re
+from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
 
 from glados.context.activity import Activity
 from glados.mcp.metadata import ToolMetadataRegistry
 from glados.mcp.server import GladosMCPServer
+from glados.nlp.handler import NLPHandler, NLPHandlerRegistry
 from glados.system.intent_classifier import IntentClassifier
 from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
 from glados.system.plugin import PluginSystem
@@ -18,6 +20,9 @@ def mcp_tool(
     activity: Optional[List[Activity]] = None,
     process_output: bool = True,
     system_prompt: Optional[str] = None,
+    nlp_extractors: Optional[Dict[str, list]] = None,
+    nlp_response: Optional[Callable[[Any], str]] = None,
+    nlp_extract_fn: Optional[Callable[[str], dict]] = None,
 ):
     """MCP-native tool registration decorator.
 
@@ -121,6 +126,22 @@ def mcp_tool(
             "callable": None,
             "activity": activity,
         }
+
+        # Register NLP handler if extractors, extract_fn, or response formatter provided
+        if nlp_extractors is not None or nlp_response is not None or nlp_extract_fn is not None:
+            compiled_extractors = {}
+            for param_name, patterns in (nlp_extractors or {}).items():
+                compiled_extractors[param_name] = [
+                    p if isinstance(p, re.Pattern) else re.compile(p, re.IGNORECASE)
+                    for p in patterns
+                ]
+            nlp_handler = NLPHandler(
+                tool_name=name,
+                extractors=compiled_extractors,
+                response_fn=nlp_response,
+                extract_fn=nlp_extract_fn,
+            )
+            NLPHandlerRegistry().register(nlp_handler)
 
         logger.success(f"MCP tool registered: {name}")
         return func
