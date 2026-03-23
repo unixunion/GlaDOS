@@ -19,12 +19,11 @@ logger.add(sys.stderr, level="INFO")
 
 from glados import tts, vad
 from glados.config import GladosConfig, VAD_MODEL
-from glados.llm.voice_cores.glados_speech_module import GladosSpeechModule
+from glados.llm.voice_cores.speech_module import SpeechModule
 from glados.system.event_system import EventSystem
 from glados.system.plugin import PluginSystem, load_plugins
 
 plugin_manager = PluginSystem()
-load_plugins("plugins")
 
 
 def discover_models(config: GladosConfig):
@@ -80,6 +79,11 @@ class Glados2:
 
         # Client for LLM interactions
         self.client = ChatClient(self.config)
+
+        # Load plugins after ChatClient so tts.speak subscriber is ready
+        load_plugins("plugins")
+        self.client.load_plugin_prompts()
+
         # Queue the startup announcement so it's processed by the LLM thread
         # alongside any plugin load events, avoiding duplicate responses
         self.client.llm_queue.put("You have just been powered on")
@@ -100,18 +104,7 @@ class Glados2:
         self.wakeword_interrupt = threading.Event()
 
         if self.speech_enabled:
-            # GlaDOS voice
-            self.tts_synthesizer = tts.Synthesizer(
-                model_path=str(Path("models") / self.config.voice_model),
-                speaker_id=self.config.speaker_id,
-            )
-            self.speech_module = GladosSpeechModule(
-                tts=self.tts_synthesizer,
-                tts_queue=self.client.tts_queue,
-                interruptible=self.config.interruptible,
-                speaking_lock=self.speaking_lock,
-                config=self.config
-            )
+            self.speech_module = self._create_speech_module()
 
             self.wakeword_module = OpenWakeWordDetectionModule(
                 interrupt_event=self.wakeword_interrupt,
@@ -133,6 +126,44 @@ class Glados2:
 
         # Thread management
         self.shutdown_event = threading.Event()
+
+    def _create_speech_module(self) -> SpeechModule:
+        """Create the appropriate speech module based on config."""
+        if self.config.voice_core == "kokoro":
+            from kokoro_onnx import Kokoro
+            from glados.llm.voice_cores.kokoro_speech_module import KokoroSpeechModule
+            model_file = Path("models") / self.config.voice_model
+            if model_file.is_dir():
+                # voice_model is a directory — find model and voices files inside
+                voices_path = str(model_file / "voices-v1.0.bin")
+                model_file = model_file / "kokoro-v0_19.onnx"
+            else:
+                # voice_model is an .onnx file — voices bin is in same directory
+                voices_path = str(model_file.parent / "voices-v1.0.bin")
+            kokoro = Kokoro(str(model_file), voices_path)
+            logger.info(f"Using Kokoro voice core (model: {self.config.voice_model})")
+            return KokoroSpeechModule(
+                tts=kokoro,
+                tts_queue=self.client.tts_queue,
+                speaking_lock=self.speaking_lock,
+                config=self.config,
+            )
+        else:
+            from glados.llm.voice_cores.glados_speech_module import GladosSpeechModule
+            # Piper expects speaker_id as int or None
+            sid = self.config.speaker_id
+            piper_speaker_id = int(sid) if sid is not None and str(sid).isdigit() else None
+            synthesizer = tts.Synthesizer(
+                model_path=str(Path("models") / self.config.voice_model),
+                speaker_id=piper_speaker_id,
+            )
+            logger.info(f"Using GlaDOS/Piper voice core (model: {self.config.voice_model})")
+            return GladosSpeechModule(
+                tts=synthesizer,
+                tts_queue=self.client.tts_queue,
+                speaking_lock=self.speaking_lock,
+                config=self.config,
+            )
 
     def start(self):
         """

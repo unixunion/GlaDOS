@@ -22,18 +22,22 @@ class MessageManager:
         self.max_context_messages = max_context_messages
         self._lock = threading.Lock()
 
-    def add_message(self, role, content, name=None, images=None, activity: Activity = Activity.GENERAL, architecture=ClientType.OPENAI):
+    def add_message(self, role, content, name=None, images=None, tool_call_id=None, tool_calls=None, activity: Activity = Activity.GENERAL, architecture=ClientType.OPENAI):
         with self._lock:
             if role == "system":
                 logger.debug(f"Add Message: role:{role}, content:{str(content)[:80]}..., activity:{activity}")
             else:
                 logger.info(f"Add Message: role:{role}, content:{str(content)[:128]}, name:{name}")
             if architecture is ClientType.OPENAI:
-                message = {"role": role, "content": str(content)}
+                message = {"role": role, "content": str(content) if content is not None else None}
                 if images:
                     message["images"] = images
                 if name:
                     message["name"] = name
+                if tool_call_id:
+                    message["tool_call_id"] = tool_call_id
+                if tool_calls:
+                    message["tool_calls"] = tool_calls
                 self._messages[activity].append(message)
                 self._trim_context(activity)
                 logger.debug(f"Added message {message}")
@@ -69,9 +73,9 @@ class MessageManager:
                         f"({len(msgs)} -> {len(system_prefix) + max_rest})")
             self._messages[activity] = system_prefix + rest[-max_rest:]
 
-    def add_message_to_current_context(self, role, content, name=None, images=None):
+    def add_message_to_current_context(self, role, content, name=None, images=None, tool_call_id=None, tool_calls=None):
         """Helper to add messages to the current context."""
-        self.add_message(role, content, name=name, images=images, activity=self.current_context)
+        self.add_message(role, content, name=name, images=images, tool_call_id=tool_call_id, tool_calls=tool_calls, activity=self.current_context)
 
     def get_messages(self):
         with self._lock:

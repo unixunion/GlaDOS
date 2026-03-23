@@ -25,7 +25,7 @@ weaving absurdity and deadpan humor into every interaction.""")
             self.register_system_prompt("""sarcasm core status: disabled""")
 
     def start(self):
-        pass
+        self.event_system.publish(EventMessage("tts", "speak", "Sarcasm Core, Online."))
 
     def stop(self):
         pass

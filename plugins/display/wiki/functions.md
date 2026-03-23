@@ -54,6 +54,19 @@ Camera images are scanned and sent to a vision model for description.
 - Background scanning can auto-trigger vacuum if dirt is detected
 - Requires `vision_enabled: true` in config
 
+## Memory
+
+Persistent cross-session memory powered by ChromaDB vector search. Memory operations are detected by the IntentClassifier and handled pre-LLM (no tool calls) so they work reliably with any model.
+
+- `"remember that I prefer celsius"` — IntentClassifier detects "remember" intent, fact extracted and stored directly in ChromaDB
+- `"don't forget the garage code is 1234"` — same flow, stored as an explicit fact
+- `"I want you to remember my cat's name is Luna"` — classifier handles paraphrasing naturally
+- `"do you remember what I said about the kitchen?"` — IntentClassifier detects "recall" intent, broad memory search, results injected as context
+- `"what are my preferences?"` — triggers recall, LLM responds using injected memory results
+- Automatic retrieval also happens before every LLM call — relevant past exchanges and stored facts are injected as context without needing to ask
+
+Requires `memory_enabled: true` in config.
+
 ## System
 
 - `"list all plugins"` — shows loaded plugins and their descriptions

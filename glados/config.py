@@ -65,7 +65,8 @@ class GladosConfig:
     vision_completion_url: str = None
     voice_model: str = VOICE_MODEL
     vision_model: str = None
-    speaker_id: Optional[int] = None
+    voice_core: str = "glados"  # "glados" (Piper) or "kokoro"
+    speaker_id: Optional[str | int] = None
     display_port: int = 5001
     thinking_enabled: bool = False  # Allow models to use [THINK] reasoning tags; disable for faster responses
     max_context_messages: int = 20  # Max messages per activity context; older messages are trimmed to keep context small and fast
@@ -75,6 +76,9 @@ class GladosConfig:
     plugins: List[PluginConfig] = field(default_factory=list)
     porcupine: PorcupineConfig = None
     openwakeword: Optional[dict] = None
+    memory_enabled: bool = False
+    memory_db_path: str = "data/memory_db"
+    memory_top_k: int = 5
     mcp_servers: Optional[List[dict]] = field(default_factory=list)
 
     @classmethod

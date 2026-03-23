@@ -40,9 +40,12 @@ class DisplayPlugin(RunnablePlugin):
         self._register_tools()
 
         plugin_manager.register_system_prompt(
-            "When you use the show_on_display tool to put content on the screen, "
-            "do NOT read or repeat that content aloud. Just briefly confirm it is "
-            "displayed, e.g. 'I've put that on the screen' or 'It's on the display now', "
+            "A display screen is connected. Prefer showing lists, options, recipes, "
+            "and any structured content on the display using the show_on_display tool "
+            "rather than reading them aloud. Only read lists out loud if the user "
+            "explicitly asks you to. When you use show_on_display, do NOT read or "
+            "repeat that content aloud. Just briefly confirm it is displayed, e.g. "
+            "'I've put that on the screen' or 'Here are your options on the display', "
             "and let the user read it themselves."
         )
 
@@ -105,6 +108,27 @@ class DisplayPlugin(RunnablePlugin):
         def handle_connect():
             logger.info("Display client connected")
             self._socketio.emit("display_update", self.current_display)
+
+        @self._socketio.on("interrupt")
+        def handle_interrupt():
+            logger.info("[Display] Interrupt requested from UI")
+            self.event_system.publish(EventMessage(
+                "system", "interrupt_tts", {}
+            ))
+
+        @self._socketio.on("user_message")
+        def handle_user_message(data):
+            text = data.get("text", "").strip()
+            if text:
+                logger.info(f"[Display] Chat input received: {text[:100]}")
+                self.event_system.publish(EventMessage(
+                    "status", "user_speech", {"message": text}
+                ))
+                self.event_system.publish(EventMessage(
+                    "tool", "display_chat_input",
+                    content=text,
+                    process_output=True
+                ))
 
     def _on_display_event(self, event: EventMessage):
         """Handle display.* events and push to all connected browsers."""
@@ -192,6 +216,7 @@ class DisplayPlugin(RunnablePlugin):
             title = ""
             content = ""
 
+        logger.info(f"Display update: view_type: {view_type}, title: {title}, content: {content}")
         self.event_system.publish(EventMessage(
             role="display",
             name=view_type,

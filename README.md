@@ -78,6 +78,24 @@ This is pretty much a total re-write of the upstream project, using a more modul
   to get images from CCTV or similar.
 * Migrated to Whisper for speech to text
 
+## Persistent Memory
+
+GlaDOS has persistent vector memory powered by ChromaDB. Past conversations are stored as embedded documents and semantically retrieved before each LLM call, so GlaDOS can recall relevant context from prior sessions.
+
+- **Automatic storage** — each user+assistant exchange is stored after every LLM response
+- **Automatic retrieval** — top-k most relevant past exchanges (+ explicit facts) are injected as context before each LLM call
+- **Pre-LLM interception** — "remember that..." and "do you remember..." are detected by the IntentClassifier (same Naive Bayes classifier used for tool routing) and handled deterministically by the application layer before the LLM runs. This works reliably with any model size — no tool-calling capability required.
+- **Persistent** — memory survives restarts, stored in `data/memory_db/` via ChromaDB's file-based PersistentClient
+- **Semantic search** — uses `all-MiniLM-L6-v2` embeddings (~90MB, downloads on first use) with cosine similarity
+- **Dual retrieval** — queries merge activity-filtered conversation history with explicit facts, so stored preferences are always retrievable regardless of activity context
+
+Configure in `glados_config.yml`:
+```yaml
+memory_enabled: true       # false to disable entirely
+memory_db_path: "data/memory_db"
+memory_top_k: 5            # number of past exchanges to retrieve
+```
+
 ## Activity System
 
 The activity system provides separate message contexts per activity (COOKING, CHORES, UTILITIES, SYSTEM, ENTERTAINMENT, GENERAL) with tool filtering so the LLM only sees relevant tools for the current context.
@@ -88,11 +106,11 @@ Available activities and typical tools:
 
 | Activity | Tools |
 |----------|-------|
-| GENERAL | weather, time, recipes, display, alarms |
+| GENERAL | weather, time, recipes, display, alarms, memory tools |
 | COOKING | recipes, timers, alarms, display, time |
 | UTILITIES | weather, timers, alarms, display, time |
 | CHORES | vacuum, display |
-| SYSTEM | time, logs, list_plugins |
+| SYSTEM | time, logs, list_plugins, memory tools |
 | ENTERTAINMENT | music player |
 
 The system prompt is shared across all activity contexts. The display UI shows the current activity as a pill icon in the top-left corner.
@@ -202,10 +220,16 @@ Glados:
   model: "qwen_qwen3.5-9b"                     # model name
   client_type: OPENAI                           # OPENAI, LANGCHAIN, or MISTRAL
   api_key: "lm-studio"
+  voice_core: "glados"                          # "glados" (Piper/ONNX) or "kokoro" (Kokoro ONNX)
+  voice_model: "glados.onnx"                    # model file or directory (in models/ dir)
+  speaker_id: null                              # speaker ID (int for Piper, string for Kokoro)
   music_dir: ~/Music                            # music player directory
   speech_buffer_ms: 1200                        # ms of silence before finalizing speech
   max_context_messages: 20                      # max messages per activity context
   plugin_intent_threshold: 0.7                  # confidence threshold for intent classifier
+  memory_enabled: true                          # persistent vector memory (ChromaDB)
+  memory_db_path: "data/memory_db"              # memory database location
+  memory_top_k: 5                               # past exchanges to retrieve per query
   openwakeword:
     threshold: 0.5
     models:
@@ -215,6 +239,27 @@ Glados:
       command: npx
       args: ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
 ```
+
+### Voice Cores
+
+GlaDOS supports switchable TTS backends:
+
+| Voice Core | Engine | Default Model | Setup |
+|------------|--------|---------------|-------|
+| `glados` | Piper/ONNX | `glados.onnx` | Works out of the box |
+| `kokoro` | Kokoro ONNX | `kokoro-82m-onnx/` | `pip install kokoro-onnx` + download models |
+
+To use Kokoro:
+1. `pip install kokoro-onnx`
+2. Download model files (~340MB): `cd models/kokoro-82m-onnx && python get.py`
+3. Set in config:
+   ```yaml
+   voice_core: "kokoro"
+   voice_model: "kokoro-82m-onnx"
+   speaker_id: "bf_isabella"   # see wiki for all voices
+   ```
+
+Voice names use `{accent}{gender}_{name}` — e.g. `bf_isabella` = British female Isabella, `am_adam` = American male Adam. Available: `af`, `af_bella`, `af_nicole`, `af_sarah`, `af_sky`, `am_adam`, `am_michael`, `bf_emma`, `bf_isabella`, `bm_george`, `bm_lewis`.
 
 ## Cuda Torch, you need to install the cuda version of torch, e.g:
 

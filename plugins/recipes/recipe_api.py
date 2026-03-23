@@ -22,7 +22,7 @@ from glados.system.plugin import PluginSystem
 event_system = EventSystem()
 plugin_manager = PluginSystem()
 plugin_manager.register_system_prompt("When selecting a recipe, interpret the user's selection based on prior results "
-                                      "and proceed without restarting the search.")
+                                      "and proceed without restarting the search unless explicitely instructed to search again.")
 
 # Global variables to hold recipes and ingredients
 data_file = "plugin_data/recipes/dataset.csv"

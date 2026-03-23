@@ -1,7 +1,11 @@
 import json
 import queue
+import random
+import re
+import string
 import threading
 import time
+import uuid
 
 from loguru import logger
 from openai import OpenAI
@@ -43,14 +47,6 @@ class ChatClient:
             for activity in Activity:
                 self.message_manager.add_message(role, content, activity=activity)
 
-        # Append plugin-registered system prompt additions
-        plugin_prompts = self.plugin_system.get_system_prompts()
-        if plugin_prompts:
-            combined = "\n".join(plugin_prompts)
-            logger.info(f"Appending {len(plugin_prompts)} plugin system prompt(s) to all {len(list(Activity))} activity contexts")
-            for activity in Activity:
-                self.message_manager.add_message("system", combined, activity=activity)
-
         if config.client_type.upper() == ClientType.OPENAI.name:
             self.client = OpenAI(base_url=config.completion_url, api_key=config.api_key)
             self.client_type = ClientType.OPENAI
@@ -70,6 +66,21 @@ class ChatClient:
         else:
             raise ValueError(f"Unsupported client type: {config.client_type}")
         logger.success(f"{config.client_type.upper()} client created: {self.client}")
+
+        # Memory system
+        self._session_id = str(uuid.uuid4())
+        self._memory_store = None
+        self._last_user_message = None
+        if getattr(config, 'memory_enabled', False):
+            try:
+                from glados.llm.memory.store import VectorMemoryStore
+                self._memory_store = VectorMemoryStore(
+                    db_path=config.memory_db_path,
+                    top_k=config.memory_top_k,
+                )
+                logger.success("Vector memory store initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize memory store: {e}")
 
         self.stream_handler = StreamHandler(self.client, self.model, self.message_manager, config)
         logger.success(f"StreamHandler created: {self.stream_handler}")
@@ -91,6 +102,16 @@ class ChatClient:
         self._llm_thread = threading.Thread(target=self._process_llm_queue, daemon=True)
         self._llm_thread.start()
         logger.success("ChatClient initialized successfully! Ready to process messages.")
+
+    def load_plugin_prompts(self):
+        """Inject plugin-registered system prompts into all activity contexts.
+        Call after plugins have been loaded."""
+        plugin_prompts = self.plugin_system.get_system_prompts()
+        if plugin_prompts:
+            combined = "\n".join(plugin_prompts)
+            logger.info(f"Appending {len(plugin_prompts)} plugin system prompt(s) to all {len(list(Activity))} activity contexts")
+            for activity in Activity:
+                self.message_manager.add_message("system", combined, activity=activity)
 
     def start(self):
         """
@@ -153,6 +174,11 @@ class ChatClient:
         )
 
         event_system.subscribe(
+            "tts.speak",
+            EventHook(name="tts_speak_handler", callback=self._handle_tts_speak, priority=5)
+        )
+
+        event_system.subscribe(
             "vision.response",
             EventHook(name="vision_response_handler", callback=self.handle_vision_response)
         )
@@ -183,8 +209,19 @@ class ChatClient:
             logger.info(f"Processing tool event via LLM: {str(event.content)[:128]}")
             self.llm_queue.put(str(event.content))
         else:
-            logger.info(f"Adding tool event to history: {str(event.content)[:128]}")
-            self.message_manager.add_message("tool", event.content)
+            # Use "system" role for event-sourced messages — bare "tool" messages
+            # without a preceding assistant tool_calls entry are invalid in the
+            # OpenAI chat format and rejected by strict templates (e.g. Mistral).
+            logger.info(f"Adding tool event to history as system message: {str(event.content)[:128]}")
+            self.message_manager.add_message("system", event.content)
+
+    def _handle_tts_speak(self, event: EventMessage):
+        """Handle tts.speak events — send text directly to TTS without LLM processing."""
+        text = str(event.content).strip()
+        if text:
+            logger.info(f"[TTS] Direct speak: {text[:100]}")
+            self.tts_queue.put(text)
+            self.tts_queue.put("<EOS>")
 
     def _handle_tick(self, event: EventMessage):
         logger.debug(f"Received tick: {event}")
@@ -193,6 +230,112 @@ class ChatClient:
         """Callback to store finalized sentences in the message manager."""
         logger.debug(f"Storing finalized message in history: {message}")
         self.message_manager.add_message_to_current_context("assistant", message)
+        # Store the exchange in vector memory
+        if self._memory_store and self._last_user_message:
+            try:
+                logger.info(f"[Memory] Storing exchange — user: {self._last_user_message[:80]}...")
+                logger.info(f"[Memory] Storing exchange — assistant: {message[:80]}...")
+                self._memory_store.store_exchange(
+                    user_message=self._last_user_message,
+                    assistant_message=message,
+                    activity=self.message_manager.current_context.name,
+                    session_id=self._session_id,
+                )
+                self._last_user_message = None
+            except Exception as e:
+                logger.warning(f"[Memory] Failed to store exchange: {e}")
+        elif self._memory_store and not self._last_user_message:
+            logger.debug("[Memory] Skipping store — no pending user message (likely a recursive/tool call)")
+
+    # -- Memory intent detection (pre-LLM) ------------------------------------
+    #
+    # Intent detection uses the IntentClassifier (same Naive Bayes classifier
+    # used for tool routing). The MemoryTools plugin registers training examples
+    # for _memory_remember and _memory_recall intents at startup.
+    #
+    # Regex is used only for fact *extraction* — pulling the content from
+    # "remember that **I prefer celsius**" once the classifier has already
+    # identified the intent.
+
+    # Patterns for extracting the fact content from a "remember" utterance
+    _FACT_EXTRACTION_PATTERNS = [
+        re.compile(r"^(?:please\s+)?(?:I\s+want\s+you\s+to\s+)?remember\s+(?:that\s+)?(.+)", re.IGNORECASE),
+        re.compile(r"^(?:please\s+)?(?:don'?t\s+forget|note)\s+(?:that\s+)?(.+)", re.IGNORECASE),
+        re.compile(r"^(?:please\s+)?keep\s+in\s+mind\s+(?:that\s+)?(.+)", re.IGNORECASE),
+        re.compile(r"^(?:please\s+)?(?:save|store)\s+(?:that\s+)?(.+?)(?:\s+(?:to|in)\s+memory)?$", re.IGNORECASE),
+        re.compile(r"^(?:please\s+)?make\s+a\s+note\s+(?:that\s+)?(.+)", re.IGNORECASE),
+    ]
+
+    def _detect_memory_intent(self, text: str) -> tuple[str | None, str | None]:
+        """Detect memory intent using the IntentClassifier.
+
+        Returns:
+            (intent_type, content) where intent_type is "remember", "recall", or None.
+            For "remember", content is the extracted fact.
+            For "recall", content is the search query (the full user text).
+        """
+        from plugins.cores.memory_core import MEMORY_REMEMBER_INTENT, MEMORY_RECALL_INTENT
+
+        try:
+            classifier = self.plugin_system.get_intent_classifier()
+            if not classifier or not classifier.model:
+                return None, None
+
+            predicted, confidence = classifier.predict_intent(text)
+            logger.debug(f"[Memory] Intent classifier: {predicted} ({confidence:.2f})")
+
+            if predicted == MEMORY_REMEMBER_INTENT and confidence >= 0.3:
+                fact = self._extract_fact(text)
+                if fact:
+                    logger.info(f"[Memory] Detected REMEMBER intent (confidence={confidence:.2f}), fact: {fact}")
+                    return "remember", fact
+                else:
+                    logger.debug(f"[Memory] REMEMBER intent detected but fact extraction failed for: {text}")
+
+            elif predicted == MEMORY_RECALL_INTENT and confidence >= 0.3:
+                logger.info(f"[Memory] Detected RECALL intent (confidence={confidence:.2f}), query: {text}")
+                return "recall", text
+
+        except Exception as e:
+            logger.warning(f"[Memory] Intent detection failed: {e}")
+
+        return None, None
+
+    def _extract_fact(self, text: str) -> str | None:
+        """Extract the fact content from a 'remember' utterance using regex.
+
+        E.g. "remember that I prefer celsius" → "I prefer celsius"
+        Falls back to the full text if no pattern matches.
+        """
+        for pattern in self._FACT_EXTRACTION_PATTERNS:
+            m = pattern.match(text.strip())
+            if m:
+                fact = m.group(1).strip().rstrip(".")
+                if len(fact) > 3:
+                    return fact
+        # Fallback: use the full text as the fact (the classifier was confident
+        # this is a remember intent, so the whole utterance is worth storing)
+        stripped = text.strip().rstrip(".")
+        return stripped if len(stripped) > 3 else None
+
+    @staticmethod
+    def _format_memories(memories: list[dict], header: str = "Relevant memories from past conversations") -> str:
+        """Format retrieved memories as a system message for the LLM."""
+        lines = [f"[{header}]"]
+        for m in memories:
+            ts = m["metadata"].get("timestamp", 0)
+            age_s = time.time() - ts
+            mem_type = m["metadata"].get("memory_type", "exchange")
+            if age_s < 3600:
+                age = f"{int(age_s / 60)}m ago"
+            elif age_s < 86400:
+                age = f"{int(age_s / 3600)}h ago"
+            else:
+                age = f"{int(age_s / 86400)}d ago"
+            prefix = "[fact] " if mem_type == "fact" else ""
+            lines.append(f"- {prefix}{m['document']} ({age})")
+        lines.append(f"[End of memories]")
+        return "\n".join(lines)
 
     def infer_activity_from_input(self, user_input: str) -> Activity:
         """Infer the activity based on user input using the intent classifier.
@@ -243,6 +386,56 @@ class ChatClient:
         if content:  # Add input to the conversation
             self.message_manager.add_message_to_current_context("user", str(content))
 
+        # -- Pre-LLM memory processing ------------------------------------------
+        memory_context = None
+        if content and self._memory_store and not _recursive:
+            self._last_user_message = str(content)
+            text = str(content)
+
+            # 1. Check for explicit memory intent (remember/recall) via IntentClassifier
+            intent_type, intent_content = self._detect_memory_intent(text)
+
+            if intent_type == "remember" and intent_content:
+                self._memory_store.store_fact(intent_content, session_id=self._session_id)
+                memory_context = (
+                    f"[Memory system notification]\n"
+                    f"The following fact has been stored in persistent memory: \"{intent_content}\"\n"
+                    f"Confirm to the user briefly that you will remember this."
+                )
+                logger.info(f"[Memory] Stored explicit fact pre-LLM: {intent_content}")
+
+            elif intent_type == "recall":
+                memories = self._memory_store.search(query=intent_content or text)
+                if memories:
+                    memory_context = self._format_memories(
+                        memories,
+                        header="Memory search results — use these to answer the user's question"
+                    )
+                    logger.info(f"[Memory] Recall search returned {len(memories)} results")
+                else:
+                    memory_context = (
+                        "[Memory search results]\n"
+                        "No relevant memories found for this query.\n"
+                        "Tell the user you don't have any memories about that topic."
+                    )
+                    logger.info("[Memory] Recall search returned no results")
+
+            # 2. Default: automatic retrieval for context
+            else:
+                try:
+                    logger.info(f"[Memory] Auto-retrieving memories for: {text[:100]}")
+                    memories = self._memory_store.retrieve(
+                        query=text,
+                        activity_filter=self.message_manager.current_context.name,
+                    )
+                    if memories:
+                        memory_context = self._format_memories(memories)
+                        logger.info(f"[Memory] Injecting {len(memories)} memories into context")
+                    else:
+                        logger.info("[Memory] No relevant memories found")
+                except Exception as e:
+                    logger.warning(f"[Memory] Retrieval failed: {e}")
+
         relevant_tools = plugin_manager.get_available_tools(
             architecture=self.client_type,
             activity=self.message_manager.current_context
@@ -252,7 +445,7 @@ class ChatClient:
         model_to_use = self.model
 
         try:
-            response = self.stream_handler.stream_response(relevant_tools or tools, model=model_to_use, query=content)
+            response = self.stream_handler.stream_response(relevant_tools or tools, model=model_to_use, query=content, memory_context=memory_context)
             logger.debug(f"response back from stream handler: {response}")
 
             # Accumulate streamed tool call deltas into complete tool calls
@@ -315,6 +508,23 @@ class ChatClient:
 
             # Execute accumulated tool calls (OpenAI streaming)
             if pending_tool_calls:
+                # Store the assistant message with tool_calls array (required by strict templates like Mistral)
+                # Generate 9-char alphanumeric IDs for compatibility (Mistral requires [a-zA-Z0-9]{9})
+                assistant_tool_calls = []
+                for idx in sorted(pending_tool_calls.keys()):
+                    tc = pending_tool_calls[idx]
+                    if tc["name"]:
+                        tc["id"] = ''.join(random.choices(string.ascii_letters + string.digits, k=9))
+                        assistant_tool_calls.append({
+                            "id": tc["id"],
+                            "type": "function",
+                            "function": {"name": tc["name"], "arguments": tc["arguments"] or "{}"}
+                        })
+                if assistant_tool_calls:
+                    self.message_manager.add_message_to_current_context(
+                        "assistant", None, tool_calls=assistant_tool_calls
+                    )
+
                 for idx in sorted(pending_tool_calls.keys()):
                     tc = pending_tool_calls[idx]
                     if not tc["name"]:
@@ -341,7 +551,9 @@ class ChatClient:
 
                     process_tool_result = plugin_manager.should_process_plugin_output(tc["name"])
                     logger.debug(f"tool process_output: {process_tool_result}")
-                    self.message_manager.add_message_to_current_context("tool", str(tool_result), name=tc["name"])
+                    self.message_manager.add_message_to_current_context(
+                        "tool", str(tool_result), name=tc["name"], tool_call_id=tc["id"]
+                    )
 
                     if process_tool_result:
                         self.chat(None, tools=None, _recursive=True)

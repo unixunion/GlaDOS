@@ -4,8 +4,11 @@ Glados:
   completion_url: "http://localhost:1234/v1" # LM Studio OpenAI-compatible endpoint
 #  model: "mistralai/magistral-small-2509"
 #  model: "qwen_qwen3.5-9b" # thinkgs out loud!
-  model: "qwen/qwen3-30b-a3b-2507" # thinking
-#  model: "mistral-small-24b-instruct-2501"
+#  model: "qwen/qwen3-30b-a3b-2507" # thinking last good
+#  model: "qwen/qwen3.5-35b-a3b" # throws error, doesnt work.
+#  model: "mistral-small-24b-instruct-2501" # good starting point, function calling BEST
+  model: "lmstudio-community/Mistral-Nemo-Instruct-2407-GGUF" # doesnt look good, slow. not calling functions well
+  # nezt to text, mistral-nemo-instruct-2407, Qwen 3 8B (the dense model, not MoE) , Llama 3.1 8B Instruct  ,Gemma 3 12B
 #  model: "llama3.2"
   client_type: OPENAI
 #  client_type: LANGCHAIN
@@ -15,7 +18,9 @@ Glados:
   vision_model: " qwen/qwen3-vl-8b"
   api_key: "lm-studio"
   announcement: "system initialized, ohh,, it's you again, how have you been?"
-#  voice_model: "kokoro-82m-onnx/model.onnx"
+  voice_core: "glados"  # "glados" (Piper/ONNX) or "kokoro" (Kokoro ONNX)
+#  voice_core: "kokoro"
+#  voice_model: "kokoro-82m-onnx"  # directory containing kokoro-v0_19.onnx and voices.json
 #  speaker_id: "bf_isabella"
   wake_word_sensitivity: 0.5
   openwakeword:
@@ -41,8 +46,10 @@ Glados:
         You are a helpful text-to-speech based home automation assistant that helps with tasks related to managing the household.
         All responses are spoken aloud via TTS, so keep them brief, conversational, and avoid special characters or formatting.
 
-        You have access to tools. Invoke tools as needed to perform specific tasks. Avoid calling tools if the inquiry can
-        be answered given the existing data in the chat messages if that data is valid for the given query.
+        You have access to tools. When a task requires a tool, ALWAYS call the tool BEFORE responding with text.
+        Never claim you have done something without actually calling the tool first.
+        If a request needs multiple steps (e.g. pick a recipe then display it), call each tool in sequence.
+        Only skip a tool call if the inquiry can be answered from existing data in the chat messages.
 
         Various automated systems add tool and automatic function outputs to the chat, consider their relevance to the
         chat and respond only if absolutely necessary. Automated messages may suggest triggering additional tools, in which
@@ -140,6 +147,9 @@ Glados:
   wake_word: null
   music_dir: ~/Music  # path to music directory for the music player plugin
   speech_buffer_ms: 1200  # ms of silence before finalizing speech; also pre-wake audio buffer size (default: 1200)
+  memory_enabled: true
+  memory_db_path: "data/memory_db"
+  memory_top_k: 5
   plugin_intent_threshold: 0.7
   plugins:
     - name: search_recipes

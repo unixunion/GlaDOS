@@ -1,4 +1,6 @@
 import importlib
+import random
+import string
 from typing import Optional, Union, Iterator
 
 from langchain_core.messages import BaseMessage, BaseMessageChunk
@@ -43,7 +45,7 @@ class StreamHandler:
         self.client: Optional[Union[OpenAI, ChatOllama, Mistral]] = client
         self.thinking_enabled: bool = getattr(config, 'thinking_enabled', False)
 
-    def stream_response(self, tools=None, model: str = None, query: str = None, confidence_threshold=0.5) -> EventStream[CompletionEvent] | Stream[ChatCompletionChunk]:
+    def stream_response(self, tools=None, model: str = None, query: str = None, confidence_threshold=0.5, memory_context: str = None) -> EventStream[CompletionEvent] | Stream[ChatCompletionChunk]:
         """
         Streams a response from the model with an optional tool choice determined by the intent classifier.
 
@@ -81,10 +83,29 @@ class StreamHandler:
             if self.client_type is ClientType.OPENAI:
                 logger.info("Calling openai client")
                 messages = list(self.message_manager.get_messages())
+                # Inject memory context after last system message
+                if memory_context:
+                    insert_idx = 0
+                    for i, msg in enumerate(messages):
+                        if msg.get("role") == "system":
+                            insert_idx = i + 1
+                    messages.insert(insert_idx, {"role": "system", "content": memory_context})
                 # Suppress thinking/reasoning for faster responses when disabled
                 if not self.thinking_enabled and messages and messages[0].get("role") == "system":
                     messages[0] = dict(messages[0])
                     messages[0]["content"] += "\n\nIMPORTANT: Do not use thinking tags, internal reasoning, or chain-of-thought. Do not narrate your thought process. Do not say things like 'The user is asking...' or 'I should respond...'. Just respond directly to the user with your answer. No meta-commentary."
+                logger.info(f"Messages being sent to LLM ({len(messages)} messages): "
+                            f"{[{'role': m.get('role'), 'has_tool_calls': bool(m.get('tool_calls')), 'has_tool_call_id': bool(m.get('tool_call_id'))} for m in messages if isinstance(m, dict)]}")
+                # Sanitize tool_call_ids to match [a-zA-Z0-9]{9} (required by Mistral templates)
+                for msg in messages:
+                    if isinstance(msg, dict):
+                        if msg.get("tool_call_id") and not _is_valid_tool_call_id(msg["tool_call_id"]):
+                            msg["tool_call_id"] = _generate_tool_call_id()
+                        if msg.get("tool_calls"):
+                            for tc in msg["tool_calls"]:
+                                if isinstance(tc, dict) and not _is_valid_tool_call_id(tc.get("id", "")):
+                                    tc["id"] = _generate_tool_call_id()
+
                 response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
                     model=model,
                     messages=messages,
@@ -113,3 +134,13 @@ class StreamHandler:
         except Exception as e:
             logger.exception(f"Error in streaming response: {e}")
             raise
+
+
+def _generate_tool_call_id() -> str:
+    """Generate a 9-char alphanumeric ID compatible with Mistral's template."""
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=9))
+
+
+def _is_valid_tool_call_id(tool_call_id: str) -> bool:
+    """Check if a tool_call_id matches [a-zA-Z0-9]{9}."""
+    return bool(tool_call_id) and len(tool_call_id) == 9 and tool_call_id.isalnum()

@@ -12,5 +12,5 @@ A maniacal home assistant with pluggable architecture and function calling suppo
 - [LLM Models](models) — Recommended models by hardware tier, what to look for
 - [Configuration](configuration) — `glados_config.yml` settings reference
 - [Voice Commands](voice) — Wake word, mute/unmute, intercepted commands
-- [Functions](functions) — Timers, alarms, recipes, music, display, vision
+- [Functions](functions) — Timers, alarms, recipes, music, display, memory, vision
 - [Installation](installation) — Setup for Windows, macOS, Linux
