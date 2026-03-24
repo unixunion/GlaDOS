@@ -57,7 +57,7 @@ class ChatClient:
                 confidence_threshold=getattr(config, 'nlp_confidence_threshold', 0.4),
             )
         elif config.client_type.upper() == ClientType.OPENAI.name:
-            self.client = OpenAI(base_url=config.completion_url, api_key=config.api_key)
+            self.client = OpenAI(base_url=config.completion_url, api_key=config.api_key, timeout=20.0)
             self.client_type = ClientType.OPENAI
         elif config.client_type.upper() == ClientType.MISTRAL.name:
             self.client = Mistral(server_url=config.completion_url, api_key=config.api_key)

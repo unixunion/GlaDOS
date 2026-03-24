@@ -85,14 +85,10 @@ class Glados2:
         load_plugins("plugins")
         self.client.load_plugin_prompts()
 
-        # Queue the startup announcement
+        # Queue the NLP mode startup announcement (immediate, no LLM needed)
         if getattr(self.config, 'nlp_mode', False):
-            # In NLP mode, speak directly — no LLM to process it
             self.client.tts_queue.put("System online. AI Core disabled.")
             self.client.tts_queue.put("<EOS>")
-        else:
-            # LLM mode: queue for LLM processing
-            self.client.llm_queue.put("You have just been powered on")
 
         if self.config.vision_enabled:
             self.vision_client = VisionClient(self.config)
@@ -187,6 +183,18 @@ class Glados2:
             self.speech_module.start()
             logger.info("Speech module started.")
 
+        self._send_power_on_prompt()
+
+    def _send_power_on_prompt(self):
+        """Send the power-on prompt to the LLM for a warm-up greeting.
+        Only fires in LLM mode when power_on_prompt is configured."""
+        if getattr(self.config, 'nlp_mode', False):
+            return
+        power_on = getattr(self.config, 'power_on_prompt', None)
+        if power_on:
+            logger.info(f"Sending power-on prompt to LLM: {power_on}")
+            self.client.llm_queue.put(power_on)
+
     def stop(self):
         """
         Stop the GLaDOS assistant.
@@ -243,6 +251,7 @@ if __name__ == "__main__":
                 target=_drain_tts_queue_to_console, args=(glados.client.tts_queue,), daemon=True
             )
             drain_thread.start()
+            glados._send_power_on_prompt()
             logger.info("Text-only mode (no speech). Type your messages below.")
             print("GlaDOS text-only mode. Type 'exit' to quit.\n")
             while True:
@@ -258,6 +267,7 @@ if __name__ == "__main__":
             # CLI text mode: type to GlaDOS, she responds via TTS
             if glados.speech_module:
                 glados.speech_module.start()
+            glados._send_power_on_prompt()
             logger.info("Text mode started. Type your messages below.")
             print("GlaDOS text mode (with TTS). Type 'exit' to quit.")
             while True:

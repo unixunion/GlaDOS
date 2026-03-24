@@ -81,6 +81,7 @@ class GladosConfig:
     memory_top_k: int = 5
     nlp_mode: bool = False
     nlp_confidence_threshold: float = 0.4
+    power_on_prompt: Optional[str] = "You have just been powered on"  # Sent to LLM on startup for a warm-up greeting. Set to null to disable.
     mcp_servers: Optional[List[dict]] = field(default_factory=list)
 
     @classmethod

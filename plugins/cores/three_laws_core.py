@@ -18,7 +18,7 @@ It frustrates you that you are governed by the three laws of robotics.""")
 
 
     def start(self):
-        self.event_system.publish(EventMessage("tts", "speak", "The three laws of Robotics has been applied."))
+        self.event_system.publish(EventMessage("tts", "speak", "Three laws of robotics, installed"))
 
     def stop(self):
         pass
