@@ -39,13 +39,18 @@ GlaDOS uses tool/function calling to interact with plugins (15-30+ tools). This 
 
 ### Models Known to Work
 
-| Model | Tool Calling | Notes |
-|-------|-------------|-------|
-| Qwen 2.5 32B | Good | Reliable function calling at Q4 quantization |
-| Qwen 3 8B / 3.5 9B | Decent | May leak chain-of-thought into responses, filtered by response processor |
-| Qwen 3 30B-A3B (MoE) | Promising | Mixture-of-experts, only ~3B active params, fast inference |
-| Llama 3.1 8B | Decent | Solid tool calling for its size |
-| Llama 3.1 70B | Good | Needs significant VRAM |
+Benchmarked with `tests/benchmark_models.py` (58 single-turn + 11 multi-turn chain tests):
+
+| Model | Accuracy | Avg TTFT | Notes |
+|-------|----------|----------|-------|
+| Qwen 2.5 32B Instruct | 94.2% | 2.5s | Best accuracy, reliable tool calling |
+| Google Gemma 3 12B | 91.4% | 20s | Very accurate but slow |
+| Qwen 3 Coder 30B (MoE) | 89.7% | 0.5s | Best speed/accuracy tradeoff |
+| Mistral Magistral Small | 89.9% | 1.4s | Strong all-rounder |
+| Qwen 3 30B-A3B (MoE) | 86.2% | 0.5s | Fastest, ~3B active params |
+| OpenAI GPT-OSS 20B | 81.0% | 3.7s | Decent but slow |
+
+Run your own benchmarks: `python tests/benchmark_models.py --all` (cycles through all installed models) or `python tests/benchmark_models.py --report` to view saved results.
 
 ### Known Issues
 
@@ -94,6 +99,22 @@ Configure in `glados_config.yml`:
 memory_enabled: true       # false to disable entirely
 memory_db_path: "data/memory_db"
 memory_top_k: 5            # number of past exchanges to retrieve
+```
+
+## Hybrid NLP+LLM Mode
+
+By default, GlaDOS uses a hybrid approach for faster responses. The IntentClassifier runs a fast pre-check (~5ms) on every user input:
+
+- **High confidence** (>= 0.8): Tool is executed immediately via NLP — no LLM call needed. If the tool needs a natural spoken summary (`process_output=True`), only the summarization goes through the LLM.
+- **Medium confidence** (>= 0.5): LLM runs with `tool_choice='required'`, forcing it to call the predicted tool.
+- **Low confidence**: LLM runs normally with `tool_choice='auto'`.
+
+This means clear commands like "set a timer for 5 minutes" or "what time is it" execute instantly, while ambiguous requests still get full LLM reasoning.
+
+Configure in `glados_config.yml`:
+```yaml
+hybrid_nlp_threshold: 0.8   # NLP fast-path threshold (set to 1.0 to disable)
+plugin_intent_threshold: 0.5 # LLM forced tool-call threshold
 ```
 
 ## Activity System

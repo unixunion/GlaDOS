@@ -44,6 +44,7 @@ class StreamHandler:
         self.client_type: ClientType = ClientType[config.client_type]
         self.client: Optional[Union[OpenAI, ChatOllama, Mistral]] = client
         self.thinking_enabled: bool = getattr(config, 'thinking_enabled', False)
+        self.max_response_tokens: int = getattr(config, 'max_response_tokens', 200)
 
     def stream_response(self, tools=None, model: str = None, query: str = None, confidence_threshold=0.5, memory_context: str = None) -> EventStream[CompletionEvent] | Stream[ChatCompletionChunk]:
         """
@@ -106,12 +107,19 @@ class StreamHandler:
                                 if isinstance(tc, dict) and not _is_valid_tool_call_id(tc.get("id", "")):
                                     tc["id"] = _generate_tool_call_id()
 
+                # Only cap tokens for text responses (no tools) when thinking is disabled.
+                # When thinking is enabled, max_tokens would include reasoning tokens,
+                # cutting off the actual response. Rely on wall-clock + repetition guards instead.
+                max_tokens = NOT_GIVEN
+                if not tools and not self.thinking_enabled and self.max_response_tokens:
+                    max_tokens = self.max_response_tokens
                 response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
                     model=model,
                     messages=messages,
                     stream=True,
                     tools=tools or NOT_GIVEN,
                     tool_choice=tool_choice if tools else NOT_GIVEN,
+                    max_tokens=max_tokens,
                     temperature=0.0,
                     timeout=30.0,
                 )

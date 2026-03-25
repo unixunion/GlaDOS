@@ -150,6 +150,11 @@
             min-width: 300px;
         }
 
+        .timer-type {
+            font-size: 1.5rem;
+            margin-bottom: 4px;
+        }
+
         .timer-name {
             font-size: 1.3rem;
             color: #aaa;
@@ -537,8 +542,10 @@
             if (data.timers && data.timers.length > 0) {
                 let cards = '';
                 data.timers.forEach(t => {
+                    const typeLabel = t.type === 'alarm' ? '⏰' : '⏱';
                     cards += `
                         <div class="timer-card">
+                            <div class="timer-type">${typeLabel}</div>
                             <div class="timer-name">${escapeHtml(t.description || 'Timer')}</div>
                             <div class="timer-countdown">${escapeHtml(t.expires_in || '--')}</div>
                             <div class="timer-expires">until ${escapeHtml(t.expires_at || '')}</div>

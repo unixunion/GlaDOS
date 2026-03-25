@@ -50,7 +50,7 @@ def load_plugins(package_path: str):
                     # Automatically instantiate subclasses of RunnablePlugin
                     for attr_name in dir(module):
                         attr = getattr(module, attr_name)
-                        if isinstance(attr, type) and issubclass(attr, RunnablePlugin) and attr is not RunnablePlugin:
+                        if isinstance(attr, type) and issubclass(attr, RunnablePlugin) and attr is not RunnablePlugin and attr.__module__ != "glados.mcp.runnable_mcp_plugin":
                             PluginSystem().load_plugin_instance(attr)
                             logger.info(f"Loaded plugin instance: {attr_name}")
 
@@ -327,7 +327,7 @@ class PluginSystem:
 
                 return instance
             else:
-                logger.warning("Cannot instantiate abstract class")
+                logger.warning(f"Cannot instantiate abstract class {cls.__name__}")
         except Exception as e:
             logger.exception(f"Failed to load plugin instance for {cls.__name__}: {e}")
             return None

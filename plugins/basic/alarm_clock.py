@@ -208,6 +208,12 @@ class AlarmClock(RunnableMCPPlugin):
                         return {"status": "error", "message": "An alarm is already set for this time."}
 
                 self.alarms.append(Alarm(alarm_time=alarm_time, description=description))
+                # Push timer/alarm display so the new alarm appears immediately
+                try:
+                    from plugins.basic.countdown_timer import CountdownTimer
+                    CountdownTimer()._publish_timer_display()
+                except Exception:
+                    pass
                 return {
                     "status": "success",
                     "message": f"Alarm set for {self._format_time_for_speech(alarm_time)}.",
@@ -227,6 +233,14 @@ class AlarmClock(RunnableMCPPlugin):
             ]
             return {"status": "success", "message": "Currently set alarms:", "alarms": alarms_list}
 
+    def _refresh_timer_display(self):
+        """Trigger the timer display to refresh (shows timers + alarms, or clears to idle)."""
+        try:
+            from plugins.basic.countdown_timer import CountdownTimer
+            CountdownTimer()._publish_timer_display()
+        except Exception:
+            pass
+
     def cancel_alarm(self, query: str) -> dict:
         query_lower = query.strip().lower()
         with self._lock:
@@ -236,6 +250,7 @@ class AlarmClock(RunnableMCPPlugin):
             for i, alarm in enumerate(self.alarms):
                 if query_lower in alarm.description.lower():
                     removed = self.alarms.pop(i)
+                    self._refresh_timer_display()
                     return {"status": "success", "message": f"Cancelled alarm: {removed.description}"}
 
             parsed_time = dateparser.parse(query)
@@ -243,6 +258,7 @@ class AlarmClock(RunnableMCPPlugin):
                 for i, alarm in enumerate(self.alarms):
                     if alarm.alarm_time.hour == parsed_time.hour and alarm.alarm_time.minute == parsed_time.minute:
                         removed = self.alarms.pop(i)
+                        self._refresh_timer_display()
                         return {"status": "success", "message": f"Cancelled alarm: {removed.description}"}
 
             return {"status": "error", "message": f"No alarm found matching '{query}'."}
@@ -297,6 +313,7 @@ class AlarmClock(RunnableMCPPlugin):
         self.event_system.publish(EventMessage("system", "music_resume", {}))
         if dismissed:
             logger.info(f"Alarm dismissed: {dismissed.description}")
+        self._refresh_timer_display()
         return True
 
     def _check_alarms(self, event: EventMessage):
@@ -314,3 +331,6 @@ class AlarmClock(RunnableMCPPlugin):
                 process_output=True
             ))
             break
+
+        if expired:
+            self._refresh_timer_display()

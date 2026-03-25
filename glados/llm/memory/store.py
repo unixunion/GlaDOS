@@ -187,6 +187,33 @@ class VectorMemoryStore:
         logger.info(f"[MemoryStore] Broad search returned {len(memories)} results for: {query[:60]}")
         return memories
 
+    def dump_all(self) -> int:
+        """Log all documents in the memory store at INFO level. Returns count."""
+        count = self._collection.count()
+        if count == 0:
+            logger.info("[MemoryStore] Memory is empty — nothing to dump")
+            return 0
+
+        all_data = self._collection.get(include=["documents", "metadatas"])
+        logger.info(f"[MemoryStore] === MEMORY DUMP ({count} documents) ===")
+        for i, (doc_id, doc, meta) in enumerate(
+            zip(all_data["ids"], all_data["documents"], all_data["metadatas"]), 1
+        ):
+            mem_type = meta.get("memory_type", "?")
+            activity = meta.get("activity", "?")
+            ts = meta.get("timestamp", 0)
+            import time as _time
+            age_s = _time.time() - ts
+            if age_s < 3600:
+                age = f"{int(age_s / 60)}m ago"
+            elif age_s < 86400:
+                age = f"{int(age_s / 3600)}h ago"
+            else:
+                age = f"{int(age_s / 86400)}d ago"
+            logger.info(f"[MemoryStore] [{i}/{count}] type={mem_type} activity={activity} age={age} | {doc[:150]}")
+        logger.info(f"[MemoryStore] === END MEMORY DUMP ===")
+        return count
+
     @staticmethod
     def _merge_results(results, target: dict) -> None:
         """Merge ChromaDB query results into target dict, keeping lowest distance per document."""

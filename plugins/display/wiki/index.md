@@ -11,7 +11,7 @@ A maniacal home assistant with pluggable architecture and function calling suppo
 - [MCP Integration](mcp) — Model Context Protocol layer, tool registration, external servers
 - [LLM Models](models) — Recommended models by hardware tier, what to look for
 - [Configuration](configuration) — `glados_config.yml` settings reference
-- [NLP Mode](nlp-mode) — LLM-free operation, plugin NLP handlers, testing
+- [NLP & Hybrid Mode](nlp-mode) — Hybrid NLP+LLM routing, pure NLP mode, plugin NLP handlers, testing
 - [Voice Commands](voice) — Wake word, mute/unmute, intercepted commands
 - [Functions](functions) — Timers, alarms, recipes, music, display, memory, vision
 - [Installation](installation) — Setup for Windows, macOS, Linux

@@ -150,21 +150,8 @@ class DisplayPlugin(RunnablePlugin):
         self._socketio.emit("status_toast", payload)
 
     def _on_tick(self, event: EventMessage):
-        """On each tick, if displaying a timer view, push live countdown state."""
-        if self.current_display.get("view_type") != "timer":
-            return
-        try:
-            from plugins.basic.countdown_timer import CountdownTimer
-            timer_data = CountdownTimer().list_timers()
-            if timer_data.get("status") == "success":
-                payload = {
-                    "view_type": "timer",
-                    "title": "Active Timers",
-                    "timers": timer_data["timers"]
-                }
-                self._socketio.emit("display_update", payload)
-        except Exception as e:
-            logger.debug(f"Could not update timer display: {e}")
+        """Tick handler — timer display updates are now pushed by CountdownTimer directly."""
+        pass
 
     def _register_tools(self):
         plugin_manager.register(

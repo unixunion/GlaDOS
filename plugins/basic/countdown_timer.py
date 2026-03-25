@@ -76,6 +76,37 @@ def _list_timers_nlp_response(result: dict) -> str:
     return "Active timers: " + ". ".join(parts) + "."
 
 
+def _cancel_timer_nlp_extract(text: str) -> dict:
+    """Extract timer query for cancellation."""
+    import re
+    cleaned = re.sub(
+        r"^(?:please\s+)?(?:cancel|delete|remove|stop|kill)\s+(?:the\s+)?(?:timer\s+)?(?:called\s+|named\s+|for\s+)?",
+        "", text.strip(), flags=re.IGNORECASE
+    ).strip()
+    # If the cleaned text looks like a duration, convert to description format
+    dur = parse_duration(cleaned)
+    if dur:
+        parts = []
+        if dur["hours"]:
+            parts.append(f"{dur['hours']} hour")
+        if dur["minutes"]:
+            parts.append(f"{dur['minutes']} minute")
+        if dur["seconds"]:
+            parts.append(f"{dur['seconds']} second")
+        cleaned = "the " + " ".join(parts) + " timer"
+    return {"query": cleaned} if cleaned else {"query": text.strip()}
+
+
+def _cancel_timer_nlp_response(result: dict) -> str:
+    if result.get("status") == "success":
+        msg = result.get("message", "Timer cancelled.")
+        # Make it more natural: "Cancelled timer: the 5 minutes timer" → "Done, cancelled the 5 minutes timer."
+        return msg.replace("Cancelled timer: ", "Done, cancelled ") + "."
+    if result.get("status") == "info":
+        return result.get("message", "No active timers.")
+    return result.get("message", "No matching timer found.")
+
+
 class CountdownTimer(RunnableMCPPlugin):
     _instance = None
 
@@ -143,9 +174,42 @@ class CountdownTimer(RunnableMCPPlugin):
             nlp_response=_list_timers_nlp_response,
         )
 
+        self.register_tool(
+            handler=self.cancel_timer,
+            description="Cancel and remove an active timer. Call this directly when the user wants to cancel, stop, or remove a timer.",
+            parameters={
+                "query": {
+                    "type": "string",
+                    "description": "The timer description or duration to cancel, e.g. 'egg timer' or '5 minute timer'.",
+                },
+            },
+            required=["query"],
+            intents=[
+                "cancel the timer",
+                "cancel my timer",
+                "cancel the egg timer",
+                "cancel the pasta timer",
+                "cancel the cooking timer",
+                "cancel the countdown timer",
+                "remove the timer",
+                "remove the egg timer",
+                "delete the timer",
+                "cancel timer",
+                "turn off the timer",
+                "remove that timer",
+                "cancel countdown timer",
+            ],
+            process_output=False,
+            activity=[Activity.UTILITIES, Activity.COOKING],
+            nlp_extract_fn=_cancel_timer_nlp_extract,
+            nlp_response=_cancel_timer_nlp_response,
+        )
+
     def add_timer(self, alarm_time: datetime, description: str):
         self.timers.append(Timer(alarm_time=alarm_time, description=description))
         logger.info(f"Added timer: {description}, expires at {format_time_for_tts(alarm_time)}.")
+        # Push timer view to display immediately so user sees the countdown
+        self._publish_timer_display()
 
     def remove_expired_timers(self):
         now = datetime.now()
@@ -196,8 +260,93 @@ class CountdownTimer(RunnableMCPPlugin):
         ]
         return {"status": "success", "timers": timers_info}
 
+    def cancel_timer(self, query: str) -> dict:
+        """Cancel a timer by description or duration match."""
+        if not self.timers:
+            return {"status": "info", "message": "No active timers."}
+
+        query_lower = query.strip().lower()
+
+        # Try matching by description (fuzzy substring)
+        for i, timer in enumerate(self.timers):
+            if query_lower in timer.description.lower():
+                removed = self.timers.pop(i)
+                logger.info(f"Cancelled timer: {removed.description}")
+                self._publish_timer_display()
+                return {"status": "success", "message": f"Cancelled timer: {removed.description}"}
+
+        # If only one timer, cancel it regardless of query
+        if len(self.timers) == 1:
+            removed = self.timers.pop(0)
+            logger.info(f"Cancelled only active timer: {removed.description}")
+            self._publish_timer_display()
+            return {"status": "success", "message": f"Cancelled timer: {removed.description}"}
+
+        return {"status": "error", "message": f"No timer found matching '{query}'. Say 'list timers' to see active timers."}
+
+    def _publish_timer_display(self):
+        """Publish current timers + alarms to the display."""
+        now = datetime.now()
+
+        # Gather active timers
+        timers_info = [
+            {
+                "description": timer.description,
+                "expires_in": format_duration(int((timer.alarm_time - now).total_seconds())),
+                "expires_at": format_time_for_tts(timer.alarm_time),
+                "type": "timer",
+            }
+            for timer in self.timers
+        ]
+
+        # Gather active alarms from existing plugin instance (don't instantiate a new one)
+        try:
+            from glados.system.plugin import PluginSystem
+            alarm_entry = PluginSystem().plugins.get("alarmclock", {})
+            alarm_plugin = alarm_entry.get("function") if alarm_entry else None
+            if alarm_plugin and hasattr(alarm_plugin, "alarms"):
+                for alarm in list(alarm_plugin.alarms):
+                    remaining = int((alarm.alarm_time - now).total_seconds())
+                    timers_info.append({
+                        "description": alarm.description,
+                        "expires_in": format_duration(remaining) if remaining > 0 else "now",
+                        "expires_at": alarm.alarm_time.strftime("%I:%M %p").lstrip("0"),
+                        "type": "alarm",
+                    })
+        except Exception as e:
+            logger.debug(f"Could not fetch alarms for display: {e}")
+
+        if not timers_info:
+            # No active timers or alarms — clear the display back to idle
+            self.event_system.publish(
+                EventMessage(
+                    role="display",
+                    name="idle",
+                    content={},
+                    process_output=False
+                )
+            )
+            return
+
+        self.event_system.publish(
+            EventMessage(
+                role="display",
+                name="timer",
+                content={
+                    "title": "Timers & Alarms",
+                    "timers": timers_info,
+                },
+                process_output=False
+            )
+        )
+
     def _check_timers(self, event: EventMessage):
         logger.debug("Checking timers")
+
+        # Publish live countdown to display while timers are active
+        if self.timers:
+            self._publish_timer_display()
+
         expired_timers = self.remove_expired_timers()
 
         for timer in expired_timers:
@@ -233,6 +382,10 @@ class CountdownTimer(RunnableMCPPlugin):
                     subprocess.Popen(["afplay", alert_path])
             except Exception as e:
                 logger.debug(f"Could not play timer alert sound: {e}")
+
+        # After processing expirations, update display (clears to idle if nothing left)
+        if expired_timers:
+            self._publish_timer_display()
 
     def start(self):
         logger.info("Starting CountdownTimer.")

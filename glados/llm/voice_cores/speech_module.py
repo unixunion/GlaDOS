@@ -228,6 +228,16 @@ class SpeechModule(ABC):
         text = re.sub(r"(?i)\bplugin\b", "plug-in", text)
         text = re.sub(r"(?i)\bglados\b", "glad-oss", text)
         text = re.sub(r"%", " percent", text)
+        # Expand cooking abbreviations for natural speech
+        text = re.sub(r"(?i)\bTbsp\.?\b", "tablespoon", text)
+        text = re.sub(r"(?i)\btbsps\.?\b", "tablespoons", text)
+        text = re.sub(r"(?i)\btsp\.?\b", "teaspoon", text)
+        text = re.sub(r"(?i)\btsps\.?\b", "teaspoons", text)
+        text = re.sub(r"(?i)\boz\.?\b", "ounce", text)
+        text = re.sub(r"(?i)\blbs?\.?\b", "pounds", text)
+        text = re.sub(r"(?i)\bpkg\.?\b", "package", text)
+        text = re.sub(r"(?i)\bqt\.?\b", "quart", text)
+        text = re.sub(r"(?i)\bpt\.?\b", "pint", text)
 
         text = (
             text.replace("\u2014", ", ")

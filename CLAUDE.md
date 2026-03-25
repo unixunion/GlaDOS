@@ -45,6 +45,7 @@ main.py                    # Entry point — wires everything together
 - **Activity contexts**: `MessageManager` keeps separate message histories per activity (GENERAL, COOKING, etc.). The intent classifier routes user input to the right context, and tools are filtered per activity.
 - **Plugin patterns**: Two types — `@mcp_tool` decorated functions (simple) and `RunnableMCPPlugin` subclasses (stateful, with start/stop lifecycle). Both auto-register with the MCP server.
 - **Pre-LLM interception**: Memory "remember"/"recall" intents are detected by the `IntentClassifier` (same Naive Bayes classifier used for all tool routing) before the LLM runs. The `MemoryTools` plugin registers `_memory_remember` and `_memory_recall` intents with training examples at startup. `ChatClient._detect_memory_intent()` checks the classifier, then stores/retrieves directly and injects results as system messages. This avoids depending on the LLM to call tools.
+- **Hybrid NLP+LLM mode**: When `hybrid_nlp_threshold < 1.0` (default 0.8), the IntentClassifier runs before the LLM. High-confidence matches execute the tool instantly via NLP (~5ms); tools with `process_output=True` still use the LLM for natural summarization. Low-confidence inputs fall through to the normal LLM path. This gives sub-100ms tool execution for clear commands.
 - **Streaming**: LLM responses are streamed chunk-by-chunk. `ResponseProcessor` accumulates text and sends complete sentences to the TTS queue for low-latency voice output.
 
 ## Memory System

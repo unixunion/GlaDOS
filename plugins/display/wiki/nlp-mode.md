@@ -1,10 +1,59 @@
-# NLP Mode — LLM-Free Operation
+# NLP Mode & Hybrid Mode
+
+## Hybrid Mode (Default) — Fast NLP + LLM Fallback
+
+Hybrid mode gives you the best of both worlds: the NLP classifier runs a fast pre-check (~5ms) on every user input. If it's highly confident, the tool executes immediately without waiting for the LLM. Ambiguous requests still get full LLM reasoning.
+
+### Three-Tier Routing
+
+| Confidence | Path | Speed | Example |
+|-----------|------|-------|---------|
+| >= 0.8 (high) | **NLP direct** — tool executes immediately, response spoken via template | ~5ms | "set a timer for 5 minutes" |
+| >= 0.5 (medium) | **LLM forced** — LLM runs with `tool_choice='required'` | ~500ms | "play something relaxing" |
+| < 0.5 (low) | **LLM auto** — LLM decides whether to call a tool | ~1-3s | "I'm hungry, what should I make" |
+
+When a tool executed via NLP has `process_output=True` (e.g., recipe search returns JSON), only the summarization step goes through the LLM — the tool itself executed instantly.
+
+### Configuration
+
+```yaml
+hybrid_nlp_threshold: 0.8    # NLP fast-path (set to 1.0 to disable hybrid, pure LLM)
+plugin_intent_threshold: 0.5  # LLM forced tool-call threshold
+```
+
+### How It Works
+
+```
+User Input → ChatClient.chat()
+  ├─ Step 1: infer_activity (IntentClassifier)
+  ├─ Step 2: add user message to history
+  ├─ Step 3: memory processing (remember/recall/forget — pre-LLM)
+  │
+  ├─ Step 3.5 [Hybrid]: IntentClassifier.predict_intent(text)
+  │     confidence >= hybrid_nlp_threshold?
+  │       YES, tool has process_output=False:
+  │         → NLP executes tool directly, speaks response, DONE
+  │       YES, tool has process_output=True:
+  │         → NLP executes tool, injects result, LLM summarizes
+  │       NO: fall through to LLM
+  │
+  ├─ Step 4 [LLM]: StreamHandler.stream_response()
+  │     IntentClassifier confidence >= plugin_intent_threshold?
+  │       YES → tool_choice='required' (LLM must call the predicted tool)
+  │       NO  → tool_choice='auto' (LLM decides)
+  │
+  └─ Step 5: ResponseProcessor streams text to TTS
+```
+
+---
+
+## Pure NLP Mode — LLM-Free Operation
 
 NLP mode lets GlaDOS run without an external LLM server. Instead of sending user input to an LLM, it uses the IntentClassifier (Naive Bayes) to identify which tool to call, extracts parameters via regex, calls the tool directly, and speaks a template response via TTS.
 
 This makes GlaDOS usable on low-power devices (Raspberry Pi, old laptops) where running or connecting to an LLM isn't practical.
 
-## Enabling NLP Mode
+### Enabling NLP Mode
 
 In `glados_config.yml`:
 
@@ -31,29 +80,7 @@ When `nlp_mode: true`:
 - Model discovery is skipped
 - The startup announcement speaks directly ("System online. NLP mode active.")
 - All user input is routed through the NLP dispatcher instead of the LLM
-
-## How It Works
-
-```
-User Input → ChatClient.chat()
-  ├─ Step 1: infer_activity (IntentClassifier — unchanged)
-  ├─ Step 2: add user message to history (unchanged)
-  ├─ Step 3: memory processing (unchanged — remember/recall still works)
-  │
-  ├─ Step 3.5 [NLP mode]:
-  │     NLPDispatcher.dispatch(text, activity)
-  │       ├─ IntentClassifier.predict_intent(text) → (tool_name, confidence)
-  │       ├─ if confidence >= threshold:
-  │       │     NLPHandlerRegistry.get(tool_name) → handler
-  │       │     handler.extract_params(text) → kwargs
-  │       │     plugin_function(**kwargs) → result
-  │       │     handler.format_response(result) → spoken_text
-  │       │     tts_queue.put(spoken_text) + "<EOS>"
-  │       └─ else: "I didn't understand that."
-  │     return (skip LLM entirely)
-  │
-  └─ Step 5+: LLM call (SKIPPED in NLP mode)
-```
+- Hybrid mode is not used (NLP handles everything)
 
 The memory system still works in NLP mode — "remember that I prefer celsius" stores facts, "what do you remember" retrieves them.
 

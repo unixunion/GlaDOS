@@ -1,7 +1,6 @@
 import json
 import queue
 import random
-import re
 import string
 import threading
 import time
@@ -48,14 +47,17 @@ class ChatClient:
             for activity in Activity:
                 self.message_manager.add_message(role, content, activity=activity)
 
-        if getattr(config, 'nlp_mode', False):
-            logger.info("NLP mode enabled — skipping LLM client creation")
-            self.client_type = ClientType.OPENAI  # placeholder for type checks
+        # Create NLP dispatcher for pure NLP mode OR hybrid mode
+        if getattr(config, 'nlp_mode', False) or getattr(config, 'hybrid_nlp_threshold', 1.0) < 1.0:
             from glados.nlp.dispatcher import NLPDispatcher
             self._nlp_dispatcher = NLPDispatcher(
                 tts_queue=self.tts_queue,
                 confidence_threshold=getattr(config, 'nlp_confidence_threshold', 0.4),
             )
+
+        if getattr(config, 'nlp_mode', False):
+            logger.info("NLP mode enabled — skipping LLM client creation")
+            self.client_type = ClientType.OPENAI  # placeholder for type checks
         elif config.client_type.upper() == ClientType.OPENAI.name:
             self.client = OpenAI(base_url=config.completion_url, api_key=config.api_key, timeout=20.0)
             self.client_type = ClientType.OPENAI
@@ -245,8 +247,8 @@ class ChatClient:
         """Callback to store finalized sentences in the message manager."""
         logger.debug(f"Storing finalized message in history: {message}")
         self.message_manager.add_message_to_current_context("assistant", message)
-        # Store the exchange in vector memory
-        if self._memory_store and self._last_user_message:
+        # Store the exchange in vector memory (only if auto_store enabled)
+        if self._memory_store and self._last_user_message and getattr(self.config, 'memory_auto_store', False):
             try:
                 logger.info(f"[Memory] Storing exchange — user: {self._last_user_message[:80]}...")
                 logger.info(f"[Memory] Storing exchange — assistant: {message[:80]}...")
@@ -264,120 +266,6 @@ class ChatClient:
 
     # -- Memory intent detection (pre-LLM) ------------------------------------
     #
-    # Intent detection uses the IntentClassifier (same Naive Bayes classifier
-    # used for tool routing). The MemoryTools plugin registers training examples
-    # for _memory_remember and _memory_recall intents at startup.
-    #
-    # Regex is used only for fact *extraction* — pulling the content from
-    # "remember that **I prefer celsius**" once the classifier has already
-    # identified the intent.
-
-    # Patterns for extracting the fact content from a "remember" utterance
-    _FACT_EXTRACTION_PATTERNS = [
-        re.compile(r"^(?:please\s+)?(?:I\s+want\s+you\s+to\s+)?remember\s+(?:that\s+)?(.+)", re.IGNORECASE),
-        re.compile(r"^(?:please\s+)?(?:don'?t\s+forget|note)\s+(?:that\s+)?(.+)", re.IGNORECASE),
-        re.compile(r"^(?:please\s+)?keep\s+in\s+mind\s+(?:that\s+)?(.+)", re.IGNORECASE),
-        re.compile(r"^(?:please\s+)?(?:save|store)\s+(?:that\s+)?(.+?)(?:\s+(?:to|in)\s+memory)?$", re.IGNORECASE),
-        re.compile(r"^(?:please\s+)?make\s+a\s+note\s+(?:that\s+)?(.+)", re.IGNORECASE),
-    ]
-
-    def _detect_memory_intent(self, text: str) -> tuple[str | None, str | None]:
-        """Detect memory intent using the IntentClassifier.
-
-        Returns:
-            (intent_type, content) where intent_type is "remember", "recall", or None.
-            For "remember", content is the extracted fact.
-            For "recall", content is the search query (the full user text).
-        """
-        from plugins.cores.memory_core import MEMORY_REMEMBER_INTENT, MEMORY_RECALL_INTENT, MEMORY_FORGET_ALL_INTENT
-
-        try:
-            classifier = self.plugin_system.get_intent_classifier()
-            if not classifier or not classifier.model:
-                return None, None
-
-            predicted, confidence = classifier.predict_intent(text)
-            logger.debug(f"[Memory] Intent classifier: {predicted} ({confidence:.2f})")
-
-            if predicted == MEMORY_REMEMBER_INTENT and confidence >= 0.3:
-                fact = self._extract_fact(text)
-                if fact:
-                    logger.info(f"[Memory] Detected REMEMBER intent (confidence={confidence:.2f}), fact: {fact}")
-                    return "remember", fact
-                else:
-                    logger.debug(f"[Memory] REMEMBER intent detected but fact extraction failed for: {text}")
-
-            elif predicted == MEMORY_RECALL_INTENT and confidence >= 0.3:
-                logger.info(f"[Memory] Detected RECALL intent (confidence={confidence:.2f}), query: {text}")
-                return "recall", text
-
-            elif predicted == MEMORY_FORGET_ALL_INTENT and confidence >= 0.3:
-                logger.info(f"[Memory] Detected FORGET_ALL intent (confidence={confidence:.2f})")
-                return "forget_all", text
-
-        except Exception as e:
-            logger.warning(f"[Memory] Intent detection failed: {e}")
-
-        return None, None
-
-    def _extract_fact(self, text: str) -> str | None:
-        """Extract the fact content from a 'remember' utterance using regex.
-
-        E.g. "remember that I prefer celsius" → "I prefer celsius"
-        Falls back to the full text if no pattern matches.
-        """
-        for pattern in self._FACT_EXTRACTION_PATTERNS:
-            m = pattern.match(text.strip())
-            if m:
-                fact = m.group(1).strip().rstrip(".")
-                if len(fact) > 3:
-                    return fact
-        # Fallback: use the full text as the fact (the classifier was confident
-        # this is a remember intent, so the whole utterance is worth storing)
-        stripped = text.strip().rstrip(".")
-        return stripped if len(stripped) > 3 else None
-
-    @staticmethod
-    def _format_memories(memories: list[dict], header: str = "Relevant memories from past conversations") -> str:
-        """Format retrieved memories as a system message for the LLM."""
-        lines = [f"[{header}]"]
-        for m in memories:
-            ts = m["metadata"].get("timestamp", 0)
-            age_s = time.time() - ts
-            mem_type = m["metadata"].get("memory_type", "exchange")
-            if age_s < 3600:
-                age = f"{int(age_s / 60)}m ago"
-            elif age_s < 86400:
-                age = f"{int(age_s / 3600)}h ago"
-            else:
-                age = f"{int(age_s / 86400)}d ago"
-            prefix = "[fact] " if mem_type == "fact" else ""
-            lines.append(f"- {prefix}{m['document']} ({age})")
-        lines.append(f"[End of memories]")
-        return "\n".join(lines)
-
-    @staticmethod
-    def _format_memories_for_speech(memory_context: str) -> str:
-        """Convert memory context string into natural spoken text for NLP mode."""
-        # memory_context is the formatted string from _format_memories or a notification
-        if "No relevant memories found" in memory_context:
-            return "I don't have any memories about that."
-        # Extract the memory lines (skip header/footer brackets)
-        lines = []
-        for line in memory_context.split("\n"):
-            line = line.strip()
-            if line.startswith("- "):
-                # Strip metadata like "(2h ago)" at the end
-                text = line[2:]
-                paren_idx = text.rfind(" (")
-                if paren_idx > 0:
-                    text = text[:paren_idx]
-                text = text.replace("[fact] ", "")
-                lines.append(text)
-        if lines:
-            return "Here's what I remember. " + ". ".join(lines) + "."
-        return "I found some memories but couldn't format them."
-
     def infer_activity_from_input(self, user_input: str) -> Activity:
         """Infer the activity based on user input using the intent classifier.
 
@@ -436,82 +324,73 @@ class ChatClient:
         if content:  # Add input to the conversation
             self.message_manager.add_message_to_current_context("user", str(content))
 
-        # -- Pre-LLM memory processing ------------------------------------------
+        # -- Pre-LLM hooks (memory, future plugins) --------------------------------
         memory_context = None
-        intent_type = None
-        if content and self._memory_store and not _recursive:
-            self._last_user_message = str(content)
-            text = str(content)
-
-            # 1. Check for explicit memory intent (remember/recall) via IntentClassifier
-            intent_type, intent_content = self._detect_memory_intent(text)
-
-            if intent_type == "forget_all":
-                count = self._memory_store.clear_all()
-                memory_context = (
-                    f"[Memory system notification]\n"
-                    f"All {count} memories have been cleared from persistent storage.\n"
-                    f"Confirm to the user that your memory has been wiped clean."
-                )
-                logger.info(f"[Memory] Cleared all {count} memories")
-
-            elif intent_type == "remember" and intent_content:
-                self._memory_store.store_fact(intent_content, session_id=self._session_id)
-                memory_context = (
-                    f"[Memory system notification]\n"
-                    f"The following fact has been stored in persistent memory: \"{intent_content}\"\n"
-                    f"Confirm to the user briefly that you will remember this."
-                )
-                logger.info(f"[Memory] Stored explicit fact pre-LLM: {intent_content}")
-
-            elif intent_type == "recall":
-                memories = self._memory_store.search(query=intent_content or text)
-                if memories:
-                    memory_context = self._format_memories(
-                        memories,
-                        header="Memory search results — use these to answer the user's question"
-                    )
-                    logger.info(f"[Memory] Recall search returned {len(memories)} results")
-                else:
-                    memory_context = (
-                        "[Memory search results]\n"
-                        "No relevant memories found for this query.\n"
-                        "Tell the user you don't have any memories about that topic."
-                    )
-                    logger.info("[Memory] Recall search returned no results")
-
-            # 2. Default: automatic retrieval for context
-            else:
-                try:
-                    logger.info(f"[Memory] Auto-retrieving memories for: {text[:100]}")
-                    memories = self._memory_store.retrieve(
-                        query=text,
-                        activity_filter=self.message_manager.current_context.name,
-                    )
-                    if memories:
-                        memory_context = self._format_memories(memories)
-                        logger.info(f"[Memory] Injecting {len(memories)} memories into context")
-                    else:
-                        logger.info("[Memory] No relevant memories found")
-                except Exception as e:
-                    logger.warning(f"[Memory] Retrieval failed: {e}")
-
-        # -- NLP mode: bypass LLM entirely -----------------------------------------
-        if self._nlp_dispatcher and content and not _recursive:
-            # Memory intents were already handled above — speak confirmation directly
-            if memory_context and intent_type == "forget_all":
-                self.tts_queue.put("Done. All memories have been cleared.")
-                self.tts_queue.put("<EOS>")
+        if content and not _recursive:
+            from glados.llm.chat_hooks import ChatHookRegistry, ChatPipelinePhase, ChatContext
+            ctx = ChatContext(
+                user_text=str(content),
+                activity=self.message_manager.current_context,
+                session_id=self._session_id,
+                tts_queue=self.tts_queue,
+            )
+            ChatHookRegistry().run_hooks(ChatPipelinePhase.PRE_LLM, ctx)
+            if ctx.handled:
                 return
-            if memory_context and intent_type == "remember":
-                self.tts_queue.put("Got it, I'll remember that.")
-                self.tts_queue.put("<EOS>")
-                return
-            if memory_context and intent_type == "recall":
-                self.tts_queue.put(self._format_memories_for_speech(memory_context))
-                self.tts_queue.put("<EOS>")
-                return
-            # Dispatch to NLP handler (classifies, extracts params, calls tool, speaks)
+            memory_context = ctx.memory_context
+            self._chat_ctx = ctx  # Preserve for POST_RESPONSE hooks
+
+        # -- Hybrid NLP fast-path: high-confidence tool execution bypasses LLM ------
+        if (not _recursive and content and self._nlp_dispatcher
+                and not self.config.nlp_mode
+                and getattr(self.config, 'hybrid_nlp_threshold', 1.0) < 1.0):
+            hybrid_threshold = self.config.hybrid_nlp_threshold
+            classifier = self.plugin_system.get_intent_classifier()
+            if classifier:
+                activity = self.message_manager.current_context
+                # Try scoped classification first, then global fallback
+                scoped_tools = self._nlp_dispatcher._get_tool_names_for_activity(activity)
+                predicted, confidence = "", 0.0
+                if scoped_tools:
+                    predicted, confidence = classifier.predict_intent_scoped(str(content), scoped_tools)
+                if not predicted or confidence < hybrid_threshold:
+                    predicted, confidence = classifier.predict_intent(str(content))
+
+                if predicted and confidence >= hybrid_threshold and not predicted.startswith("_memory"):
+                    logger.info(f"[Hybrid] NLP fast-path: '{predicted}' confidence {confidence:.2f} >= {hybrid_threshold}")
+
+                    # Check if NLP has a handler with a response formatter
+                    has_nlp_handler = self._nlp_dispatcher._registry.has_handler(predicted)
+                    needs_llm = plugin_manager.should_process_plugin_output(predicted)
+
+                    if has_nlp_handler:
+                        # NLP handler exists — always use NLP dispatch (fast, no LLM)
+                        dispatched = self._nlp_dispatcher.dispatch(str(content), activity)
+                        if dispatched:
+                            logger.info(f"[Hybrid] Completed via NLP dispatch (skipped LLM)")
+                            return
+                        logger.info("[Hybrid] NLP dispatch returned False, falling through to LLM")
+                    elif needs_llm:
+                        # No NLP handler but tool needs LLM summarization —
+                        # execute tool directly, inject result, let LLM speak
+                        func = self.plugin_system.get_available_llm_functions().get(predicted)
+                        if func:
+                            try:
+                                # No NLP handler for params, so use empty params for no-arg tools
+                                result = func()
+                                tool_result = {"tool": predicted, "result": result}
+                                self.message_manager.add_message_to_current_context(
+                                    "tool", str(tool_result), name=predicted
+                                )
+                                logger.info(f"[Hybrid] Executed '{predicted}' via direct call, handing to LLM for summary")
+                                self.chat(None, tools=None, _recursive=True)
+                                return
+                            except Exception as e:
+                                logger.warning(f"[Hybrid] Direct execution failed for '{predicted}': {e}, falling through to LLM")
+
+        # -- NLP mode: bypass LLM entirely (only when nlp_mode=true, NOT hybrid) ---
+        if self.config.nlp_mode and self._nlp_dispatcher and content and not _recursive:
+            # Memory intents are handled by the PRE_LLM hook above (would have returned)
             self._nlp_dispatcher.dispatch(str(content), self.message_manager.current_context)
             return
 
@@ -531,8 +410,21 @@ class ChatClient:
             # OpenAI streams tool calls in fragments: first chunk has id+name,
             # subsequent chunks only have argument pieces
             pending_tool_calls = {}  # index -> {id, name, arguments}
+            import time as _time
+            _stream_start = _time.monotonic()
+            _max_response_time = getattr(self.config, 'max_response_time', 15)
 
             for chunk in response:
+                # Wall-clock timeout guard
+                if _time.monotonic() - _stream_start > _max_response_time:
+                    logger.warning(f"[Loop Guard] Response exceeded {_max_response_time}s wall-clock limit, aborting stream")
+                    # Flush TTS queue so queued sentences don't keep playing
+                    while not self.tts_queue.empty():
+                        try:
+                            self.tts_queue.get_nowait()
+                        except Exception:
+                            break
+                    break
                 logger.debug(f"chunk: {chunk}")
                 if self.config.client_type.upper() == ClientType.OPENAI.name:
                     logger.debug("using openai client type")
@@ -646,6 +538,11 @@ class ChatClient:
             # Only the top-level call emits EOS and stores the response —
             # recursive calls (after tool execution) must not duplicate these.
             if not _recursive:
+                # Run POST_RESPONSE hooks before EOS (hooks can inject quips)
+                if content and hasattr(self, '_chat_ctx') and self._chat_ctx:
+                    from glados.llm.chat_hooks import ChatHookRegistry, ChatPipelinePhase
+                    ChatHookRegistry().run_hooks(ChatPipelinePhase.POST_RESPONSE, self._chat_ctx)
+                    self._chat_ctx = None
                 self.tts_queue.put("<EOS>")
                 self.response_processor.finalize_response()
         except Exception as e:

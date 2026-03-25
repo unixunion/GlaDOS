@@ -77,10 +77,14 @@ class GladosConfig:
     porcupine: PorcupineConfig = None
     openwakeword: Optional[dict] = None
     memory_enabled: bool = False
+    memory_auto_store: bool = False  # Auto-store every exchange. False = only explicit "remember that..." facts.
     memory_db_path: str = "data/memory_db"
     memory_top_k: int = 5
     nlp_mode: bool = False
     nlp_confidence_threshold: float = 0.4
+    hybrid_nlp_threshold: float = 0.8  # NLP fast-path threshold; if intent confidence >= this, bypass LLM. Set to 1.0 to disable.
+    max_response_tokens: int = 500  # Max tokens per LLM text response (not tool calls). Prevents runaway generation.
+    max_response_time: int = 15  # Max seconds for LLM response streaming (wall-clock abort)
     power_on_prompt: Optional[str] = "You have just been powered on"  # Sent to LLM on startup for a warm-up greeting. Set to null to disable.
     mcp_servers: Optional[List[dict]] = field(default_factory=list)
 

@@ -1,74 +1,257 @@
 # Functions & Tools
 
+All commands can be spoken via voice (wake word + phrase) or typed in the display chat box.
+
 ## Timers
 
-- `"set a timer for 5 minutes"` — starts a countdown, fires an event + audio alert when done
-- `"list timers"` — shows active timers and time remaining
-- Timer alerts flash the display and play a sound
+| Say this | What happens |
+|----------|-------------|
+| "set a timer for 5 minutes" | Starts a countdown, shows on display |
+| "set a timer for 1 hour and 30 minutes" | Compound durations work |
+| "timer for 60 seconds" | Short form |
+| "set a 15 minute timer" | Alternate phrasing |
+| "set a timer for the eggs" | Named timer (description only, no duration — asks for duration) |
+| "set a cooking timer for 10 minutes" | Named + duration |
+| "list timers" / "what timers are running" | Shows active timers and time remaining |
+| "how much time left on my egg timer" | Check a specific timer |
+| "cancel the timer" | Cancels the only active timer |
+| "cancel the egg timer" | Cancels by name |
+| "cancel the 5 minute timer" | Cancels by duration description |
+
+- Timer alerts flash the display screen and play a sound
+- Active timers show as cards on the display with live countdown
+- Multiple timers display as separate cards
+- Display returns to idle when all timers expire or are cancelled
 
 ## Alarms
 
-- `"set an alarm for 5pm tomorrow"` — natural language time (powered by `dateparser`)
-- `"list my alarms"` — shows all pending alarms
-- `"cancel the morning alarm"` — cancels by description or time
-- Alarm fires a repeating audio alert until dismissed
-- Pauses music during alarm, resumes after dismissal
-- Dismiss by saying "stop", "cancel", "silence", "dismiss"
+| Say this | What happens |
+|----------|-------------|
+| "set an alarm for 5pm tomorrow" | Natural language time parsing |
+| "set an alarm for 8:30 am on Sunday" | Specific day + time |
+| "wake me up at 7 in the morning" | Casual phrasing |
+| "alarm at 9 o'clock" | Short form |
+| "set a morning alarm for 7:30" | Named alarm |
+| "list my alarms" / "what alarms do I have set" | Shows all pending alarms |
+| "cancel the alarm" | Cancel by description match |
+| "turn off the alarm" | Alternate phrasing |
+| "dismiss the alarm" | While alarm is ringing |
+| "cancel the 7am alarm" | Cancel by time |
+
+- Alarms fire a repeating audio alert until dismissed
+- Pauses any playing music during alarm, resumes after dismissal
+- Dismiss by saying wake word + "stop", "cancel", "silence", or "dismiss"
+- Active alarms show alongside timers on the display
 
 ## Recipes
 
 Get a recipe CSV from [Kaggle](https://www.kaggle.com/datasets/wilmerarltstrmberg/recipe-dataset-over-2m) and place in `plugin_data/recipes/dataset.csv`.
 
-- `"search for a recipe for pizza"` — returns matching recipes
-- `"select recipe banana bread"` — selects and displays on screen
-- Selected recipes are automatically pushed to the display
+| Say this | What happens |
+|----------|-------------|
+| "find me a recipe for bread" | Search by keyword, returns a list |
+| "search recipes for pizza" | Alternate search phrasing |
+| "look up a recipe for cookies" | Another variant |
+| "I need a recipe" | Vague search (may ask for specifics) |
+| "what can I cook with chicken" | Ingredient-based search |
+| "lets make apple pie" | Select and activate a recipe for cooking |
+| "select the pizza recipe" | Select from previous search results |
+| "choose the lasagna recipe" | Alternate selection phrasing |
+| "lets cook spaghetti" | Natural cooking intent |
 
-## Music Player (Spotify)
+- Selected recipes are automatically displayed on screen with ingredients and steps
+- After selecting, use cooking step commands (see below)
 
-Controls Spotify playback via the Spotipy API.
+### Cooking Steps (after selecting a recipe)
 
-- `"play ben howard"` — fuzzy matches and plays
-- `"stop the music"` / `"pause"` / `"resume"` — playback controls
-- `"what song is playing"` — current track info
-- `"list spotify devices"` — shows available playback devices
-- `"next track"` / `"previous track"` — skip controls
+These commands only work in COOKING activity context, after a recipe has been selected:
 
-Music is paused when an alarm fires and resumed after dismissal.
+| Say this | What happens |
+|----------|-------------|
+| "list the ingredients" / "ingredients" | Read all ingredients |
+| "what do I need" | Alternate phrasing |
+| "what are the steps" / "steps" | Read all directions |
+| "read the instructions" | Alternate phrasing |
+| "next step" | Advance to next step |
+| "what do I do next" / "keep going" | Alternate phrasing |
+| "previous step" / "go back" | Go back one step |
+| "can you repeat that" / "say that again" | Repeat current step |
+| "I didn't catch that" | Alternate repeat phrasing |
+| "first step" / "start from the beginning" | Jump to step 1 |
+| "start over" | Restart recipe |
+| "what are we making" / "what are we cooking" | Current recipe name |
+
+## Music Player
+
+Controls music playback. Configure music directory in `glados_config.yml`:
+```yaml
+music_dir: ~/Music
+```
+
+| Say this | What happens |
+|----------|-------------|
+| "play some music" | Play something |
+| "play bohemian rhapsody" | Fuzzy match and play a specific song |
+| "play the playlist chill vibes" | Play a playlist |
+| "put on some jazz" | Genre-based playback |
+| "play sugar by maroon 5" | Artist + song |
+| "stop the music" | Stop playback |
+| "pause the music" / "pause" | Pause |
+| "resume the music" | Resume |
+| "skip song" / "next track" | Skip to next |
+| "previous track" | Go back |
+| "what song is playing" | Current track info |
+| "what's currently playing" | Alternate phrasing |
+| "what am I listening to" | Alternate phrasing |
+| "list spotify devices" | Show available speakers |
+| "what speakers are connected" | Alternate phrasing |
+
+- Music is paused when an alarm fires and resumed after dismissal
 
 ## Display
 
 Web-based display at `http://<host>:5001` for a kitchen iPad or browser.
 
-- Shows an idle clock by default
-- Activity indicator pill in top-left
-- Status toasts at bottom (listening, thinking, speaking, user speech)
-- `"show me the recipe"` — displays current recipe
-- `"display the timer"` — shows live countdown
-- `"clear the screen"` — returns to idle
+| Say this | What happens |
+|----------|-------------|
+| "put the recipe on screen" | Display current recipe |
+| "display the timer on screen" | Show active timers |
+| "clear the screen" / "clear the display" | Return to idle clock |
+| "show that on the iPad" | General display command |
 
-## Vision (POC)
-
-Camera images are scanned and sent to a vision model for description.
-
-- `"what is happening in the kitchen"` — observes a specific room
-- Background scanning can auto-trigger vacuum if dirt is detected
-- Requires `vision_enabled: true` in config
+- Idle view shows a clock with the GlaDOS avatar
+- Activity indicator pill in top-left corner
+- Status toasts at bottom: listening (green), thinking (orange), speaking (red), tool call (blue)
+- Timers and alarms show as live-updating cards
+- Recipes auto-display when selected
 
 ## Memory
 
-Persistent cross-session memory powered by ChromaDB vector search. Memory operations are detected by the IntentClassifier and handled pre-LLM (no tool calls) so they work reliably with any model.
+Persistent cross-session memory powered by ChromaDB vector search. Memory operations are detected by the IntentClassifier and handled pre-LLM via a chat pipeline hook — no tool calls needed, works reliably with any model.
 
-- `"remember that I prefer celsius"` — IntentClassifier detects "remember" intent, fact extracted and stored directly in ChromaDB
-- `"don't forget the garage code is 1234"` — same flow, stored as an explicit fact
-- `"I want you to remember my cat's name is Luna"` — classifier handles paraphrasing naturally
-- `"do you remember what I said about the kitchen?"` — IntentClassifier detects "recall" intent, broad memory search, results injected as context
-- `"what are my preferences?"` — triggers recall, LLM responds using injected memory results
-- Automatic retrieval also happens before every LLM call — relevant past exchanges and stored facts are injected as context without needing to ask
+### Remembering
+
+| Say this | What happens |
+|----------|-------------|
+| "remember that I prefer celsius" | Stores as an explicit fact |
+| "don't forget the garage code is 1234" | Alternate phrasing |
+| "I want you to remember my cat's name is Luna" | Natural paraphrasing |
+| "save to memory" | Generic save |
+| "make a note that the plumber comes on Tuesday" | Note-style |
+| "remember I like my coffee black" | Preference storage |
+
+Response: "Got it, I'll remember that."
+
+### Recalling
+
+| Say this | What happens |
+|----------|-------------|
+| "do you remember what I said about the kitchen?" | Search + LLM answers naturally |
+| "what are my preferences?" | Retrieves stored facts |
+| "what do you know about my allergies" | Targeted recall |
+| "what do you remember" | Broad recall |
+| "summarise memories" | List all stored memories |
+| "show me what you remember" | Alternate phrasing |
+
+Response: LLM answers using the retrieved memories as context.
+
+### Forgetting
+
+| Say this | What happens |
+|----------|-------------|
+| "forget everything" | Clears ALL stored memories |
+| "clear your memory" / "clear all memories" | Alternate phrasing |
+| "erase your memory" / "wipe your memory" | Alternate phrasing |
+
+Response: "Done. All X memories have been cleared."
+
+### Debugging
+
+| Say this | What happens |
+|----------|-------------|
+| "dump memories" / "debug memory" | Logs all memory entries to console at INFO level |
+| "memory dump" / "log all memories" | Alternate phrasing |
+
+Response: "Dumped X memories to the log." (check terminal for details)
+
+### How it works
+
+- **Automatic storage**: Each user+assistant exchange is saved after every response
+- **Automatic retrieval**: Before each LLM call, relevant past exchanges and stored facts are injected as context
+- **Pre-LLM interception**: Remember/recall/forget/debug intents are detected by the IntentClassifier and handled immediately — no LLM involvement
+- **Facts have priority**: Explicitly stored facts (via "remember that...") are always included in retrieval, regardless of activity context
 
 Requires `memory_enabled: true` in config.
 
+## Weather
+
+| Say this | What happens |
+|----------|-------------|
+| "what is the weather" | Current conditions (asks for location) |
+| "is it cold today" | Temperature check |
+| "weather forecast" | Forecast |
+| "will it rain today" | Rain prediction |
+| "how's the weather outside" | Casual phrasing |
+| "weather in London" | Specific location |
+
+## Unit Conversion
+
+| Say this | What happens |
+|----------|-------------|
+| "convert 100 fahrenheit to celsius" | Temperature conversion |
+| "how many grams in 2 pounds" | Weight conversion |
+| "convert 5 miles to kilometers" | Distance conversion |
+| "what is 1 cup in milliliters" | Volume conversion |
+
+## Arithmetic
+
+| Say this | What happens |
+|----------|-------------|
+| "what is 5 plus 7" | Addition |
+| "add 2 and 2" | Alternate phrasing |
+| "what is 56 minus 12" | Subtraction |
+| "what is 6 times 6" | Multiplication |
+| "divide 10 by 3" | Division |
+
+## Robot Vacuum
+
+| Say this | What happens |
+|----------|-------------|
+| "start vacuuming" | Start cleaning |
+| "clean the kitchen" | Room-specific cleaning |
+| "vacuum the carpets" | Alternate phrasing |
+| "stop the vacuum cleaner" | Stop cleaning |
+| "stop the roomba" | Alternate phrasing |
+
+## Vision (POC)
+
+Camera images are scanned and sent to a vision model for description. Requires `vision_enabled: true` in config.
+
+| Say this | What happens |
+|----------|-------------|
+| "what is happening in the kitchen" | Observe a specific room |
+| "what is going on in the office" | Alternate phrasing |
+| "check the living room for people" | Person detection |
+
 ## System
 
-- `"list all plugins"` — shows loaded plugins and their descriptions
-- `"get logs"` — retrieves error and diagnostic logs
-- `"what time is it"` — current time and date
+| Say this | What happens |
+|----------|-------------|
+| "what time is it" / "time please" | Current time (via NLP, instant) |
+| "what is the date" | Current date |
+| "list all plugins" / "what are your capabilities" | Shows loaded plugins |
+| "what plugins are loaded" | Alternate phrasing |
+| "are there any errors" / "check logs for errors" | Diagnostic logs |
+| "run a self diagnostic" | System check |
+
+## Voice Commands (intercepted before LLM)
+
+These are handled by the speech system directly — no LLM or NLP processing:
+
+| Command | Action |
+|---------|--------|
+| "stop" / "cancel" / "silence" / "dismiss" | Dismiss ringing alarm, or stop music |
+| "stop listening" / "go to sleep" | Mute — ignore all input until unmuted |
+| "start listening" / "wake up" | Unmute — resume normal operation |
+
+Priority for stop commands: ringing alarm > playing music > pass to LLM.

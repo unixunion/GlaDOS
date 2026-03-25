@@ -8,6 +8,7 @@ A modular re-write of the upstream project with plugin support, function calling
 - Plugin support with long-running processes via `RunnableMCPPlugin`
 - Function/tool calling — GlaDOS can interact with external systems via LLM tool calls
 - Intent classification — plugins define intent strings to help route user requests to the right tool
+- Hybrid NLP+LLM mode — high-confidence commands execute instantly via NLP, ambiguous requests fall through to the LLM
 - Event system — plugins, functions, and architecture components communicate via pub/sub events
 - Vision support (POC) — images can be base64-encoded and sent to a vision model
 - Whisper for speech-to-text

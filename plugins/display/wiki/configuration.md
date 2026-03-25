@@ -67,13 +67,41 @@ Voice names use the format `{accent}{gender}_{name}`:
 | `bm_george` | British male, George |
 | `bm_lewis` | British male, Lewis |
 
-## Context
+## Context & Routing
 
 ```yaml
-  max_context_messages: 20        # max messages per activity context
-  plugin_intent_threshold: 0.7    # confidence threshold for intent classifier
-  thinking_enabled: false         # allow models to use think tags (slower)
+  max_context_messages: 20          # max messages per activity context
+  plugin_intent_threshold: 0.5      # LLM forced tool-call threshold (1.0 to disable)
+  hybrid_nlp_threshold: 0.8         # NLP fast-path threshold (1.0 to disable)
+  thinking_enabled: false           # allow models to use think tags (slower)
+  nlp_mode: false                   # true = pure NLP, no LLM
+  nlp_confidence_threshold: 0.4     # minimum confidence for NLP dispatch
+  max_response_tokens: 500          # max tokens per LLM text response (not tool calls)
+  max_response_time: 15             # max seconds before aborting LLM stream
 ```
+
+### Hybrid NLP+LLM (default)
+
+When `hybrid_nlp_threshold < 1.0`, the IntentClassifier runs before the LLM on every request:
+- **>= 0.8**: Tool executes via NLP instantly (~5ms), LLM only called if tool needs summarization
+- **>= 0.5**: LLM runs with forced tool call (`tool_choice='required'`)
+- **< 0.5**: LLM decides freely (`tool_choice='auto'`)
+
+Set `hybrid_nlp_threshold: 1.0` to disable hybrid and use pure LLM mode.
+
+### Disabling forced tool selection
+
+`plugin_intent_threshold` controls when the LLM is forced to call a specific tool (`tool_choice='required'`). When the IntentClassifier confidence exceeds this threshold, the LLM **must** call a tool rather than responding with text.
+
+- `0.5` (default) — moderate forcing, good for most models
+- `0.9` — only force on very obvious matches
+- `1.0` — disable entirely, LLM always decides freely (`tool_choice='auto'`)
+
+### Response safeguards
+
+- `max_response_tokens` — caps LLM text output (not applied to tool calls or thinking models). Prevents runaway generation.
+- `max_response_time` — wall-clock abort. If the LLM streams for longer than this, the response is cut off.
+- The **LoopGuard plugin** (`plugins/system/loop_guard.py`) monitors TTS for repeated sentences and interrupts automatically.
 
 ## Memory
 

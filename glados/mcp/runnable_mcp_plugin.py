@@ -216,3 +216,21 @@ class RunnableMCPPlugin(RunnablePlugin):
             NLPHandlerRegistry().register(nlp_handler)
 
         logger.success(f"MCP tool registered: {tool_name} (from {self.__class__.__name__})")
+
+    def register_chat_hook(self, phase, callback: Callable, priority: int = 0, name: str = None):
+        """Register a hook into the chat pipeline.
+
+        Args:
+            phase: ChatPipelinePhase (PRE_LLM, POST_TOOL, POST_RESPONSE)
+            callback: function(ChatContext) -> None. Modify ctx to influence pipeline.
+            priority: lower runs first (default 0)
+            name: hook name for logging (defaults to class_name.phase)
+        """
+        from glados.llm.chat_hooks import ChatHookRegistry, ChatHook
+        hook_name = name or f"{self.__class__.__name__}.{phase.value}"
+        ChatHookRegistry().register(ChatHook(
+            name=hook_name,
+            phase=phase,
+            callback=callback,
+            priority=priority,
+        ))
