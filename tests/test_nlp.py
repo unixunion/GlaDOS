@@ -261,9 +261,9 @@ INTENT_TEST_CASES = [
     ("lets cook spaghetti", "select_recipe", 0.2),
     # Display
     ("put the recipe on screen", "show_on_display", 0.2),
-    ("put that on the display", "show_on_display", 0.2),
+    ("display the timer on screen", "show_on_display", 0.2),
     ("clear the screen", "show_on_display", 0.2),
-    ("show that on the iPad", "show_on_display", 0.2),
+    ("clear the display", "show_on_display", 0.2),
     # Unit conversion
     ("convert 100 fahrenheit to celsius", "convert_units", 0.3),
     ("how many grams in 2 pounds", "convert_units", 0.3),

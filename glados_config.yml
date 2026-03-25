@@ -2,10 +2,9 @@ Glados:
 #  completion_url: "http://192.168.0.14:11434/v1" # openai client uses different url format for ollama model server
 #  completion_url: "http://192.168.0.14:11434/" # langchain client uses different url format for ollama model server
   completion_url: "http://localhost:1234/v1" # LM Studio OpenAI-compatible endpoint
-#  model: "mistral-small-24b-instruct-2501" # good starting point, function calling BEST
-#  model: "liquid/lfm2.5-1.2b" # fast, OK, a little odd with the function calling.
-  model: "mistralai/magistral-small-2509" # Best overall
-#  model: "qwen/qwen3-coder-30b" # next best
+#  model: "qwen2.5-32b-instruct" # BEst but not fastest.
+#  model: "qwen/qwen3-coder-30b" # next best FAST
+  model: "qwen/qwen3-coder-30b"
 #  model: "qwen_qwen3.5-9b" # thinkgs out loud!
 #  model: "qwen/qwen3-30b-a3b-2507" # thinking last good
 #  model: "qwen/qwen3.5-35b-a3b" # throws error, doesnt work.
@@ -56,6 +55,14 @@ Glados:
         Never claim you have done something without actually calling the tool first.
         If a request needs multiple steps (e.g. pick a recipe then display it), call each tool in sequence.
         Only skip a tool call if the inquiry can be answered from existing data in the chat messages.
+
+        If a tool exists for the request, you MUST call it — even if you think you know the answer. Examples:
+        - "what time is it" / "time please" → call get_current_time
+        - "wake me up at 7" → call set_fixed_time_alarm
+        - "what song is playing" → call now_playing
+        - "clear the screen" → call show_on_display with view_type "clear"
+        - "what can you do" → call list_plugins
+        Do not ask clarifying questions if the request is clear enough to call a tool.
 
         Various automated systems add tool and automatic function outputs to the chat, consider their relevance to the
         chat and respond only if absolutely necessary. Automated messages may suggest triggering additional tools, in which

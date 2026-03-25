@@ -171,7 +171,7 @@ class DisplayPlugin(RunnablePlugin):
             llm_function_request=FunctionRequest(
                 type="function",
                 function=FunctionMetadata(
-                    description="Display content on the connected screen. Use this to show recipes, timers, lists, or any visual content.",
+                    description="Display content on the connected screen/iPad/monitor. Use this to show recipes, active timers, lists, or any visual content. Also use this to clear or reset the screen. Call this for ANY request involving the display.",
                     parameters=Parameters(
                         type="object",
                         properties={

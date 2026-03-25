@@ -127,7 +127,7 @@ class AlarmClock(RunnableMCPPlugin):
 
         self.register_tool(
             handler=self.get_alarms,
-            description="Retrieves all currently set alarms.",
+            description="List all currently set alarms. Only use this to CHECK or LIST alarms — to cancel or remove an alarm, use cancel_alarm instead.",
             intents=[
                 "get all alarms",
                 "list my alarms",

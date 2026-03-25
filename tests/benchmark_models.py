@@ -58,6 +58,91 @@ class TestResult:
     total_time_ms: float = 0.0
     response_text: str = ""
     error: str | None = None
+    chain_name: str | None = None  # set if this result is part of a conversation chain
+
+
+@dataclasses.dataclass
+class ChainStep:
+    text: str               # user utterance
+    expected_tool: str      # expected tool call
+    mock_result: str        # fake tool result to inject into context
+
+
+@dataclasses.dataclass
+class ConversationChain:
+    name: str
+    steps: list[ChainStep]
+
+
+# ---------------------------------------------------------------------------
+# Conversation chains — multi-turn scenarios
+# ---------------------------------------------------------------------------
+
+CONVERSATION_CHAINS = [
+    ConversationChain(name="cooking_flow", steps=[
+        ChainStep(
+            "find me a recipe for apple pie",
+            "search_recipes",
+            '{"status": "success", "results": [{"title": "Classic Apple Pie", "id": 1}, {"title": "Dutch Apple Pie", "id": 2}]}',
+        ),
+        ChainStep(
+            "lets make the first one",
+            "select_recipe",
+            '{"status": "success", "title": "Classic Apple Pie", "ingredients": "6 apples, 1 cup sugar, 1 tsp cinnamon, pie crust", "directions": "Preheat oven to 375F.\\nPeel and slice apples.\\nMix with sugar and cinnamon."}',
+        ),
+        ChainStep(
+            "show the recipe on the display",
+            "show_on_display",
+            '{"status": "success", "message": "Recipe displayed"}',
+        ),
+    ]),
+    ConversationChain(name="alarm_flow", steps=[
+        ChainStep(
+            "set an alarm for 7am tomorrow",
+            "set_fixed_time_alarm",
+            '{"status": "success", "message": "Alarm set for 7:00 AM tomorrow"}',
+        ),
+        ChainStep(
+            "actually cancel that",
+            "cancel_alarm",
+            '{"status": "success", "message": "Alarm cancelled"}',
+        ),
+    ]),
+    ConversationChain(name="music_flow", steps=[
+        ChainStep(
+            "play some jazz",
+            "play_music",
+            '{"status": "success", "track": "Take Five", "artist": "Dave Brubeck"}',
+        ),
+        ChainStep(
+            "what song is this",
+            "now_playing",
+            '{"track": "Take Five", "artist": "Dave Brubeck", "album": "Time Out"}',
+        ),
+        ChainStep(
+            "skip to the next one",
+            "play_music",
+            '{"status": "success", "action": "SKIP", "track": "So What", "artist": "Miles Davis"}',
+        ),
+    ]),
+    ConversationChain(name="timer_while_cooking", steps=[
+        ChainStep(
+            "search recipes for pasta",
+            "search_recipes",
+            '{"status": "success", "results": [{"title": "Spaghetti Bolognese"}, {"title": "Pasta Carbonara"}]}',
+        ),
+        ChainStep(
+            "select spaghetti bolognese",
+            "select_recipe",
+            '{"status": "success", "title": "Spaghetti Bolognese", "ingredients": "500g spaghetti, 400g ground beef, tomato sauce", "directions": "Boil pasta for 10 minutes.\\nBrown the beef.\\nAdd sauce and simmer."}',
+        ),
+        ChainStep(
+            "set a timer for 10 minutes for the pasta",
+            "set_timer",
+            '{"status": "success", "message": "Timer set for 10 minutes: the pasta"}',
+        ),
+    ]),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +376,115 @@ def run_single_test(
 
 
 # ---------------------------------------------------------------------------
+# Conversation chain execution
+# ---------------------------------------------------------------------------
+
+def _generate_tool_call_id() -> str:
+    """Generate a 9-char alphanumeric tool call ID (matches LM Studio format)."""
+    import random
+    import string
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=9))
+
+
+def run_chain_test(
+    client: OpenAI,
+    model_id: str,
+    system_messages: list[dict],
+    tools: list[dict],
+    chain: ConversationChain,
+) -> list[TestResult]:
+    """Run a multi-turn conversation chain, building context between steps."""
+    messages = list(system_messages)
+    results = []
+
+    for step in chain.steps:
+        tc = TestCase(text=step.text, expected_tool=step.expected_tool)
+        result = TestResult(test_case=tc, chain_name=chain.name)
+
+        messages.append({"role": "user", "content": step.text})
+
+        t_start = time.perf_counter()
+        try:
+            stream = client.chat.completions.create(
+                model=model_id,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                stream=True,
+                temperature=0.0,
+                timeout=30.0,
+            )
+
+            first_chunk = True
+            pending_tool_calls: dict[int, dict] = {}
+            text_parts: list[str] = []
+
+            for chunk in stream:
+                if first_chunk:
+                    result.ttft_ms = (time.perf_counter() - t_start) * 1000
+                    first_chunk = False
+
+                choice = chunk.choices[0] if chunk.choices else None
+                if not choice:
+                    continue
+                delta = choice.delta
+                if delta.content:
+                    text_parts.append(delta.content)
+                if delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in pending_tool_calls:
+                            pending_tool_calls[idx] = {"name": None, "arguments": ""}
+                        if tc_delta.function and tc_delta.function.name:
+                            pending_tool_calls[idx]["name"] = tc_delta.function.name
+                        if tc_delta.function and tc_delta.function.arguments:
+                            pending_tool_calls[idx]["arguments"] += tc_delta.function.arguments
+
+            result.total_time_ms = (time.perf_counter() - t_start) * 1000
+            result.response_text = "".join(text_parts)
+
+            if pending_tool_calls:
+                first_tc = pending_tool_calls[min(pending_tool_calls.keys())]
+                result.called_tool = first_tc["name"]
+                try:
+                    result.called_params = json.loads(first_tc["arguments"]) if first_tc["arguments"] else {}
+                except json.JSONDecodeError:
+                    result.called_params = None
+
+            result.tool_correct = result.called_tool == step.expected_tool
+
+        except Exception as e:
+            result.total_time_ms = (time.perf_counter() - t_start) * 1000
+            result.error = str(e)
+
+        results.append(result)
+
+        # Build context for next step: inject assistant tool call + mock tool result
+        # This ensures subsequent steps have the right conversation history
+        # regardless of whether this step's tool call was correct
+        call_id = _generate_tool_call_id()
+        messages.append({
+            "role": "assistant",
+            "content": result.response_text or None,
+            "tool_calls": [{
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": step.expected_tool,
+                    "arguments": json.dumps(result.called_params or {}),
+                },
+            }],
+        })
+        messages.append({
+            "role": "tool",
+            "tool_call_id": call_id,
+            "content": step.mock_result,
+        })
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Benchmark runner
 # ---------------------------------------------------------------------------
 
@@ -300,20 +494,36 @@ def run_benchmark(
     system_messages: list[dict],
     tools: list[dict],
     suite: list[TestCase],
+    chains: list[ConversationChain] | None = None,
 ) -> list[TestResult]:
-    """Run all test cases sequentially."""
+    """Run all single-turn test cases and conversation chains."""
     results = []
     total = len(suite)
 
-    for i, tc in enumerate(suite, 1):
-        status = f"[{i}/{total}]"
-        result = run_single_test(client, model_id, system_messages, tools, tc)
+    # Single-turn tests
+    if suite:
+        print("  Single-turn tests:")
+        for i, tc in enumerate(suite, 1):
+            status = f"[{i}/{total}]"
+            result = run_single_test(client, model_id, system_messages, tools, tc)
 
-        mark = "PASS" if result.tool_correct else "FAIL"
-        got = result.called_tool or "(no tool call)"
-        print(f"  {status} {mark}  {tc.text[:50]:<50}  expected: {tc.expected_tool:<25} got: {got:<25} {result.total_time_ms:.0f}ms")
+            mark = "PASS" if result.tool_correct else "FAIL"
+            got = result.called_tool or "(no tool call)"
+            print(f"  {status} {mark}  {tc.text[:50]:<50}  expected: {tc.expected_tool:<25} got: {got:<25} {result.total_time_ms:.0f}ms")
 
-        results.append(result)
+            results.append(result)
+
+    # Conversation chains
+    if chains:
+        print(f"\n  Conversation chains ({len(chains)}):")
+        for chain in chains:
+            print(f"    --- {chain.name} ---")
+            chain_results = run_chain_test(client, model_id, system_messages, tools, chain)
+            for j, r in enumerate(chain_results, 1):
+                mark = "PASS" if r.tool_correct else "FAIL"
+                got = r.called_tool or "(no tool call)"
+                print(f"    [{j}/{len(chain.steps)}] {mark}  {r.test_case.text[:45]:<45}  expected: {r.test_case.expected_tool:<25} got: {got:<25} {r.total_time_ms:.0f}ms")
+            results.extend(chain_results)
 
     return results
 
@@ -360,6 +570,19 @@ def print_scorecard(model_id: str, results: list[TestResult], tools: list[dict])
         avg_t = sum(info["times"]) / len(info["times"]) if info["times"] else 0
         print(f"  {tool_name:<28} {info['correct']:>3}/{info['total']:<3}  {acc:>4.0f}%  {avg_t:>7.0f}ms")
 
+    # Chain breakdown
+    chain_results = [r for r in results if r.chain_name]
+    if chain_results:
+        print()
+        print(f"  Conversation Chains:")
+        by_chain: dict[str, list[TestResult]] = defaultdict(list)
+        for r in chain_results:
+            by_chain[r.chain_name].append(r)
+        for chain_name, crs in by_chain.items():
+            c = sum(1 for r in crs if r.tool_correct)
+            avg_t = sum(r.total_time_ms for r in crs) / len(crs)
+            print(f"    {chain_name:<30} {c}/{len(crs)} correct  avg {avg_t:.0f}ms")
+
     # Failures
     failures = [r for r in results if not r.tool_correct]
     if failures:
@@ -367,7 +590,8 @@ def print_scorecard(model_id: str, results: list[TestResult], tools: list[dict])
         print(f"  Failures ({len(failures)}):")
         for r in failures:
             got = r.called_tool or "(no tool call)"
-            print(f"    \"{r.test_case.text}\"")
+            chain_tag = f" [{r.chain_name}]" if r.chain_name else ""
+            print(f"    \"{r.test_case.text}\"{chain_tag}")
             print(f"      expected: {r.test_case.expected_tool} -> got: {got}")
             if r.response_text:
                 preview = r.response_text[:100].replace("\n", " ")
@@ -430,6 +654,7 @@ def save_results(model_id: str, results: list[TestResult], tools: list[dict], ou
                 "total_time_ms": round(r.total_time_ms, 1),
                 "response_text": r.response_text[:200] if r.response_text else "",
                 "error": r.error,
+                "chain_name": r.chain_name,
             }
             for r in results
         ],
@@ -596,6 +821,7 @@ def merge_results(
             total_time_ms=r.get("total_time_ms", 0),
             response_text=r.get("response_text", ""),
             error=r.get("error"),
+            chain_name=r.get("chain_name"),
         ))
 
     # Append new results
@@ -617,18 +843,24 @@ def benchmark_single_model(
     output_dir: str,
     manage_loading: bool = True,
     prior_data: dict | None = None,
+    chains: list[ConversationChain] | None = None,
 ) -> list[TestResult] | None:
     """Load a model, run the benchmark, unload it. Returns results or None on failure.
 
     If prior_data is provided, only runs test cases not already in those results,
     then merges old + new into a single updated result file.
     """
-    # Determine which cases to actually run
+    # Determine which single-turn cases to actually run
     run_suite = suite
+    run_chains = chains or []
     if prior_data:
         run_suite = get_delta_suite(suite, prior_data)
-        if not run_suite:
-            print(f"  {model_key}: all {len(suite)} test cases already have results, skipping.")
+        # Check if chains were already run (look for chain_name in prior results)
+        prior_chain_names = {r.get("chain_name") for r in prior_data.get("results", []) if r.get("chain_name")}
+        run_chains = [c for c in (chains or []) if c.name not in prior_chain_names]
+
+        if not run_suite and not run_chains:
+            print(f"  {model_key}: all test cases and chains already have results, skipping.")
             model_id, all_results = merge_results(prior_data, [], tools)
             return all_results
 
@@ -640,13 +872,20 @@ def benchmark_single_model(
 
     model_id = discover_loaded_model_id(config.completion_url) or model_key
 
-    delta_label = f" (delta: {len(run_suite)} new)" if prior_data else ""
+    delta_parts = []
+    if prior_data and run_suite:
+        delta_parts.append(f"{len(run_suite)} new single-turn")
+    if run_chains:
+        delta_parts.append(f"{len(run_chains)} chains")
+    delta_label = f" (delta: {', '.join(delta_parts)})" if delta_parts and prior_data else ""
+
+    total_steps = len(run_suite) + sum(len(c.steps) for c in run_chains)
     print(f"\n{'=' * 60}")
     print(f"  Benchmarking: {model_id}{delta_label}")
-    print(f"  Test cases: {len(run_suite)} | Tools: {len(tools)}")
+    print(f"  Test cases: {total_steps} | Tools: {len(tools)}")
     print(f"{'=' * 60}\n")
 
-    new_results = run_benchmark(client, model_id, system_messages, tools, run_suite)
+    new_results = run_benchmark(client, model_id, system_messages, tools, run_suite, chains=run_chains)
 
     # Merge with prior results if this is a delta run
     if prior_data:
@@ -750,8 +989,9 @@ def main():
         loaded = lms_get_loaded()
         if loaded:
             model_id = discover_loaded_model_id(config.completion_url) or loaded[0]
-            print(f"\nRunning {len(suite)} test cases against loaded model: {model_id}\n")
-            results = run_benchmark(client, model_id, system_messages, tools, suite)
+            total = len(suite) + sum(len(c.steps) for c in CONVERSATION_CHAINS)
+            print(f"\nRunning {total} test cases against loaded model: {model_id}\n")
+            results = run_benchmark(client, model_id, system_messages, tools, suite, chains=CONVERSATION_CHAINS)
             print_scorecard(model_id, results, tools)
             save_results(model_id, results, tools, args.output_dir)
             return
@@ -774,7 +1014,7 @@ def main():
 
         results = benchmark_single_model(
             client, config, model_key, tools, system_messages, suite, args.output_dir,
-            prior_data=prior,
+            prior_data=prior, chains=CONVERSATION_CHAINS,
         )
         if results:
             all_run_results.append((model_key, results))

@@ -256,7 +256,7 @@ CURRENT_RECIPES = []
 @plugin_manager.register(
     llm_function_request=FunctionRequest(type="function",
                                          function=FunctionMetadata(
-                                             description="Search for recipes by keyword. Returns a list of matching recipes. Use this when the user wants to FIND, LOOK UP, or BROWSE recipes.",
+                                             description="Search for recipes by keyword. Returns a list of matching recipes. Use this when the user wants to FIND, LOOK UP, or BROWSE recipes. Do NOT use this to select or start cooking a recipe — use select_recipe instead.",
                                              parameters=Parameters(type="object", required=['query'], properties={
                                                  'query': ParameterType(type="string",
                                                                         description="the recipe name to search for")
@@ -341,7 +341,7 @@ def search_recipes(query: str) -> dict:
                                              ),
                                              parameters=Parameters(type="object", required=['query'], properties={
                                                  'query': ParameterType(type="string",
-                                                                        description="the recipe by name from the recipe database")
+                                                                        description="the name of the recipe to cook, e.g. 'apple pie', 'spaghetti', 'lasagna'")
                                              })
                                          )
                                          ),

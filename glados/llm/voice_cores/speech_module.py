@@ -77,12 +77,16 @@ class SpeechModule(ABC):
         if flushed:
             logger.info(f"Flushed {flushed} queued TTS item(s)")
 
-        # Stop any active audio output immediately
-        if self._output_stream is not None and self._output_stream.active:
+        # Stop any active audio output and fully clean up the stream
+        if self._output_stream is not None:
             try:
-                self._output_stream.abort()
+                if self._output_stream.active:
+                    self._output_stream.abort()
+                self._output_stream.close()
             except Exception as e:
-                logger.debug(f"Error aborting audio stream: {e}")
+                logger.debug(f"Error closing audio stream: {e}")
+            finally:
+                self._output_stream = None
 
         # Clear speaking lock so the mic activates
         self._speaking_lock.clear()
