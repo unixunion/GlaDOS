@@ -214,50 +214,129 @@ INTENT_TEST_CASES = [
     ("set a timer for 12 minutes", "set_timer", 0.5),
     ("start a countdown timer for 45 seconds", "set_timer", 0.4),
     ("timer for 60 seconds", "set_timer", 0.3),
+    ("start a 10 minute timer", "set_timer", 0.3),
     ("how much time left on my egg timer", "list_timers", 0.3),
+    ("what timers are running", "list_timers", 0.2),
     # Alarms
     ("set an alarm for 5pm", "set_fixed_time_alarm", 0.5),
     ("set an alarm for 8:30 am on Sunday", "set_fixed_time_alarm", 0.4),
+    ("wake me at 7 in the morning", "set_fixed_time_alarm", 0.3),
     ("get all alarms", "get_alarms", 0.1),
+    ("what alarms do I have set", "get_alarms", 0.2),
     ("cancel the alarm", "cancel_alarm", 0.1),
+    ("turn off the alarm", "cancel_alarm", 0.2),
+    ("dismiss the alarm", "cancel_alarm", 0.2),
     # Weather
     ("what is the weather", "handle_weather", 0.5),
     ("is it cold today", "handle_weather", 0.3),
     ("weather forecast", "handle_weather", 0.3),
+    ("will it rain today", "handle_weather", 0.2),
     # Music
     ("play some music", "play_music", 0.5),
     ("play bohemian rhapsody", "play_music", 0.4),
     ("stop the music", "play_music", 0.3),
     ("pause the music", "play_music", 0.3),
     ("resume the music", "play_music", 0.2),
+    ("put on some jazz", "play_music", 0.2),
+    ("skip song", "play_music", 0.1),
     ("what song is playing", "now_playing", 0.2),
+    ("what's currently playing", "now_playing", 0.2),
+    ("what am I listening to", "now_playing", 0.2),
+    ("list spotify devices", "list_devices", 0.2),
+    ("what speakers are connected", "list_devices", 0.1),
     # Vacuum
     ("start vacuuming", "start_vacuuming", 0.1),
+    ("clean the kitchen", "start_vacuuming", 0.1),
     ("stop the vacuum cleaner", "stop_vacuuming", 0.2),
-    # Recipes
+    ("stop the roomba", "stop_vacuuming", 0.1),
+    # Recipes — search
     ("find me a recipe for bread", "search_recipes", 0.3),
     ("search recipes for pizza", "search_recipes", 0.3),
+    ("I need a recipe", "search_recipes", 0.2),
+    ("look up a recipe for cookies", "search_recipes", 0.3),
+    # Recipes — select
+    ("lets make apple pie", "select_recipe", 0.3),
+    ("select the pizza recipe", "select_recipe", 0.3),
+    ("choose the lasagna recipe", "select_recipe", 0.2),
+    ("lets cook spaghetti", "select_recipe", 0.2),
+    # Display
+    ("put the recipe on screen", "show_on_display", 0.2),
+    ("put that on the display", "show_on_display", 0.2),
+    ("clear the screen", "show_on_display", 0.2),
+    ("show that on the iPad", "show_on_display", 0.2),
     # Unit conversion
     ("convert 100 fahrenheit to celsius", "convert_units", 0.3),
     ("how many grams in 2 pounds", "convert_units", 0.3),
-    # Plugins
+    # Arithmetic
+    ("what is 5 plus 7", "calculate", 0.3),
+    ("add 2 and 2", "calculate", 0.3),
+    # System
     ("list all plugins", "list_plugins", 0.3),
     ("what are your capabilities", "list_plugins", 0.2),
-    # Cooking context
+    ("what plugins are loaded", "list_plugins", 0.2),
+    # Cooking context — ingredients
     ("list the ingredients", "_nlp_list_ingredients", 0.3),
     ("ingredients", "_nlp_list_ingredients", 0.3),
+    ("what do I need", "_nlp_list_ingredients", 0.2),
+    ("read the ingredients", "_nlp_list_ingredients", 0.2),
+    # Cooking context — list steps
     ("what are the steps", "_nlp_list_steps", 0.3),
     ("steps", "_nlp_list_steps", 0.3),
     ("go step by step", "_nlp_list_steps", 0.3),
+    ("read the instructions", "_nlp_list_steps", 0.2),
+    ("how do I make this", "_nlp_list_steps", 0.2),
+    # Cooking context — next step
     ("next step", "_nlp_next_step", 0.3),
     ("keep going", "_nlp_next_step", 0.1),
+    ("what do I do next", "_nlp_next_step", 0.2),
+    ("okay what now", "_nlp_next_step", 0.2),
+    # Cooking context — previous step
     ("previous step", "_nlp_previous_step", 0.2),
     ("go back", "_nlp_previous_step", 0.3),
+    ("go back one", "_nlp_previous_step", 0.2),
+    ("back one step", "_nlp_previous_step", 0.2),
+    # Cooking context — repeat step
     ("can you repeat that", "_nlp_repeat_step", 0.3),
     ("say that again", "_nlp_repeat_step", 0.3),
+    ("read that again", "_nlp_repeat_step", 0.2),
+    ("I didn't catch that", "_nlp_repeat_step", 0.2),
+    # Cooking context — first step
     ("first step", "_nlp_first_step", 0.2),
     ("start from the beginning", "_nlp_first_step", 0.3),
+    ("start over", "_nlp_first_step", 0.2),
+    ("back to the start", "_nlp_first_step", 0.2),
+    # Cooking context — current recipe
     ("what are we making", "_nlp_current_recipe", 0.3),
+    ("what are we cooking", "_nlp_current_recipe", 0.2),
+    ("what recipe is selected", "_nlp_current_recipe", 0.2),
+    # --- Memory operations (pre-LLM interception) ---
+    # Remember
+    ("remember that I prefer celsius", "_memory_remember", 0.3),
+    ("don't forget I'm allergic to peanuts", "_memory_remember", 0.2),
+    ("save that to memory", "_memory_remember", 0.3),
+    # Recall
+    ("do you remember my preferences", "_memory_recall", 0.3),
+    ("what do you know about my allergies", "_memory_recall", 0.2),
+    ("what did I tell you about", "_memory_recall", 0.2),
+    # Forget
+    ("forget everything", "_memory_forget_all", 0.1),
+    ("clear your memory", "_memory_forget_all", 0.3),
+    # --- System / diagnostics ---
+    ("check logs for errors", "get_logs", 0.2),
+    ("are there any errors", "get_logs", 0.2),
+    ("run a self diagnostic", "get_logs", 0.1),
+    # --- Polite & casual forms (filler word resilience) ---
+    ("could you set a timer for 5 minutes", "set_timer", 0.2),
+    ("please play some music", "play_music", 0.3),
+    ("would you check the weather", "handle_weather", 0.2),
+    ("can you tell me the time please", "get_current_time", 0.2),
+    # --- Natural spoken variants ---
+    ("how's the weather outside", "handle_weather", 0.2),
+    ("five minute timer", "set_timer", 0.2),
+    ("how long on my timer", "list_timers", 0.1),
+    ("wake me up at 7", "set_fixed_time_alarm", 0.2),
+    ("what is this song", "now_playing", 0.2),
+    ("what can I cook with chicken", "search_recipes", 0.2),
 ]
 
 
@@ -675,7 +754,158 @@ class TestCookingSessionFlow:
 
 
 # ---------------------------------------------------------------------------
-# 9. Standalone scorecard runner
+# 9. Negative cases — phrases that should NOT trigger any tool
+# ---------------------------------------------------------------------------
+
+NEGATIVE_TEST_CASES = [
+    "hello",
+    "good morning",
+    "thanks",
+    "thank you that's all",
+    "never mind",
+    "what's the capital of France",
+    "tell me a joke",
+    "how are you doing",
+    "asdf jkl random gibberish",
+    "okay",
+    "hmm let me think",
+    "I don't know",
+    "that's interesting",
+    "goodbye",
+]
+
+# Threshold below which we consider the classifier "not confident" —
+# matches the NLP dispatcher's default rejection threshold (half of 0.4)
+NEGATIVE_MAX_CONFIDENCE = 0.4
+
+
+class TestNegativeCases:
+    """Phrases that should NOT confidently match any tool.
+
+    These catch regressions where unrelated phrases start triggering tools.
+    We assert the top prediction confidence stays below the dispatcher threshold.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _inject(self, classifier):
+        self.classifier = classifier
+
+    @pytest.mark.parametrize("text", NEGATIVE_TEST_CASES,
+                             ids=[f"negative:{t[:30]}" for t in NEGATIVE_TEST_CASES])
+    def test_should_not_match(self, text):
+        predicted, confidence = self.classifier.predict_intent(text)
+        assert confidence < NEGATIVE_MAX_CONFIDENCE, (
+            f"'{text}' matched '{predicted}' with confidence {confidence:.3f} "
+            f"(should be < {NEGATIVE_MAX_CONFIDENCE})"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 10. Cross-context routing — tools should work across activity boundaries
+# ---------------------------------------------------------------------------
+
+class TestCrossContextRouting:
+    """Tests that the dispatcher correctly handles cross-activity requests.
+
+    Users don't think in "activities" — they ask for weather while cooking,
+    set timers from any context, etc. The dispatcher should fall back to
+    global classification when the scoped set doesn't match.
+    """
+
+    @pytest.fixture
+    def dispatch_env(self):
+        tts_queue = queue.Queue()
+        dispatcher = NLPDispatcher(tts_queue=tts_queue, confidence_threshold=0.4)
+        return dispatcher, tts_queue
+
+    @staticmethod
+    def drain_queue(q):
+        messages = []
+        while not q.empty():
+            messages.append(q.get())
+        return " ".join(m for m in messages if m != "<EOS>")
+
+    def test_weather_from_cooking(self, dispatch_env):
+        """Weather request while in COOKING context should work via global fallback."""
+        dispatcher, tts_queue = dispatch_env
+        result = dispatcher.dispatch("what is the weather", Activity.COOKING)
+        assert result is True
+        text = self.drain_queue(tts_queue)
+        assert text, "Should have spoken a weather response"
+
+    def test_timer_from_cooking(self, dispatch_env):
+        """Timer request while in COOKING should work — timers are in COOKING activity."""
+        dispatcher, tts_queue = dispatch_env
+        result = dispatcher.dispatch("set a timer for 5 minutes", Activity.COOKING)
+        assert result is True
+        text = self.drain_queue(tts_queue)
+        assert "timer" in text.lower() or "5" in text, f"Expected timer confirmation, got: {text}"
+
+    def test_music_from_cooking(self, dispatch_env):
+        """Music request from COOKING should work via global fallback."""
+        dispatcher, tts_queue = dispatch_env
+        result = dispatcher.dispatch("what song is playing", Activity.COOKING)
+        # This should either succeed (via global fallback) or fail gracefully
+        # The important thing is it doesn't crash
+        assert result is True or result is False
+
+    def test_cooking_command_from_general(self, dispatch_env):
+        """Cooking-only NLP commands from GENERAL context should not crash.
+
+        The global fallback may still match '_nlp_next_step' and respond with
+        'no recipe selected' — that's acceptable. The key is no crash.
+        """
+        dispatcher, tts_queue = dispatch_env
+        result = dispatcher.dispatch("next step", Activity.GENERAL)
+        # Should not crash — may succeed via global fallback or fail gracefully
+        assert result is True or result is False
+
+    def test_recipe_search_from_general(self, dispatch_env):
+        """Recipe search from GENERAL should work — search_recipes is in GENERAL activity."""
+        dispatcher, tts_queue = dispatch_env
+        result = dispatcher.dispatch("find me a recipe for bread", Activity.GENERAL)
+        assert result is True
+        text = self.drain_queue(tts_queue)
+        assert text, "Should have spoken a recipe search response"
+
+
+# ---------------------------------------------------------------------------
+# 11. Polite and casual form resilience
+# ---------------------------------------------------------------------------
+
+POLITE_FORM_CASES = [
+    ("could you set a timer for 5 minutes", "set_timer"),
+    ("please play some music", "play_music"),
+    ("would you check the weather", "handle_weather"),
+    ("can you tell me the time please", "get_current_time"),
+    ("hey can you search for a recipe for soup", "search_recipes"),
+    ("could you please list my alarms", "get_alarms"),
+]
+
+
+class TestPoliteAndCasualForms:
+    """Tests that polite preambles don't derail intent classification.
+
+    Naive Bayes uses bag-of-words, so filler words like 'could', 'please',
+    'would you' dilute the signal. These tests verify the classifier still
+    routes correctly despite polite speech patterns.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _inject(self, classifier):
+        self.classifier = classifier
+
+    @pytest.mark.parametrize("text,expected_tool", POLITE_FORM_CASES,
+                             ids=[f"polite:{case[1]}:{case[0][:30]}" for case in POLITE_FORM_CASES])
+    def test_polite_routing(self, text, expected_tool):
+        predicted, confidence = self.classifier.predict_intent(text)
+        assert predicted == expected_tool, (
+            f"'{text}' -> {predicted} ({confidence:.3f}), expected {expected_tool}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 12. Standalone scorecard runner
 # ---------------------------------------------------------------------------
 
 def print_full_scorecard():

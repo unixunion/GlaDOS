@@ -2,16 +2,18 @@ Glados:
 #  completion_url: "http://192.168.0.14:11434/v1" # openai client uses different url format for ollama model server
 #  completion_url: "http://192.168.0.14:11434/" # langchain client uses different url format for ollama model server
   completion_url: "http://localhost:1234/v1" # LM Studio OpenAI-compatible endpoint
-#  model: "mistralai/magistral-small-2509"
+#  model: "mistral-small-24b-instruct-2501" # good starting point, function calling BEST
+#  model: "liquid/lfm2.5-1.2b" # fast, OK, a little odd with the function calling.
+  model: "mistralai/magistral-small-2509" # Best overall
+#  model: "qwen/qwen3-coder-30b" # next best
 #  model: "qwen_qwen3.5-9b" # thinkgs out loud!
 #  model: "qwen/qwen3-30b-a3b-2507" # thinking last good
 #  model: "qwen/qwen3.5-35b-a3b" # throws error, doesnt work.
-#  model: "mistral-small-24b-instruct-2501" # good starting point, function calling BEST
 #  model: "lmstudio-community/Mistral-Nemo-Instruct-2407-GGUF" # doesnt look good, slow. not calling functions well
 #  model: "openai/gpt-oss-20b" # Testing
 #  model: "qwen/qwen3-30b-a3b-2507s"
 #  model: "lmstudio-community/Qwen2.5-14B-Instruct-MLX-4bit"
-  model: "functionary-small-v3.2 "
+#  model: "qwen/qwen3-coder-next" # TOO BIG!
   # nezt to text, mistral-nemo-instruct-2407, Qwen 3 8B (the dense model, not MoE) , Llama 3.1 8B Instruct  ,Gemma 3 12B
 #  model: "llama3.2"
   client_type: OPENAI

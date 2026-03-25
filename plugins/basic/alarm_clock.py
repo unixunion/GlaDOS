@@ -145,7 +145,7 @@ class AlarmClock(RunnableMCPPlugin):
 
         self.register_tool(
             handler=self.cancel_alarm,
-            description="Cancels an alarm by its description or time.",
+            description="Cancel, delete, or turn off an alarm. Do NOT use get_alarms first — call this directly when the user wants to remove, dismiss, silence, or cancel an alarm.",
             parameters={
                 "query": {
                     "type": "string",
