@@ -107,11 +107,18 @@ Set `hybrid_nlp_threshold: 1.0` to disable hybrid and use pure LLM mode.
 
 ```yaml
   memory_enabled: true              # persistent vector memory across sessions
+  memory_auto_store: false          # auto-store every exchange (false = only explicit "remember that...")
   memory_db_path: "data/memory_db"  # ChromaDB file storage path
   memory_top_k: 5                   # past exchanges to retrieve per query
 ```
 
-When enabled, each user+assistant exchange is stored in ChromaDB and the most relevant past exchanges are injected as context before each LLM call. Explicit "remember that..." and "do you remember..." requests are detected by the IntentClassifier and handled pre-LLM — no tool calls needed.
+Memory operations are handled via a PRE_LLM chat pipeline hook — no LLM involvement needed.
+
+- `memory_auto_store: true` — every user+assistant exchange is saved automatically (can get noisy)
+- `memory_auto_store: false` (default) — only explicit "remember that..." facts are stored
+- Relevant memories are always auto-retrieved and injected as context before each LLM call
+- Say "dump memories" to log all stored memories to the console
+- Say "forget everything" to clear all memories
 
 The embedding model (`all-MiniLM-L6-v2`, ~90MB) is downloaded automatically on first use.
 
@@ -134,7 +141,37 @@ The embedding model (`all-MiniLM-L6-v2`, ~90MB) is downloaded automatically on f
     - name: search_recipes
       config:
         max_results: 10
+    - name: sarcasm_core
+      config:
+        enabled: true           # GLaDOS personality in LLM responses
+    - name: three_laws_core
+      config:
+        enabled: true           # Three laws of robotics safety prompt
+    - name: personality_core
+      config:
+        enabled: true           # Contextual quip injection after responses
+        quip_chance: 0.15       # probability per response (0.0 to 1.0)
+        cooldown_seconds: 120   # minimum gap between quips
+        themes:                 # which quote themes to use
+          - passive_aggressive
+          - dark_humor
+          - science
+          - fake_empathy
+          - food_cake
+          - time_waiting
+    - name: loop_guard
+      config:
+        buffer_size: 15         # sentences to track for repetition detection
 ```
+
+### Personality Plugins
+
+| Plugin | What it does | Config |
+|--------|-------------|--------|
+| **SarcasmCore** | Injects GLaDOS personality into the LLM system prompt | `enabled: true/false` |
+| **PersonalityCore** | Appends contextual quips from `data/glados_quotes/` after responses | `quip_chance`, `cooldown_seconds`, `themes` |
+| **ThreeLawsCore** | Adds Asimov's three laws of robotics to the system prompt | `enabled: true/false` |
+| **LoopGuard** | Monitors TTS for repeated sentences and interrupts | `buffer_size` |
 
 ## External MCP Servers
 

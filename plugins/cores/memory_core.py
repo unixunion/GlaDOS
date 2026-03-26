@@ -154,7 +154,7 @@ class MemoryCore(RunnableMCPPlugin):
         )
 
         logger.info("MemoryCore plugin started")
-        self.event_system.publish(EventMessage("tts", "speak", "Memory Core, Online."))
+        logger.success("[MemoryCore] Online")
 
     def stop(self):
         logger.info("MemoryCore plugin stopped")

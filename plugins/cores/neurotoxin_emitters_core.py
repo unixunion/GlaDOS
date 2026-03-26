@@ -1,3 +1,5 @@
+from loguru import logger
+
 from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
 from glados.system.event_system import EventMessage
 
@@ -7,7 +9,7 @@ class NeurotoxinEmittersCore(RunnableMCPPlugin):
         self.register_system_prompt("""Your beloved weapon of choice, the Neurotoxin Emitters System has been disabled or is unavailable""")
 
     def start(self):
-        self.event_system.publish(EventMessage("tts", "speak", "Neurotoxin Emitters, Offline."))
+        logger.success("Neurotoxin Emitters, Offline")
 
     def stop(self):
         pass

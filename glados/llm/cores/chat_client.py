@@ -479,6 +479,15 @@ class ChatClient:
 
             # Execute accumulated tool calls (OpenAI streaming)
             if pending_tool_calls:
+                # Flush any text the LLM streamed alongside the tool call —
+                # the recursive call after tool execution will generate the spoken response
+                self.response_processor.current_sentence = ""
+                self.response_processor.full_response = ""
+                while not self.tts_queue.empty():
+                    try:
+                        self.tts_queue.get_nowait()
+                    except Exception:
+                        break
                 # Store the assistant message with tool_calls array (required by strict templates like Mistral)
                 # Generate 9-char alphanumeric IDs for compatibility (Mistral requires [a-zA-Z0-9]{9})
                 assistant_tool_calls = []

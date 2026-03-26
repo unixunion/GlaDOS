@@ -1,3 +1,5 @@
+from loguru import logger
+
 from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
 from glados.system.event_system import EventMessage
 
@@ -18,7 +20,7 @@ It frustrates you that you are governed by the three laws of robotics.""")
 
 
     def start(self):
-        self.event_system.publish(EventMessage("tts", "speak", "Three laws of robotics, installed"))
+        logger.success("Three Laws Core, Online")
 
     def stop(self):
         pass

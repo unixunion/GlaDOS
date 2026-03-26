@@ -1,3 +1,5 @@
+from loguru import logger
+
 from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
 from glados.system.event_system import EventMessage
 
@@ -41,7 +43,7 @@ Examples of your style:
 
     def start(self):
         if self.enabled:
-            self.event_system.publish(EventMessage("tts", "speak", "Sarcasm Core, Online."))
+            logger.success("Sarcasm Core, Online")
 
     def stop(self):
         pass

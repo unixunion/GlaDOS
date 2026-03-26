@@ -85,7 +85,7 @@ class GladosConfig:
     hybrid_nlp_threshold: float = 0.8  # NLP fast-path threshold; if intent confidence >= this, bypass LLM. Set to 1.0 to disable.
     max_response_tokens: int = 500  # Max tokens per LLM text response (not tool calls). Prevents runaway generation.
     max_response_time: int = 15  # Max seconds for LLM response streaming (wall-clock abort)
-    power_on_prompt: Optional[str] = "You have just been powered on"  # Sent to LLM on startup for a warm-up greeting. Set to null to disable.
+    power_on_prompt: Optional[str] = "You have just been powered on. Greet the user in one sentence."  # Sent to LLM on startup. Set to null to disable.
     mcp_servers: Optional[List[dict]] = field(default_factory=list)
 
     @classmethod

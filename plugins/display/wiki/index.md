@@ -7,7 +7,7 @@ A maniacal home assistant with pluggable architecture and function calling suppo
 ## Pages
 
 - [Architecture](architecture) — System overview, activity contexts, event system
-- [Plugins](plugins) — Writing plugins with `@mcp_tool` and `RunnableMCPPlugin`
+- [Plugins](plugins) — Writing plugins with `@mcp_tool`, `RunnableMCPPlugin`, and chat pipeline hooks
 - [MCP Integration](mcp) — Model Context Protocol layer, tool registration, external servers
 - [LLM Models](models) — Recommended models by hardware tier, what to look for
 - [Configuration](configuration) — `glados_config.yml` settings reference

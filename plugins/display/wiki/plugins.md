@@ -207,6 +207,50 @@ The IntentClassifier uses Naive Bayes with bag-of-words:
 4. **Avoid collisions** — if two tools share words like "next" (music skip vs cooking next step), rely on activity scoping to disambiguate.
 5. Run `pytest tests/test_nlp.py -v` after adding intents to check for regressions.
 
+## Chat Pipeline Hooks
+
+Plugins can hook into the chat pipeline at specific phases to intercept, modify, or extend the conversation flow. This is how the memory system, hybrid NLP mode, and personality quips work — no core code modification needed.
+
+### Phases
+
+| Phase | When it runs | Use case |
+|-------|-------------|----------|
+| `PRE_LLM` | After activity classification, before LLM call | Memory retrieval, NLP fast-path, content filtering |
+| `POST_RESPONSE` | After LLM response finalized, before EOS | Quip injection, logging, analytics |
+
+### Registering a hook
+
+```python
+from glados.llm.chat_hooks import ChatPipelinePhase, ChatContext
+
+class MyPlugin(RunnableMCPPlugin):
+    def start(self):
+        self.register_chat_hook(
+            phase=ChatPipelinePhase.PRE_LLM,
+            callback=self._my_hook,
+            priority=10,  # lower = runs first
+        )
+
+    def _my_hook(self, ctx: ChatContext):
+        # ctx.user_text — the user's input
+        # ctx.activity — current Activity enum
+        # ctx.tts_queue — inject speech directly
+        # ctx.memory_context — set to inject context into LLM
+        # ctx.handled = True — stops the pipeline (hook handled it)
+        # ctx.extra — dict for passing data between hooks
+        if "secret" in ctx.user_text:
+            ctx.tts_queue.put("I know your secrets.")
+            ctx.tts_queue.put("<EOS>")
+            ctx.handled = True
+```
+
+### Built-in hooks
+
+| Plugin | Phase | Priority | What it does |
+|--------|-------|----------|-------------|
+| MemoryCore | PRE_LLM | 10 | Detects remember/recall/forget intents, auto-retrieves context |
+| PersonalityCore | POST_RESPONSE | 50 | Injects contextual GLaDOS quips after responses |
+
 ## Plugin Discovery
 
 Plugins are auto-discovered from the `plugins/` directory on startup. Any `.py` file is imported, and any `RunnablePlugin` or `RunnableMCPPlugin` subclass found is instantiated and started automatically. Function plugins (`@mcp_tool`, `@plugin_manager.register`) register at import time.

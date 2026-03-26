@@ -9,12 +9,15 @@ A modular re-write of the upstream project with plugin support, function calling
 - Function/tool calling — GlaDOS can interact with external systems via LLM tool calls
 - Intent classification — plugins define intent strings to help route user requests to the right tool
 - Hybrid NLP+LLM mode — high-confidence commands execute instantly via NLP, ambiguous requests fall through to the LLM
+- Chat pipeline hooks — plugins can register PRE_LLM and POST_RESPONSE hooks to intercept and modify the chat flow
 - Event system — plugins, functions, and architecture components communicate via pub/sub events
 - Vision support (POC) — images can be base64-encoded and sent to a vision model
 - Whisper for speech-to-text
-- Switchable TTS voice cores (Piper/ONNX or Kokoro ONNX) via config
+- Switchable TTS voice cores (Piper/ONNX or Kokoro ONNX) via config, with cooking abbreviation expansion (Tbsp → tablespoon, etc.)
 - MCP (Model Context Protocol) for standardized tool registration
-- Persistent vector memory via ChromaDB — cross-session recall of past conversations and explicit facts
+- Persistent vector memory via ChromaDB — explicit fact storage and optional auto-exchange storage
+- Response safeguards — max token limit, wall-clock timeout, LoopGuard repetition detection
+- GLaDOS personality system — SarcasmCore (LLM prompt) + PersonalityCore (contextual quip injection)
 
 ## Activity System
 
