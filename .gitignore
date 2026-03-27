@@ -2,7 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+data/qdrant_storage
 # C extensions
 *.so
 
