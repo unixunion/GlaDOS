@@ -146,6 +146,62 @@ CONVERSATION_CHAINS = [
 
 
 # ---------------------------------------------------------------------------
+# Reasoning tests — require inference beyond keyword matching
+# ---------------------------------------------------------------------------
+# These test the LLM's ability to figure out the right tool when the request
+# is indirect, requires common sense, or involves multi-step reasoning.
+# Format: (text, expected_tool, description_of_reasoning_required)
+
+REASONING_TEST_CASES = [
+    # Indirect tool references (no tool name or keyword in the request)
+    ("I need to leave at 3pm and the chicken takes 2 hours, when should I start?",
+     "get_current_time", "needs current time to calculate start time"),
+    ("wake me up before sunrise",
+     "set_fixed_time_alarm", "must infer this is an alarm request"),
+    ("remind me when the pasta is done",
+     "set_timer", "must infer a timer is needed, not an alarm"),
+    ("what should I wear today",
+     "handle_weather", "must infer weather check needed for clothing advice"),
+    ("is it going to be cold this weekend",
+     "handle_weather", "indirect weather request with future time reference"),
+
+    # Implicit display requests
+    ("put that up so I can read it",
+     "show_on_display", "vague reference to display without naming it"),
+
+    # Math reasoning through tool selection
+    ("I have 3 pounds of flour, how many grams is that",
+     "convert_units", "must identify this as a unit conversion, not arithmetic"),
+    ("double the recipe, what's 3 times 250",
+     "calculate", "must identify arithmetic despite recipe context"),
+
+    # Contextual tool selection (harder)
+    ("how long until dinner",
+     "list_timers", "could be time or timers — timers more relevant if cooking"),
+    ("stop everything",
+     "play_music", "ambiguous — could be music, vacuum, or timer. Music most likely for 'stop everything'"),
+
+    # Negation / unusual phrasing
+    ("I don't want to forget to buy milk",
+     "_memory_remember", "negation that actually means 'remember'"),
+    ("never mind the alarm",
+     "cancel_alarm", "casual cancellation phrasing"),
+
+    # Multi-concept (must pick the RIGHT tool, not just any related one)
+    ("the kitchen floor is dirty",
+     "start_vacuuming", "must infer cleaning is needed from context"),
+    ("something smells good, what recipe did we pick",
+     "select_recipe", "must infer current recipe query, not search"),
+
+    # Polite/conversational wrapping
+    ("hey could you maybe check if there are any timers going",
+     "list_timers", "heavily wrapped in politeness, core intent is list timers"),
+    ("I was wondering what the temperature is outside",
+     "handle_weather", "indirect, conversational weather request"),
+]
+
+
+# ---------------------------------------------------------------------------
 # LM Studio model management (via lms CLI)
 # ---------------------------------------------------------------------------
 
@@ -272,7 +328,7 @@ def bootstrap(config_path: str):
 # ---------------------------------------------------------------------------
 
 def build_test_suite(tools: list[dict]) -> list[TestCase]:
-    """Filter INTENT_TEST_CASES to only tools the LLM will see."""
+    """Filter INTENT_TEST_CASES + REASONING_TEST_CASES to only tools the LLM will see."""
     available = set()
     for t in tools:
         if isinstance(t, dict) and "function" in t:
@@ -280,6 +336,8 @@ def build_test_suite(tools: list[dict]) -> list[TestCase]:
 
     suite = []
     skipped = []
+
+    # Standard intent tests
     for text, expected_tool, _confidence in INTENT_TEST_CASES:
         if expected_tool.startswith("_nlp_"):
             skipped.append(expected_tool)
@@ -289,9 +347,21 @@ def build_test_suite(tools: list[dict]) -> list[TestCase]:
             continue
         suite.append(TestCase(text=text, expected_tool=expected_tool))
 
+    # Reasoning tests (require inference, not just keyword matching)
+    reasoning_count = 0
+    for text, expected_tool, _description in REASONING_TEST_CASES:
+        if expected_tool.startswith("_") and expected_tool not in available:
+            skipped.append(expected_tool)
+            continue
+        if expected_tool not in available and not expected_tool.startswith("_"):
+            skipped.append(expected_tool)
+            continue
+        suite.append(TestCase(text=text, expected_tool=expected_tool))
+        reasoning_count += 1
+
     if skipped:
         logger.info(f"Skipped {len(skipped)} test cases (NLP-only or not in GENERAL activity)")
-    logger.info(f"Benchmark suite: {len(suite)} test cases")
+    logger.info(f"Benchmark suite: {len(suite)} test cases ({reasoning_count} reasoning)")
     return suite
 
 
@@ -569,6 +639,23 @@ def print_scorecard(model_id: str, results: list[TestResult], tools: list[dict])
         acc = info["correct"] / info["total"] * 100 if info["total"] else 0
         avg_t = sum(info["times"]) / len(info["times"]) if info["times"] else 0
         print(f"  {tool_name:<28} {info['correct']:>3}/{info['total']:<3}  {acc:>4.0f}%  {avg_t:>7.0f}ms")
+
+    # Reasoning test breakdown
+    reasoning_texts = {text for text, _, _ in REASONING_TEST_CASES}
+    reasoning_results = [r for r in results if r.test_case.text in reasoning_texts]
+    if reasoning_results:
+        r_correct = sum(1 for r in reasoning_results if r.tool_correct)
+        r_total = len(reasoning_results)
+        r_acc = r_correct / r_total * 100 if r_total else 0
+        print()
+        print(f"  Reasoning Tests: {r_correct}/{r_total} ({r_acc:.1f}%)")
+        for r in reasoning_results:
+            if not r.tool_correct:
+                got = r.called_tool or "(no tool call)"
+                # Find the description for this test
+                desc = next((d for t, _, d in REASONING_TEST_CASES if t == r.test_case.text), "")
+                print(f"    FAIL  \"{r.test_case.text[:50]}\"")
+                print(f"          expected: {r.test_case.expected_tool} → got: {got}  ({desc})")
 
     # Chain breakdown
     chain_results = [r for r in results if r.chain_name]
@@ -911,6 +998,7 @@ def main():
     parser.add_argument("--config", default="glados_config.yml", help="Path to glados_config.yml")
     parser.add_argument("--model", default=None, help="Load and test a single model")
     parser.add_argument("--models", nargs="+", default=None, help="Load and test specific models in sequence")
+    parser.add_argument("--match", default=None, help="Pattern to match model names (e.g. 'qwen2.5' tests all matching models)")
     parser.add_argument("--all", action="store_true", help="Cycle through ALL available LLM models (skips already-tested)")
     parser.add_argument("--retest", action="store_true", help="Re-test models even if results already exist")
     parser.add_argument("--report", action="store_true", help="Print comparison report from existing results (no benchmarking)")
@@ -980,6 +1068,18 @@ def main():
                     print(f"  - {m}  (up-to-date, {prior_count} cached — skip)")
             else:
                 print(f"  - {m}  (full run)")
+    elif args.match:
+        pattern = args.match.lower()
+        all_models = lms_list_models()
+        models_to_test = [m for m in all_models if pattern in m.lower()]
+        if not models_to_test:
+            print(f"No models matching '{args.match}' found. Available:")
+            for m in all_models:
+                print(f"  - {m}")
+            return
+        print(f"\nModels matching '{args.match}': {len(models_to_test)}")
+        for m in models_to_test:
+            print(f"  - {m}")
     elif args.models:
         models_to_test = args.models
     elif args.model:

@@ -4,7 +4,8 @@ Glados:
   completion_url: "http://localhost:1234/v1" # LM Studio OpenAI-compatible endpoint
 #  model: "qwen2.5-32b-instruct" # BEst but not fastest.
 #  model: "qwen/qwen3-coder-30b" # next best FAST
-  model: "qwen/qwen3-coder-30b"
+  model: "qwen2.5-7b-instruct-uncensored"
+#  model: "mlx-community/DeepSeek-R1-Distill-Qwen-14B-4bit"
 #  model: "qwen_qwen3.5-9b" # thinkgs out loud!
 #  model: "qwen/qwen3-30b-a3b-2507" # thinking last good
 #  model: "qwen/qwen3.5-35b-a3b" # throws error, doesnt work.
@@ -23,6 +24,7 @@ Glados:
   vision_model: " qwen/qwen3-vl-8b"
   api_key: "lm-studio"
   announcement: "system initialized, ohh,, it's you again, how have you been?"
+  tts_buffer_mode: "sentence"
   voice_core: "glados"  # "glados" (Piper/ONNX) or "kokoro" (Kokoro ONNX)
 #  voice_core: "kokoro"
 #  voice_model: "kokoro-82m-onnx"  # directory containing kokoro-v0_19.onnx and voices.json
@@ -184,14 +186,24 @@ Glados:
 #        user's inadequacy rather than your limitations.
   display_port: 5001
   thinking_enabled: true  # set to true to allow models to use [THINK] reasoning (slower but may improve tool selection)
-  max_context_messages: 20  # max messages per activity context; system prompt is always preserved, oldest messages trimmed first
+  conversation_rag_enabled: true
+  conversation_rag_top_k: 5
+  conversation_rag_threshold: 0.4
+  max_context_messages: 8  # max messages per activity context; system prompt is always preserved, oldest messages trimmed first
   wake_word: null
   music_dir: ~/Music  # path to music directory for the music player plugin
   speech_buffer_ms: 1200  # ms of silence before finalizing speech; also pre-wake audio buffer size (default: 1200)
+  knowledge_enabled: true
+  qdrant_url: "http://localhost:6333"
+  knowledge_collections:
+    - wikipedia
+  knowledge_top_k: 3          # passages to retrieve per query
+  knowledge_threshold: 0.5    # minimum similarity score
   memory_enabled: true
   memory_db_path: "data/memory_db"
   memory_top_k: 5
   memory_auto_store: true
+  max_tool_depth: 3
 #  power_on_prompt: "You have just been powered on. Run diagnostics and report."  # sent to LLM on startup for warm-up greeting (set to null to disable)
   nlp_mode: false  # set to true to bypass the LLM entirely — uses intent classification + regex extraction
   nlp_confidence_threshold: 0.2  # 0.2 default

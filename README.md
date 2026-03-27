@@ -39,18 +39,18 @@ GlaDOS uses tool/function calling to interact with plugins (15-30+ tools). This 
 
 ### Models Known to Work
 
-Benchmarked with `tests/benchmark_models.py` (58 single-turn + 11 multi-turn chain tests):
+Benchmarked with `tests/benchmark_models.py` — tool selection + reasoning + multi-turn conversation chain tests:
 
 | Model | Accuracy | Avg TTFT | Notes |
 |-------|----------|----------|-------|
-| Qwen 2.5 32B Instruct | 94.2% | 2.5s | Best accuracy, reliable tool calling |
-| Google Gemma 3 12B | 91.4% | 20s | Very accurate but slow |
-| Qwen 3 Coder 30B (MoE) | 89.7% | 0.5s | Best speed/accuracy tradeoff |
+| Qwen 2.5 7B Instruct Uncensored | 93.8% | 0.7s | Best overall — fast + accurate |
+| Qwen 2.5 32B Instruct | 90.0% | 2.5s | High accuracy, slower |
+| Qwen 2.5 7B Instruct 1M | 88.8% | 0.5s | Fastest, 1M context window |
 | Mistral Magistral Small | 89.9% | 1.4s | Strong all-rounder |
-| Qwen 3 30B-A3B (MoE) | 86.2% | 0.5s | Fastest, ~3B active params |
-| OpenAI GPT-OSS 20B | 81.0% | 3.7s | Decent but slow |
+| Qwen 3 30B-A3B (MoE) | 88.4% | 0.5s | Fast MoE, ~3B active params |
+| Qwen 3 Coder 30B (MoE) | 86.2% | 0.6s | Good for code-heavy tasks |
 
-Run your own benchmarks: `python tests/benchmark_models.py --all` (cycles through all installed models) or `python tests/benchmark_models.py --report` to view saved results.
+Run your own benchmarks: `python tests/benchmark_models.py --all` (cycles through all installed models), `python tests/benchmark_models.py --match qwen2.5` (pattern match), or `python tests/benchmark_models.py --report` to view saved results.
 
 ### Known Issues
 
@@ -100,6 +100,49 @@ memory_enabled: true       # false to disable entirely
 memory_db_path: "data/memory_db"
 memory_top_k: 5            # number of past exchanges to retrieve
 ```
+
+## Knowledge Base (RAG with Qdrant)
+
+GlaDOS can optionally retrieve factual knowledge from a Qdrant vector store to answer questions beyond its training data. This uses RAG (Retrieval Augmented Generation) — relevant passages are fetched and injected into the LLM context before each response.
+
+**Use cases:**
+- Offline Wikipedia (via Kiwix ZIM files)
+- Product manuals and documentation
+- FAQ databases
+- Any text corpus you want GlaDOS to know about
+
+### Setup
+
+1. **Install dependencies:**
+   ```bash
+   pip install qdrant-client libzim sentence-transformers beautifulsoup4
+   ```
+
+2. **Start Qdrant** (Docker):
+   ```bash
+   docker run -d -p 6333:6333 -v $(pwd)/data/qdrant_storage:/qdrant/storage qdrant/qdrant
+   ```
+
+3. **Ingest content** (e.g., Simple English Wikipedia ~1GB ZIM from [Kiwix](https://download.kiwix.org/zim/wikipedia/)):
+   ```bash
+   python tools/ingest_zim.py --zim ~/data/wikipedia_en_simple.zim --collection wikipedia
+   # Test with a small subset first:
+   python tools/ingest_zim.py --zim ~/data/wikipedia_en_simple.zim --collection wikipedia --limit 100
+   ```
+
+4. **Enable in config:**
+   ```yaml
+   knowledge_enabled: true
+   qdrant_url: "http://localhost:6333"
+   knowledge_collections:
+     - wikipedia
+   knowledge_top_k: 3          # passages to retrieve per query
+   knowledge_threshold: 0.5    # minimum similarity score
+   ```
+
+5. **Ask a question:** "What is the capital of France?" — GlaDOS retrieves the relevant Wikipedia passage and answers from it.
+
+The knowledge system runs as a PRE_LLM chat pipeline hook — it doesn't interfere with tool commands like timers or recipes. Runs alongside ChromaDB memory (separate concerns).
 
 ## Hybrid NLP+LLM Mode
 
@@ -246,8 +289,12 @@ Glados:
   speaker_id: null                              # speaker ID (int for Piper, string for Kokoro)
   music_dir: ~/Music                            # music player directory
   speech_buffer_ms: 1200                        # ms of silence before finalizing speech
+  tts_buffer_mode: "clause"                     # "sentence", "clause" (faster), or "word" (fastest)
   max_context_messages: 20                      # max messages per activity context
   plugin_intent_threshold: 0.7                  # confidence threshold for intent classifier
+  hybrid_nlp_threshold: 0.8                     # NLP fast-path (1.0 to disable)
+  max_response_tokens: 500                      # max LLM text tokens (prevents rambling)
+  max_response_time: 15                         # max seconds before aborting LLM stream
   memory_enabled: true                          # persistent vector memory (ChromaDB)
   memory_db_path: "data/memory_db"              # memory database location
   memory_top_k: 5                               # past exchanges to retrieve per query

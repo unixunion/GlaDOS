@@ -244,12 +244,48 @@ class MyPlugin(RunnableMCPPlugin):
             ctx.handled = True
 ```
 
+### ChatContext fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `user_text` | str | The user's input text |
+| `activity` | Activity | Current activity enum (GENERAL, COOKING, etc.) |
+| `session_id` | str | Session UUID (persists across a single boot) |
+| `tts_queue` | Queue | Inject speech directly (put text + `<EOS>`) |
+| `memory_context` | str \| None | Set to inject context into the LLM call |
+| `handled` | bool | Set True to stop the pipeline (hook already responded) |
+| `extra` | dict | Pass data between hooks in the same phase |
+
 ### Built-in hooks
 
 | Plugin | Phase | Priority | What it does |
 |--------|-------|----------|-------------|
-| MemoryCore | PRE_LLM | 10 | Detects remember/recall/forget intents, auto-retrieves context |
+| MemoryCore | PRE_LLM | 10 | Detects remember/recall/forget/debug intents, auto-retrieves memory context |
+| ConversationRAG | PRE_LLM | 12 | Retrieves relevant prior exchanges from Qdrant |
+| KnowledgeRAG | PRE_LLM | 15 | Retrieves Wikipedia/knowledge passages from Qdrant |
 | PersonalityCore | POST_RESPONSE | 50 | Injects contextual GLaDOS quips after responses |
+| ConversationRAG | POST_RESPONSE | 50 | Stores the user+assistant exchange in Qdrant |
+
+### All plugins
+
+| Plugin | Type | Location | Description |
+|--------|------|----------|-------------|
+| **SarcasmCore** | System prompt | `plugins/cores/sarcasm_core.py` | GLaDOS personality via LLM prompt. Config: `enabled: true/false` |
+| **ThreeLawsCore** | System prompt | `plugins/cores/three_laws_core.py` | Asimov's three laws of robotics. Config: `enabled: true/false` |
+| **NeurotoxinEmittersCore** | System prompt | `plugins/cores/neurotoxin_emitters_core.py` | Adds lore about neurotoxin emitters being offline |
+| **MemoryCore** | Chat hook | `plugins/cores/memory_core.py` | Memory remember/recall/forget/debug via PRE_LLM hook |
+| **PersonalityCore** | Chat hook | `plugins/cores/personality_core.py` | Random contextual quips from `data/glados_quotes/` |
+| **ConversationRAG** | Chat hook | `plugins/cores/conversation_rag.py` | Qdrant-backed conversation retrieval + storage |
+| **KnowledgeRAG** | Chat hook + Tool | `plugins/knowledge/rag.py` | Passive RAG + `lookup_knowledge` active search tool |
+| **LoopGuard** | Event monitor | `plugins/system/loop_guard.py` | Detects TTS repetition loops, interrupts |
+| **CountdownTimer** | Tool | `plugins/basic/countdown_timer.py` | set_timer, list_timers, cancel_timer |
+| **AlarmClock** | Tool | `plugins/basic/alarm_clock.py` | set_fixed_time_alarm, get_alarms, cancel_alarm |
+| **MusicPlayer** | Tool | `plugins/music/music_player.py` | play_music, now_playing, list_devices |
+| **DisplayPlugin** | Tool + Server | `plugins/display/display_server.py` | show_on_display, Flask+SocketIO web display |
+| **RecipeAPI** | Tool | `plugins/recipes/recipe_api.py` | search_recipes, select_recipe |
+| **CookingContext** | NLP-only | `plugins/recipes/cooking_context.py` | Step navigation (next/previous/repeat/ingredients) |
+| **LoggingPlugin** | Tool | `plugins/system/logging.py` | get_logs diagnostic tool |
+| **Observe** | Tool | `plugins/vision/observe.py` | get_camera_feed (POC) |
 
 ## Plugin Discovery
 

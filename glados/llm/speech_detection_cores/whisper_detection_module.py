@@ -154,7 +154,7 @@ class WhisperVoiceDetectionModule:
                     # Periodic audio health check (every 30s)
                     now = time.time()
                     if now - self._last_audio_health_log > 30:
-                        logger.info(f"Audio health: {self._audio_callback_count} callbacks, "
+                        logger.debug(f"Audio health: {self._audio_callback_count} callbacks, "
                                     f"listening={self.listening_enabled}, "
                                     f"speaking_lock={self.speaking_lock.is_set()}")
                         self._audio_callback_count = 0

@@ -124,6 +124,7 @@ class SpeechModule(ABC):
                 logger.debug(f"Locking speaking thread for TTS: {generated_text}")
                 self._speaking_lock.set()
                 self.event_system.publish(EventMessage("status", "speaking", {"message": generated_text[:80]}))
+                self.event_system.publish(EventMessage("chat", "spoken", {"role": "spoken", "content": generated_text}))
                 processed_text = self._process_text(generated_text)
                 self._say(processed_text)
 

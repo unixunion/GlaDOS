@@ -80,11 +80,25 @@ class GladosConfig:
     memory_auto_store: bool = False  # Auto-store every exchange. False = only explicit "remember that..." facts.
     memory_db_path: str = "data/memory_db"
     memory_top_k: int = 5
+    # Knowledge base (Qdrant RAG)
+    knowledge_enabled: bool = False
+    qdrant_url: str = "http://localhost:6333"
+    knowledge_collections: list = None  # Qdrant collections to search, e.g. ["wikipedia"]
+    knowledge_top_k: int = 3
+    knowledge_threshold: float = 0.5
+    knowledge_embed_model: str = "all-MiniLM-L6-v2"
+    # Conversation RAG (Qdrant-backed conversation retrieval)
+    conversation_rag_enabled: bool = False
+    conversation_rag_top_k: int = 5
+    conversation_rag_threshold: float = 0.4
     nlp_mode: bool = False
     nlp_confidence_threshold: float = 0.4
     hybrid_nlp_threshold: float = 0.8  # NLP fast-path threshold; if intent confidence >= this, bypass LLM. Set to 1.0 to disable.
     max_response_tokens: int = 500  # Max tokens per LLM text response (not tool calls). Prevents runaway generation.
     max_response_time: int = 15  # Max seconds for LLM response streaming (wall-clock abort)
+    max_tool_depth: int = 2  # Max recursive tool call depth (0=user query, 1=first tool result, 2=retry)
+    tts_buffer_mode: str = "clause"  # "sentence" (wait for .!?), "clause" (split on ,;:— too), "word" (every N words)
+    tts_word_buffer: int = 5  # words per flush in "word" mode
     power_on_prompt: Optional[str] = "You have just been powered on. Greet the user in one sentence."  # Sent to LLM on startup. Set to null to disable.
     mcp_servers: Optional[List[dict]] = field(default_factory=list)
 

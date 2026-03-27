@@ -16,6 +16,8 @@ A modular re-write of the upstream project with plugin support, function calling
 - Switchable TTS voice cores (Piper/ONNX or Kokoro ONNX) via config, with cooking abbreviation expansion (Tbsp → tablespoon, etc.)
 - MCP (Model Context Protocol) for standardized tool registration
 - Persistent vector memory via ChromaDB — explicit fact storage and optional auto-exchange storage
+- Knowledge base RAG via Qdrant — ingest ZIM files (Wikipedia, StackOverflow) for factual question answering
+- Conversation RAG via Qdrant — stores exchanges and retrieves relevant prior conversations for context
 - Response safeguards — max token limit, wall-clock timeout, LoopGuard repetition detection
 - GLaDOS personality system — SarcasmCore (LLM prompt) + PersonalityCore (contextual quip injection)
 

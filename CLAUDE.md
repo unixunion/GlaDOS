@@ -24,16 +24,21 @@ glados/                    # Core application code
   config.py                # GladosConfig dataclass, loaded from glados_config.yml
 
 plugins/                   # Auto-discovered plugins (walked recursively on startup)
-  basic/                   # clock, timers, alarms, memory_tools (system prompt only)
+  basic/                   # clock, timers, alarms, unit converter
   recipes/                 # Recipe search and selection
   music/                   # Spotify playback control
   display/                 # Flask+SocketIO web display for iPad/browser
   chores/                  # Vacuum control
   vision/                  # Camera/vision model integration (POC)
-  system/                  # list_plugins, get_logs
+  system/                  # list_plugins, get_logs, loop_guard
+  cores/                   # personality cores (sarcasm, memory, three laws, neurotoxin, personality quips)
+  knowledge/               # RAG retrieval plugin (Qdrant)
 
 models/                    # TTS model files (glados.onnx, kokoro-82m-onnx/)
 data/memory_db/            # ChromaDB persistent storage (auto-created)
+data/glados_quotes/        # Themed GLaDOS personality quotes for PersonalityCore
+tools/                     # Offline utilities (ingest_zim.py for Qdrant ingestion)
+tests/                     # NLP test suite, model benchmarks
 glados_config.yml          # All runtime configuration
 main.py                    # Entry point — wires everything together
 ```
@@ -44,7 +49,7 @@ main.py                    # Entry point — wires everything together
 - **Event-driven**: components communicate via `EventSystem` pub/sub (topic-based with fnmatch patterns)
 - **Activity contexts**: `MessageManager` keeps separate message histories per activity (GENERAL, COOKING, etc.). The intent classifier routes user input to the right context, and tools are filtered per activity.
 - **Plugin patterns**: Two types — `@mcp_tool` decorated functions (simple) and `RunnableMCPPlugin` subclasses (stateful, with start/stop lifecycle). Both auto-register with the MCP server.
-- **Pre-LLM interception**: Memory "remember"/"recall" intents are detected by the `IntentClassifier` (same Naive Bayes classifier used for all tool routing) before the LLM runs. The `MemoryTools` plugin registers `_memory_remember` and `_memory_recall` intents with training examples at startup. `ChatClient._detect_memory_intent()` checks the classifier, then stores/retrieves directly and injects results as system messages. This avoids depending on the LLM to call tools.
+- **Pre-LLM interception**: Memory operations are handled by `MemoryCore` (`plugins/cores/memory_core.py`) via a PRE_LLM chat pipeline hook. The plugin registers `_memory_remember`, `_memory_recall`, `_memory_forget_all`, and `_memory_debug` intents with the IntentClassifier. When detected, memory operations execute directly — no LLM involvement. Results are injected as system messages or spoken via TTS.
 - **Hybrid NLP+LLM mode**: When `hybrid_nlp_threshold < 1.0` (default 0.8), the IntentClassifier runs before the LLM. High-confidence matches execute the tool instantly via NLP (~5ms); tools with `process_output=True` still use the LLM for natural summarization. Low-confidence inputs fall through to the normal LLM path. This gives sub-100ms tool execution for clear commands.
 - **Streaming**: LLM responses are streamed chunk-by-chunk. `ResponseProcessor` accumulates text and sends complete sentences to the TTS queue for low-latency voice output.
 
@@ -54,9 +59,9 @@ The memory system in `glados/llm/memory/store.py` uses ChromaDB PersistentClient
 
 - **Two document types**: `exchange` (automatic user+assistant pairs) and `fact` (explicit "remember that...")
 - **Dual retrieval**: `retrieve()` runs two queries — activity-filtered exchanges + explicit facts — merged and deduplicated. This ensures facts like "I prefer celsius" surface in any activity context.
-- **Intent detection**: the `MemoryTools` plugin (`plugins/basic/memory_tools.py`) registers `_memory_remember` and `_memory_recall` intents with the shared `IntentClassifier` at startup. `ChatClient._detect_memory_intent()` checks the classifier prediction — if "remember" intent, regex extracts the fact content and `store_fact()` persists it; if "recall" intent, `search()` does a broad unfiltered query. Results are injected as system messages so the LLM just confirms/answers naturally.
+- **Intent detection**: `MemoryCore` (`plugins/cores/memory_core.py`) registers intents and handles all memory logic via a PRE_LLM chat pipeline hook. Remember/recall/forget/debug intents are detected by the IntentClassifier, then executed directly (store fact, search, clear, or dump to log).
 - **Regex role**: only used for fact *extraction* (pulling "I prefer celsius" from "remember that I prefer celsius"), not for intent detection. Falls back to the full utterance if no pattern matches.
-- **Plugin** (`plugins/basic/memory_tools.py`): registers intents with the IntentClassifier and provides a system prompt. No LLM tools registered — memory ops are entirely pre-LLM.
+- **Plugin** (`plugins/cores/memory_core.py`): registers intents, provides a system prompt explaining memory to the LLM, and handles all memory operations via chat hook. No LLM tools registered — memory ops are entirely pre-LLM.
 
 ## Standards
 

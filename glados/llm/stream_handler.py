@@ -97,6 +97,21 @@ class StreamHandler:
                     messages[0]["content"] += "\n\nIMPORTANT: Do not use thinking tags, internal reasoning, or chain-of-thought. Do not narrate your thought process. Do not say things like 'The user is asking...' or 'I should respond...'. Just respond directly to the user with your answer. No meta-commentary."
                 logger.info(f"Messages being sent to LLM ({len(messages)} messages): "
                             f"{[{'role': m.get('role'), 'has_tool_calls': bool(m.get('tool_calls')), 'has_tool_call_id': bool(m.get('tool_call_id'))} for m in messages if isinstance(m, dict)]}")
+                # Log each message with content preview for diagnostics
+                for i, m in enumerate(messages):
+                    if not isinstance(m, dict):
+                        continue
+                    role = m.get("role", "?")
+                    content = m.get("content", "")
+                    tc = m.get("tool_calls")
+                    if content:
+                        preview = str(content)[:150].replace("\n", " ")
+                        logger.info(f"  [{i}] {role}: {preview}")
+                    elif tc:
+                        names = [t.get("function", {}).get("name", "?") for t in tc if isinstance(t, dict)]
+                        logger.info(f"  [{i}] {role}: [tool_calls: {', '.join(names)}]")
+                    else:
+                        logger.info(f"  [{i}] {role}: (empty)")
                 # Sanitize tool_call_ids to match [a-zA-Z0-9]{9} (required by Mistral templates)
                 for msg in messages:
                     if isinstance(msg, dict):

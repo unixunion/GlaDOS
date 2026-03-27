@@ -108,7 +108,9 @@ class ChatClient:
             self.response_processor = ResponseProcessor(
                 tts_queue=self.tts_queue,
                 message_callback=self._store_message_in_history,
-                client_type=self.client_type
+                client_type=self.client_type,
+                buffer_mode=getattr(config, 'tts_buffer_mode', 'clause'),
+                word_buffer=getattr(config, 'tts_word_buffer', 5),
             )
             logger.success(f"ResponseProcessor created: {self.response_processor}")
 
@@ -222,9 +224,43 @@ class ChatClient:
     def _handle_tool_event(self, event: EventMessage):
         """Handle events from tools."""
         if event.process_output:
-            # If process_output is True, send the event content to the LLM
-            logger.info(f"Processing tool event via LLM: {str(event.content)[:128]}")
-            self.llm_queue.put(str(event.content))
+            if event.name == "display_chat_input":
+                # Display chat input — process as user message
+                self._from_display = True
+                logger.info(f"Processing tool event via LLM: {str(event.content)[:128]}")
+                self.llm_queue.put(str(event.content))
+            elif event.name not in ("plugin_system",):
+                # Async plugin event (timer expired, alarm fired, etc.)
+                # Pass as user-facing content so the LLM responds to it directly
+                logger.info(f"Processing async tool event: {event.name} — {str(event.content)[:128]}")
+                event_system.publish(EventMessage("chat", "async_event", {
+                    "role": "async_event",
+                    "source": event.name,
+                    "content": str(event.content)[:200],
+                }))
+                # Extract clean event text
+                event_text = str(event.content)
+                if isinstance(event.content, dict) and "message" in event.content:
+                    event_text = event.content["message"]
+
+                # Inject as a proper tool call + result pair in the message history
+                # This is the correct OpenAI format for async notifications
+                call_id = ''.join(random.choices(string.ascii_letters + string.digits, k=9))
+                self.message_manager.add_message_to_current_context(
+                    "assistant", None, tool_calls=[{
+                        "id": call_id,
+                        "type": "function",
+                        "function": {"name": event.name, "arguments": "{}"}
+                    }]
+                )
+                self.message_manager.add_message_to_current_context(
+                    "tool", event_text, name=event.name, tool_call_id=call_id
+                )
+                # Trigger LLM to respond (no tools — just speak about the event)
+                self.chat(None, tools=None, _recursive=True, _depth=1)
+            else:
+                logger.info(f"Processing tool event via LLM: {str(event.content)[:128]}")
+                self.llm_queue.put(str(event.content))
         else:
             # Use "system" role for event-sourced messages — bare "tool" messages
             # without a preceding assistant tool_calls entry are invalid in the
@@ -306,12 +342,20 @@ class ChatClient:
 
         return Activity.GENERAL
 
-    def chat(self, content, tools=None, _recursive=False):
+    def chat(self, content, tools=None, _recursive=False, _depth=0, _called_tools=None):
         """
         Handles user input and communicates with the LLM.
         """
+        if _called_tools is None:
+            _called_tools = set()
 
-        logger.debug(f"chat content: {content}, tools: {tools}")
+        logger.debug(f"chat content: {content}, tools: {tools}, depth: {_depth}, called: {_called_tools}")
+
+        # Prevent infinite recursive tool call loops
+        _max_depth = getattr(self.config, 'max_tool_depth', 3)
+        if _depth >= _max_depth:
+            logger.info(f"[Recursion Guard] Depth {_depth} >= max {_max_depth} — text-only response")
+            tools = None
 
         if content:
             inferred_activity = self.infer_activity_from_input(content)
@@ -323,6 +367,13 @@ class ChatClient:
 
         if content:  # Add input to the conversation
             self.message_manager.add_message_to_current_context("user", str(content))
+            # Emit chat.user only for voice input (display already rendered the bubble locally)
+            from_display = getattr(self, '_from_display', False)
+            self._from_display = False
+            if not from_display and not str(content).startswith("You have just been powered on"):
+                event_system.publish(EventMessage(
+                    "chat", "user", {"role": "user", "content": str(content)}
+                ))
 
         # -- Pre-LLM hooks (memory, future plugins) --------------------------------
         memory_context = None
@@ -365,6 +416,13 @@ class ChatClient:
 
                     if has_nlp_handler:
                         # NLP handler exists — always use NLP dispatch (fast, no LLM)
+                        # Emit NLP tool call to chat panel
+                        event_system.publish(EventMessage("chat", "tool_call", {
+                            "role": "tool_call",
+                            "tool": predicted,
+                            "args": {},
+                            "via": "nlp",
+                        }))
                         dispatched = self._nlp_dispatcher.dispatch(str(content), activity)
                         if dispatched:
                             logger.info(f"[Hybrid] Completed via NLP dispatch (skipped LLM)")
@@ -383,7 +441,7 @@ class ChatClient:
                                     "tool", str(tool_result), name=predicted
                                 )
                                 logger.info(f"[Hybrid] Executed '{predicted}' via direct call, handing to LLM for summary")
-                                self.chat(None, tools=None, _recursive=True)
+                                self.chat(None, tools=None, _recursive=True, _depth=_depth + 1, _called_tools=_called_tools)
                                 return
                             except Exception as e:
                                 logger.warning(f"[Hybrid] Direct execution failed for '{predicted}': {e}, falling through to LLM")
@@ -411,12 +469,12 @@ class ChatClient:
             # subsequent chunks only have argument pieces
             pending_tool_calls = {}  # index -> {id, name, arguments}
             import time as _time
-            _stream_start = _time.monotonic()
+            _response_start = None  # set when first visible content arrives (excludes thinking time)
             _max_response_time = getattr(self.config, 'max_response_time', 15)
 
             for chunk in response:
-                # Wall-clock timeout guard
-                if _time.monotonic() - _stream_start > _max_response_time:
+                # Wall-clock timeout guard — only starts counting after first visible output
+                if _response_start and _time.monotonic() - _response_start > _max_response_time:
                     logger.warning(f"[Loop Guard] Response exceeded {_max_response_time}s wall-clock limit, aborting stream")
                     # Flush TTS queue so queued sentences don't keep playing
                     while not self.tts_queue.empty():
@@ -429,6 +487,8 @@ class ChatClient:
                 if self.config.client_type.upper() == ClientType.OPENAI.name:
                     logger.debug("using openai client type")
                     if chunk.choices[0].delta.tool_calls:
+                        if not _response_start:
+                            _response_start = _time.monotonic()
                         for tc_delta in chunk.choices[0].delta.tool_calls:
                             idx = tc_delta.index
                             if idx not in pending_tool_calls:
@@ -440,6 +500,9 @@ class ChatClient:
                             if tc_delta.function and tc_delta.function.arguments:
                                 pending_tool_calls[idx]["arguments"] += tc_delta.function.arguments
                     else:
+                        # Start response timer on first visible content (excludes thinking tokens)
+                        if not _response_start and chunk.choices[0].delta.content:
+                            _response_start = _time.monotonic()
                         self.response_processor.process_chunk(chunk)
                 elif self.config.client_type.upper() == ClientType.LANGCHAIN.name:
                     logger.debug("using langchain client type")
@@ -468,7 +531,7 @@ class ChatClient:
                             logger.debug(f"Should process tool output: {process_tool_result}")
 
                             if process_tool_result:
-                                self.chat(None, tools=None, _recursive=True)  # Recursive call to continue conversation
+                                self.chat(None, tools=None, _recursive=True, _depth=_depth + 1, _called_tools=_called_tools)  # Recursive call to continue conversation
                             else:
                                 logger.info("Not appending tool output to messages. Sending it directly to TTS.")
                                 self.llm_queue.put(str(tool_result))
@@ -478,16 +541,19 @@ class ChatClient:
                         self.response_processor.process_chunk(chunk)
 
             # Execute accumulated tool calls (OpenAI streaming)
+            if pending_tool_calls and _depth < _max_depth:
+                # Don't flush TTS — any text the LLM spoke alongside the tool call was intentional.
+                # Clear the response processor buffer so the text isn't double-counted,
+                # but let already-queued TTS sentences finish speaking.
+                if self.response_processor:
+                    self.response_processor.current_sentence = ""
+                    self.response_processor.full_response = ""
+                logger.info(f"Tool call at depth {_depth}: {[tc.get('name') for tc in pending_tool_calls.values()]}")
+            elif pending_tool_calls:
+                logger.warning(f"[Recursion Guard] Ignoring tool calls at depth {_depth}: {[tc.get('name') for tc in pending_tool_calls.values()]}")
+                pending_tool_calls = {}  # clear so the block below doesn't execute
+
             if pending_tool_calls:
-                # Flush any text the LLM streamed alongside the tool call —
-                # the recursive call after tool execution will generate the spoken response
-                self.response_processor.current_sentence = ""
-                self.response_processor.full_response = ""
-                while not self.tts_queue.empty():
-                    try:
-                        self.tts_queue.get_nowait()
-                    except Exception:
-                        break
                 # Store the assistant message with tool_calls array (required by strict templates like Mistral)
                 # Generate 9-char alphanumeric IDs for compatibility (Mistral requires [a-zA-Z0-9]{9})
                 assistant_tool_calls = []
@@ -511,11 +577,23 @@ class ChatClient:
                         logger.warning(f"Skipping tool call at index {idx} with no name")
                         continue
                     logger.info(f"Executing accumulated tool call: {tc['name']} with args: {tc['arguments']}")
+
+                    # Block repeat calls to the same tool in this exchange
+                    if tc["name"] in _called_tools:
+                        logger.warning(f"[Recursion Guard] Skipping repeat call to '{tc['name']}' (already called in this exchange)")
+                        continue
+                    _called_tools.add(tc["name"])
+
                     try:
                         args = json.loads(tc["arguments"]) if tc["arguments"] else {}
                     except json.JSONDecodeError:
                         logger.error(f"Failed to parse tool arguments: {tc['arguments']}")
                         continue
+
+                    # Emit tool call to chat panel
+                    event_system.publish(EventMessage(
+                        "chat", "tool_call", {"role": "tool_call", "tool": tc["name"], "args": args}
+                    ))
 
                     function_to_call = self.plugin_system.get_available_llm_functions().get(tc["name"])
                     if not function_to_call:
@@ -529,14 +607,38 @@ class ChatClient:
                         logger.exception(f"Error executing tool {tc['name']}: {e}")
                         tool_result = {"error": str(e), "tool": tc["name"]}
 
+                    # Emit tool result to chat panel (format nicely)
+                    result_content = tool_result.get("result", tool_result)
+                    if isinstance(result_content, dict):
+                        # Extract readable parts
+                        display_parts = []
+                        if result_content.get("status"):
+                            display_parts.append(f"Status: {result_content['status']}")
+                        if result_content.get("message"):
+                            display_parts.append(result_content["message"])
+                        if result_content.get("passages"):
+                            display_parts.append(str(result_content["passages"])[:200])
+                        result_display = "\n".join(display_parts) if display_parts else str(result_content)[:300]
+                    else:
+                        result_display = str(result_content)[:300]
+                    event_system.publish(EventMessage("chat", "tool_result", {
+                        "role": "tool_result",
+                        "tool": tc["name"],
+                        "content": result_display,
+                    }))
+
                     process_tool_result = plugin_manager.should_process_plugin_output(tc["name"])
                     logger.debug(f"tool process_output: {process_tool_result}")
+                    # Truncate tool results to prevent context bloat
+                    result_str = str(tool_result)
+                    if len(result_str) > 1000:
+                        result_str = result_str[:1000] + "... [truncated]"
                     self.message_manager.add_message_to_current_context(
-                        "tool", str(tool_result), name=tc["name"], tool_call_id=tc["id"]
+                        "tool", result_str, name=tc["name"], tool_call_id=tc["id"]
                     )
 
                     if process_tool_result:
-                        self.chat(None, tools=None, _recursive=True)
+                        self.chat(None, tools=None, _recursive=True, _depth=_depth + 1, _called_tools=_called_tools)
                     else:
                         logger.info("Tool output added to messages, sending to TTS via queue")
                         self.llm_queue.put(str(tool_result))
@@ -547,13 +649,13 @@ class ChatClient:
             # Only the top-level call emits EOS and stores the response —
             # recursive calls (after tool execution) must not duplicate these.
             if not _recursive:
-                # Run POST_RESPONSE hooks before EOS (hooks can inject quips)
-                if content and hasattr(self, '_chat_ctx') and self._chat_ctx:
+                self.tts_queue.put("<EOS>")
+                self.response_processor.finalize_response()
+                # Run POST_RESPONSE hooks AFTER response is stored in history
+                if hasattr(self, '_chat_ctx') and self._chat_ctx:
                     from glados.llm.chat_hooks import ChatHookRegistry, ChatPipelinePhase
                     ChatHookRegistry().run_hooks(ChatPipelinePhase.POST_RESPONSE, self._chat_ctx)
                     self._chat_ctx = None
-                self.tts_queue.put("<EOS>")
-                self.response_processor.finalize_response()
         except Exception as e:
             logger.exception(f"Chat error: {e}")
 

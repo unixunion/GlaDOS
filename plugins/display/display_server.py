@@ -149,6 +149,13 @@ class DisplayPlugin(RunnablePlugin):
             payload = {"status": event.name, "message": str(event.content)}
         self._socketio.emit("status_toast", payload)
 
+    def _on_chat_event(self, event: EventMessage):
+        """Forward chat.* events to the frontend chat panel."""
+        if isinstance(event.content, dict):
+            self._socketio.emit("chat_message", event.content)
+        else:
+            self._socketio.emit("chat_message", {"role": event.name, "content": str(event.content)})
+
     def _on_tick(self, event: EventMessage):
         """Tick handler — timer display updates are now pushed by CountdownTimer directly."""
         pass
@@ -230,6 +237,12 @@ class DisplayPlugin(RunnablePlugin):
         self.event_system.subscribe(
             "system.tick",
             EventHook("display_tick", callback=self._on_tick, priority=1)
+        )
+
+        # Chat panel events — forward to frontend as chat_message
+        self.event_system.subscribe(
+            "chat.*",
+            EventHook("chat_to_display", callback=self._on_chat_event, priority=5)
         )
 
         def run_flask():

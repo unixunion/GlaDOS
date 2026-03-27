@@ -67,11 +67,24 @@ class MessageManager:
         max_rest = self.max_context_messages - len(system_prefix)
         if max_rest < 1:
             max_rest = 1
-        trimmed = len(rest) - max_rest
-        if trimmed > 0:
-            logger.info(f"Trimming {trimmed} old message(s) from {activity.name} context "
-                        f"({len(msgs)} -> {len(system_prefix) + max_rest})")
-            self._messages[activity] = system_prefix + rest[-max_rest:]
+        if len(rest) > max_rest:
+            # Find a safe trim point — don't leave orphaned tool_calls or tool results
+            # Walk backward from the trim boundary to find a user message (safe boundary)
+            trim_target = len(rest) - max_rest
+            safe_trim = trim_target
+            for i in range(trim_target, len(rest)):
+                msg = rest[i]
+                if isinstance(msg, dict) and msg.get("role") == "user":
+                    safe_trim = i
+                    break
+                # Skip past orphaned assistant+tool_calls and tool results
+                safe_trim = i + 1
+
+            trimmed = safe_trim
+            if trimmed > 0:
+                logger.info(f"Trimming {trimmed} old message(s) from {activity.name} context "
+                            f"({len(msgs)} -> {len(system_prefix) + len(rest) - trimmed})")
+                self._messages[activity] = system_prefix + rest[trimmed:]
 
     def add_message_to_current_context(self, role, content, name=None, images=None, tool_call_id=None, tool_calls=None):
         """Helper to add messages to the current context."""

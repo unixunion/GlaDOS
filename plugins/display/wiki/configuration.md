@@ -19,6 +19,8 @@ Glados:
   voice_model: "glados.onnx"      # TTS model file or directory (in models/ dir)
   speaker_id: null                # speaker ID (int for Piper, string for Kokoro e.g. "bf_isabella")
   speech_buffer_ms: 1200          # ms of silence before finalizing speech
+  tts_buffer_mode: "clause"       # "sentence", "clause", or "word" (see below)
+  tts_word_buffer: 5              # words per flush in "word" mode
   interrupt_on_wakeword: true     # say wake word while speaking to interrupt TTS
   hardware_echo_cancellation: false  # set true if speaker has hardware echo cancellation
   openwakeword:
@@ -26,6 +28,18 @@ Glados:
     models:
       - models/glados_wakeword.onnx
 ```
+
+### TTS Buffer Mode
+
+Controls how quickly LLM output reaches the speaker. Smaller chunks = faster first audio, but may sound choppier with Piper.
+
+| Mode | Splits on | Avg chunk | Latency | Quality |
+|------|-----------|-----------|---------|---------|
+| `sentence` | `.` `!` `?` | 15-25 words | 1-3s | Best prosody |
+| `clause` (default) | `.` `!` `?` `,` `;` `:` `—` | 5-12 words | 0.5-1s | Good balance |
+| `word` | Every N words | 4-6 words | 0.2-0.5s | Choppy with Piper, better with Kokoro |
+
+Cooking abbreviations are expanded automatically for natural speech: Tbsp → tablespoon, tsp → teaspoon, oz → ounce, lb → pounds, etc.
 
 ### Voice Cores
 
@@ -70,7 +84,7 @@ Voice names use the format `{accent}{gender}_{name}`:
 ## Context & Routing
 
 ```yaml
-  max_context_messages: 20          # max messages per activity context
+  max_context_messages: 8           # max messages per activity context (keep small with RAG)
   plugin_intent_threshold: 0.5      # LLM forced tool-call threshold (1.0 to disable)
   hybrid_nlp_threshold: 0.8         # NLP fast-path threshold (1.0 to disable)
   thinking_enabled: false           # allow models to use think tags (slower)
@@ -78,6 +92,11 @@ Voice names use the format `{accent}{gender}_{name}`:
   nlp_confidence_threshold: 0.4     # minimum confidence for NLP dispatch
   max_response_tokens: 500          # max tokens per LLM text response (not tool calls)
   max_response_time: 15             # max seconds before aborting LLM stream
+  max_tool_depth: 3                 # max recursive tool call depth (prevents loops)
+  # Conversation RAG (Qdrant-backed conversation retrieval)
+  conversation_rag_enabled: false
+  conversation_rag_top_k: 5         # prior exchanges to retrieve per query
+  conversation_rag_threshold: 0.4   # minimum similarity score
 ```
 
 ### Hybrid NLP+LLM (default)
@@ -100,8 +119,26 @@ Set `hybrid_nlp_threshold: 1.0` to disable hybrid and use pure LLM mode.
 ### Response safeguards
 
 - `max_response_tokens` — caps LLM text output (not applied to tool calls or thinking models). Prevents runaway generation.
-- `max_response_time` — wall-clock abort. If the LLM streams for longer than this, the response is cut off.
+- `max_response_time` — wall-clock abort (starts counting after first visible token, excludes thinking time). If the LLM streams for longer than this, the response is cut off.
+- `max_tool_depth` — prevents recursive tool call loops. The LLM can chain different tools (search→select→display) up to this depth. The same tool cannot be called twice in one exchange (repeat guard). Default 3.
 - The **LoopGuard plugin** (`plugins/system/loop_guard.py`) monitors TTS for repeated sentences and interrupts automatically.
+
+### Conversation RAG
+
+When `conversation_rag_enabled: true`, exchanges are stored in Qdrant and semantically retrieved for future context. This replaces relying on the sliding window alone.
+
+- **PRE_LLM hook** (priority 12): searches for relevant prior exchanges before each LLM call
+- **POST_RESPONSE hook** (priority 50): stores the user+assistant exchange (spoken summary, not raw tool results)
+- Persists across restarts — Qdrant collection survives reboots
+- Works alongside ChromaDB memory (which handles explicit "remember that..." facts)
+
+```yaml
+  conversation_rag_enabled: true
+  conversation_rag_top_k: 5        # prior exchanges to retrieve
+  conversation_rag_threshold: 0.4  # minimum similarity score
+```
+
+Requires Qdrant running (same instance as knowledge RAG).
 
 ## Memory
 
@@ -130,6 +167,28 @@ The embedding model (`all-MiniLM-L6-v2`, ~90MB) is downloaded automatically on f
   vision_model: "qwen/qwen3-vl-8b"
   vision_images_path: "vision_images"
 ```
+
+## Knowledge Base (RAG)
+
+Optional Qdrant-powered knowledge retrieval. Requires a running Qdrant server and ingested content.
+
+```yaml
+  knowledge_enabled: false                    # enable RAG retrieval
+  qdrant_url: "http://localhost:6333"         # Qdrant server URL
+  knowledge_collections:                      # collections to search
+    - wikipedia
+  knowledge_top_k: 3                          # passages per query
+  knowledge_threshold: 0.5                    # minimum similarity (0.0-1.0)
+  knowledge_embed_model: "all-MiniLM-L6-v2"  # embedding model
+```
+
+When enabled, the KnowledgeRAG plugin registers a PRE_LLM hook that:
+1. Embeds the user's question using the configured model
+2. Searches all configured Qdrant collections
+3. Injects the top matching passages into the LLM context
+4. Skips short commands (<10 chars) to avoid noise on tool invocations
+
+See [Knowledge Base](knowledge) wiki page for setup and ingestion instructions.
 
 ## Plugins
 

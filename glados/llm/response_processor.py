@@ -9,13 +9,23 @@ from glados.llm.client_type import ClientType
 
 
 class ResponseProcessor:
-    def __init__(self, tts_queue: queue.Queue = None, message_callback=None, client_type: ClientType = ClientType.OPENAI):
+    # Boundary patterns for each buffer mode
+    _BOUNDARY_PATTERNS = {
+        "sentence": re.compile(r"[.!?]$"),
+        "clause": re.compile(r"[.!?;:,\u2014]$"),
+        "word": None,  # handled separately by word count
+    }
+
+    def __init__(self, tts_queue: queue.Queue = None, message_callback=None, client_type: ClientType = ClientType.OPENAI,
+                 buffer_mode: str = "clause", word_buffer: int = 5):
         """
         Initialize the ResponseProcessor.
 
         Args:
             tts_queue (queue.Queue): Queue for sending sentences to TTS.
             message_callback (callable): Callback to handle finalized sentences (e.g., for MessageManager).
+            buffer_mode (str): "sentence" (wait for .!?), "clause" (split on ,;:— too), "word" (every N words)
+            word_buffer (int): words per flush in "word" mode
         """
         self.tts_queue = tts_queue
         self.current_sentence = ""
@@ -24,6 +34,16 @@ class ResponseProcessor:
         self.client_type = client_type
         self._inside_think_block = False  # Track whether we're inside [THINK]...[/THINK]
         self._think_buffer = ""  # Buffer for partial tag detection at chunk boundaries
+        self._buffer_mode = buffer_mode
+        self._word_buffer = word_buffer
+        self._boundary_pattern = self._BOUNDARY_PATTERNS.get(buffer_mode, self._BOUNDARY_PATTERNS["sentence"])
+        self._event_system = None
+        try:
+            from glados.system.event_system import EventSystem
+            self._event_system = EventSystem()
+        except Exception:
+            pass
+        logger.info(f"ResponseProcessor buffer mode: {buffer_mode}")
 
     def process_chunk(self, chunk: ChatCompletionChunk | AIMessageChunk):
         """
@@ -50,10 +70,19 @@ class ResponseProcessor:
         self.current_sentence += content
         logger.debug(f"Appended chunk: {content}")
 
-        logger.debug(f"Current sentence: {self.current_sentence}")
+        # Stream token to chat panel
+        if self._event_system:
+            from glados.system.event_system import EventMessage
+            self._event_system.publish(EventMessage(
+                "chat", "token", {"role": "assistant_token", "token": content}
+            ))
 
-        # Check if the sentence ends with a punctuation mark
-        if re.search(r"[.!?]$", self.current_sentence.strip()):
+        # Check if buffer should flush based on configured mode
+        stripped = self.current_sentence.strip()
+        if self._buffer_mode == "word":
+            if len(stripped.split()) >= self._word_buffer:
+                self.finalize_sentence()
+        elif self._boundary_pattern and self._boundary_pattern.search(stripped):
             self.finalize_sentence()
 
     # All think tag patterns to detect (case-insensitive matching via upper())

@@ -29,16 +29,27 @@ GlaDOS uses tool/function calling to interact with plugins (15-30+ tools). This 
 
 ## Benchmark Results
 
-Tested with `tests/benchmark_models.py` — 58 single-turn tool selection tests + 11 multi-turn conversation chain steps (cooking flow, alarm flow, music flow, timer-while-cooking).
+Tested with `tests/benchmark_models.py` — 58 single-turn tool selection tests + 16 reasoning tests + 11 multi-turn conversation chain steps (cooking flow, alarm flow, music flow, timer-while-cooking).
+
+The benchmark includes three test types:
+- **Tool selection**: direct "set a timer for 5 minutes" → correct tool call
+- **Reasoning**: indirect "what should I wear today" → must infer weather check needed
+- **Conversation chains**: multi-turn flows like search recipe → select → display
 
 | Model | Accuracy | Avg TTFT | Avg Total | Notes |
 |-------|----------|----------|-----------|-------|
-| Qwen 2.5 32B Instruct | 94.2% | 2.5s | 3.8s | Best accuracy |
-| Google Gemma 3 12B | 91.4% | 20s | 21s | Very accurate but very slow |
-| Qwen 3 Coder 30B (MoE) | 89.7% | 0.5s | 0.8s | Best speed/accuracy tradeoff |
-| Mistral Magistral Small | 89.9% | 1.4s | 1.9s | Strong all-rounder |
-| Qwen 3 30B-A3B (MoE) | 86.2% | 0.5s | 0.8s | Fastest, only ~3B active params |
-| OpenAI GPT-OSS 20B | 81.0% | 3.7s | 4.1s | Decent but slow |
+| Qwen 2.5 7B Instruct Uncensored | 93.8% | 0.7s | 1.1s | Best overall — fast + accurate |
+| Qwen 2.5 32B Instruct | 90.0% | 2.5s | 4.3s | High accuracy, slower |
+| Qwen 2.5 7B Instruct 1M | 88.8% | 0.5s | 0.8s | Fastest, 1M context window |
+| Mistral Magistral Small | 89.9% | 1.4s | 2.0s | Strong all-rounder |
+| Qwen 3 30B-A3B (MoE) | 88.4% | 0.5s | 0.8s | Fast MoE, ~3B active params |
+| Qwen 3 Coder 30B (MoE) | 86.2% | 0.6s | 0.9s | Good for code-heavy tasks |
+| Qwen 2.5 14B Instruct MLX | 85.0% | 1.1s | 1.7s | Mid-range balance |
+| Qwen 2.5 Coder 14B Instruct | 84.1% | 1.5s | 2.4s | Code-tuned |
+| Google Gemma 3 12B | 91.4%* | 20s | 21s | Very accurate but extremely slow |
+| OpenAI GPT-OSS 20B | 81.0%* | 3.7s | 4.1s | Decent but slow |
+
+*Gemma and GPT-OSS tested with fewer test cases (58 vs 80). All others include reasoning tests.
 
 ### Running Benchmarks
 
@@ -49,12 +60,17 @@ python tests/benchmark_models.py
 # Test all installed models (auto load/unload via lms CLI)
 python tests/benchmark_models.py --all
 
+# Test models matching a pattern
+python tests/benchmark_models.py --match qwen2.5
+
 # Re-run specific models
 python tests/benchmark_models.py --models qwen2.5-32b-instruct qwen/qwen3-coder-30b --retest
 
 # View saved results without running tests
 python tests/benchmark_models.py --report
 ```
+
+Results include a **Reasoning Tests** breakdown showing how well each model handles indirect/inferential requests separately from keyword-based tool routing.
 
 Results are saved to `tests/benchmark_results/` as JSON. The `--all` flag auto-skips models already tested and only runs new test cases (delta mode).
 

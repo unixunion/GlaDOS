@@ -9,6 +9,25 @@ GlaDOS supports switchable TTS backends. Set `voice_core` in `glados_config.yml`
 
 Both cores share the same queue processing, text preprocessing, interrupt handling, and audio playback — only the synthesis engine differs. See [Configuration](configuration) for setup details.
 
+## TTS Buffer Mode
+
+Controls how quickly LLM tokens reach the speaker. The `tts_buffer_mode` config sets the granularity:
+
+- **`sentence`** — waits for a full sentence (`.!?`) before speaking. Best prosody, but 1-3s latency.
+- **`clause`** (default) — splits on commas, semicolons, colons, and em-dashes too. Good balance of speed and quality. ~0.5-1s to first audio.
+- **`word`** — flushes every N words (set via `tts_word_buffer`, default 5). Fastest but can sound choppy with Piper since each TTS call generates a separate audio segment.
+
+Kokoro handles short fragments better than Piper, so `word` mode works better with the Kokoro voice core.
+
+### Text preprocessing
+
+Before TTS, text is automatically processed:
+- Numbers converted to spoken words
+- Think tags (`[THINK]...[/THINK]`) stripped
+- Cooking abbreviations expanded: Tbsp → tablespoon, tsp → teaspoon, oz → ounce, lb → pounds, pkg → package, qt → quart, pt → pint
+- Unicode dashes/quotes normalized
+- Special characters removed
+
 ## Wake Word
 
 Using OpenWakeWord for wake word detection. The default model responds to "GlaDOS" and "Hey GlaDOS".
