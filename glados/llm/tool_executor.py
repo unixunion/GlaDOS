@@ -134,9 +134,11 @@ class ToolExecutor:
 
             if process_tool_result:
                 chat_callback()
-            elif llm_queue:
-                logger.info("Tool output added to messages, sending to LLM queue")
-                llm_queue.put(str(tool_result))
+            else:
+                # process_output=False: result is already in message history.
+                # Do NOT send to LLM queue — the NLP response or direct TTS
+                # has already handled the user-facing output.
+                logger.info("Tool output added to messages (process_output=False, not sending to LLM)")
 
     def execute_tool(self, tool_call, architecture=ClientType.OPENAI) -> dict:
 

@@ -280,7 +280,11 @@ def safe_parse_list(serialized_list: Any) -> list:
         return []
 
 
-CURRENT_RECIPES = []
+# Last search results for positional selection ("select the first one")
+_last_search_results = []
+
+# Last selected recipe data (for programmatic access by add_recipe_ingredients_to_list)
+_last_selected_recipe = None
 
 
 @plugin_manager.register(
@@ -314,6 +318,7 @@ CURRENT_RECIPES = []
 )
 def search_recipes(query: str) -> dict:
     """Search for recipes matching the query."""
+    global _last_search_results
     logger.info(f"Recipe search query: {query}")
 
     matches = []
@@ -329,6 +334,7 @@ def search_recipes(query: str) -> dict:
         return "No recipes found matching the enquiry was found in the recipe search API."
 
     result_data = []
+    display_results = []
     for score, recipe in matches[:10]:
         try:
             parsed_ingredients = safe_parse_list(recipe["ingredients"])
@@ -338,8 +344,28 @@ def search_recipes(query: str) -> dict:
                 f"Title: {recipe['title']}, score: {score}, Ingredients: {ingredients_list}\n\n"
             )
             result_data.append(structured_recipe)
+            display_results.append({
+                "title": recipe["title"],
+                "image_name": recipe.get("image_name"),
+                "ingredient_count": len(parsed_ingredients),
+            })
         except Exception as e:
             logger.debug(f"Skipping recipe: {e}")
+
+    # Store for positional selection ("select the first one")
+    _last_search_results = [r["title"] for _, r in matches[:10]]
+
+    # Push search results to display
+    event_system.publish(EventMessage(
+        role="display",
+        name="recipe_search",
+        content={
+            "title": f"Recipes: {query}",
+            "query": query,
+            "results": display_results,
+        },
+        process_output=False,
+    ))
 
     return (f"The following recipes were found by the recipe search API. Filter out all recipes "
             f"that are unrelated to the query '{query}', choose which best matches the query, "
@@ -381,7 +407,7 @@ def search_recipes(query: str) -> dict:
         "lets make pecan pralines",
         "make the cookies recipe",
     ],
-    process_output=True,
+    process_output=False,
     activity=[Activity.COOKING, Activity.GENERAL]
 )
 def select_recipe(query: str) -> dict:
@@ -432,19 +458,36 @@ def select_recipe(query: str) -> dict:
             process_output=False
         ))
 
-        return {
-            "status": "success",
+        # Inject recipe as tagged context so the LLM can answer follow-up
+        # questions without reading the whole thing aloud. Published as a
+        # non-process_output tool event, which ChatClient adds as a system message.
+        recipe_context = (
+            f'<active_recipe title="{best_match["title"]}">\n'
+            f"<ingredients>\n{ingredients_section}\n</ingredients>\n"
+            f"<directions>\n{directions_section}\n</directions>\n"
+            f"</active_recipe>\n"
+            f"The recipe above is displayed on screen. Answer questions about it naturally. "
+            f"Do not read the full recipe unless the user explicitly asks to list ingredients or read steps."
+        )
+        event_system.publish(EventMessage(
+            "tool", "recipe_context", recipe_context, process_output=False
+        ))
+
+        # Store full data for programmatic access (add_recipe_ingredients_to_list)
+        global _last_selected_recipe
+        _last_selected_recipe = {
             "title": best_match["title"],
             "ingredients": ingredients_section,
             "directions": directions_section,
-            "message": (
-                f"Selected recipe: {best_match['title']}. "
-                f"Start by reading the ingredients to the user. "
-                f"The user can ask for all ingredients, one at a time, "
-                f"to repeat ingredients, or to move on to the cooking steps. "
-                f"When giving cooking steps, give only one step at a time and "
-                f"wait for the user to say they are ready for the next step."
-            ),
+        }
+
+        # Return only brief confirmation — the recipe is on screen and
+        # injected into context via <active_recipe> tags. Do NOT include
+        # ingredients/directions here or the LLM will read them aloud.
+        return {
+            "status": "success",
+            "title": best_match["title"],
+            "message": f"I've put {best_match['title']} on the screen.",
         }
 
     except Exception as e:
@@ -484,6 +527,13 @@ def find_recipe_by_ingredients(query: str) -> str:
 # Load recipes at initialization
 load_recipes(data_file)
 
+# Build ingredient parser vocabulary from loaded recipes
+try:
+    from glados.nlp.ingredient_parser import load_vocabulary_from_recipes
+    load_vocabulary_from_recipes()
+except Exception as e:
+    logger.debug(f"Could not load ingredient parser vocabulary: {e}")
+
 
 # -- NLP mode handlers ---------------------------------------------------------
 def _recipe_query_extract(text: str) -> dict:
@@ -510,15 +560,43 @@ def _search_recipes_nlp_response(result) -> str:
             top = titles[:5]
             listing = ", ".join(top[:-1]) + f", and {top[-1]}" if len(top) > 1 else top[0]
             return (f"I found {len(titles)} recipes. The top matches are: {listing}. "
-                    f"Say lets make followed by the recipe name to select one.")
+                    f"Say the first one, the second one, or the recipe name to select.")
         return "I found some recipes. Which one would you like?"
     if isinstance(result, dict) and result.get("status") == "error":
         return result.get("message", "Recipe search failed.")
     return "I found some recipes. Which one would you like?"
 
 
+_ORDINALS = {
+    "first": 0, "second": 1, "third": 2, "fourth": 3, "fifth": 4,
+    "sixth": 5, "seventh": 6, "eighth": 7, "ninth": 8, "tenth": 9,
+    "1st": 0, "2nd": 1, "3rd": 2, "4th": 3, "5th": 4,
+    "last": -1,
+}
+
+
 def _select_recipe_extract(text: str) -> dict:
-    """Extract recipe name for selection."""
+    """Extract recipe name for selection. Supports positional references."""
+    text_lower = text.lower().strip()
+
+    # Check for positional selection: "the first one", "number 3", "select 2"
+    for word, idx in _ORDINALS.items():
+        if word in text_lower:
+            if _last_search_results:
+                actual_idx = idx if idx >= 0 else len(_last_search_results) + idx
+                if 0 <= actual_idx < len(_last_search_results):
+                    return {"query": _last_search_results[actual_idx]}
+
+    # "number N" / "select N" / just a digit
+    num_match = re.search(r"(?:number|select|recipe)\s*(\d+)", text_lower)
+    if not num_match:
+        num_match = re.match(r"^\s*(\d+)\s*$", text_lower)
+    if num_match and _last_search_results:
+        idx = int(num_match.group(1)) - 1  # 1-indexed
+        if 0 <= idx < len(_last_search_results):
+            return {"query": _last_search_results[idx]}
+
+    # Standard name extraction
     query = re.sub(
         r"^(?:please\s+)?(?:let'?s\s+(?:make|cook|prepare|bake)"
         r"|select\s+(?:a\s+)?(?:the\s+)?(?:recipe\s+)?(?:for\s+)?"

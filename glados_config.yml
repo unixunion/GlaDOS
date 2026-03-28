@@ -216,18 +216,21 @@ Glados:
     - name: sarcasm_core
       config:
         enabled: true
-    - name: three_laws_core
-      config:
-        enabled: true
-    - name: personality_core
-      config:
-        enabled: true
-        quip_chance: 0.15        # probability per response
-        cooldown_seconds: 120    # minimum gap between quips
-#        themes:                  # which theme files to use
+#        themes:
 #          - passive_aggressive
 #          - dark_humor
 #          - science
 #          - fake_empathy
 #          - food_cake
 #          - time_waiting
+    - name: three_laws_core
+      config:
+        enabled: true
+    - name: pantry_plugin
+      config:
+        shopping_mode_timeout: 120
+    - name: personality_core
+      config:
+        enabled: true
+        quip_chance: 0.15        # probability per response
+        cooldown_seconds: 120    # minimum gap between quips

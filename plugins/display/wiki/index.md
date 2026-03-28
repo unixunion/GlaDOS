@@ -16,4 +16,5 @@ A maniacal home assistant with pluggable architecture and function calling suppo
 - [Functions](functions) — Timers, alarms, recipes, music, display, memory, vision, unit conversion, arithmetic
 - [Shopping List & Pantry](pantry) — Shopping list, pantry inventory, expiry tracking, recipe integration
 - [Knowledge Base](knowledge) — RAG with Qdrant, ZIM file ingestion, lookup_knowledge tool, conversation RAG
+- [Testing](testing) — Test suites: NLP, pantry, ingredient parser, Playwright UI tests
 - [Installation](installation) — Setup for Windows, macOS, Linux

@@ -164,7 +164,7 @@ class SpeechModule(ABC):
             for chunk in chunks:
                 if self._interrupted.is_set():
                     return
-                logger.info(f"Generating TTS for: {chunk}")
+                logger.success(f"Generating TTS for: {chunk}")
                 audio = self._synthesize(chunk)
                 self._play_audio(audio)
         except Exception as e:

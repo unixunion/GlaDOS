@@ -67,6 +67,12 @@ class ResponseProcessor:
         if not content:
             return
 
+        # Strip bracketed meta-text the LLM sometimes generates
+        # e.g. [Relevant memories from past conversations], [knowledge], [System note]
+        content = re.sub(r'\[.*?\]', '', content)
+        if not content.strip():
+            return
+
         self.current_sentence += content
         logger.debug(f"Appended chunk: {content}")
 

@@ -160,7 +160,10 @@ class DisplayPlugin(RunnablePlugin):
             payload = {"view_type": event.name, **event.content}
         else:
             payload = {"view_type": event.name, "title": "", "content": str(event.content)}
-        self.current_display = payload
+        # Don't cache data-only responses as the "current display" —
+        # these are replies to get_state/get_summary requests, not user-initiated views
+        if event.name not in ("dashboard_data", "shopping_list", "pantry"):
+            self.current_display = payload
         self._socketio.emit("display_update", payload)
 
     def _on_status_event(self, event: EventMessage):

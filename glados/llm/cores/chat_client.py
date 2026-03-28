@@ -169,7 +169,7 @@ class ChatClient:
                     if drained > 0:
                         logger.info(f"Drained {drained} stale message(s) from LLM queue, using latest")
 
-                    logger.info(f"Processing input from LLM queue: {latest[:100]}")
+                    logger.success(f"Processing input from LLM queue: {latest[:100]}")
                     event_system.publish(EventMessage("status", "thinking", {"message": "Thinking..."}))
                     self.chat(latest, tools=None)
             except queue.Empty:

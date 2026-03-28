@@ -374,6 +374,10 @@ class PantryPlugin(RunnableMCPPlugin):
         self._expiry_warned_today = False
         self._shopping_mode = None  # None, "planning", or "post_shopping"
         self._last_added_item = None  # for "make that 3" / quantity update commands
+        self._shopping_mode_last_activity = None  # timestamp of last handled command in mode
+        self._shopping_mode_timeout = self.plugin_config.get(
+            "shopping_mode_timeout", PantryPlugin._SHOPPING_MODE_TIMEOUT_DEFAULT
+        )
 
         self.register_system_prompt(
             "SHOPPING LIST & PANTRY: A shopping list and pantry inventory system is available. "
@@ -802,9 +806,96 @@ class PantryPlugin(RunnableMCPPlugin):
             activity=[Activity.COOKING],
         )
 
+        self.register_tool(
+            handler=self.check_recipe_ingredients,
+            description=(
+                "Check which ingredients for a recipe we already have in the pantry, "
+                "and which ones we're missing. Use when the user asks 'do we have the "
+                "ingredients' or 'what do I need to buy for this recipe'."
+            ),
+            parameters={
+                "recipe_name": {
+                    "type": "string",
+                    "description": "Recipe name to check. If empty, uses the last selected recipe.",
+                },
+            },
+            required=[],
+            intents=[
+                "do we have the ingredients",
+                "do we have these ingredients",
+                "do we have the ingredients for this",
+                "what ingredients are we missing",
+                "can we make this recipe",
+                "check if we have the ingredients",
+                "do I need to buy anything for this recipe",
+            ],
+            process_output=True,
+            activity=[Activity.COOKING, Activity.GENERAL],
+        )
+
     # -----------------------------------------------------------------------
     # Recipe integration tools
     # -----------------------------------------------------------------------
+
+    def check_recipe_ingredients(self, recipe_name: str = None) -> dict:
+        """Check which recipe ingredients we have vs. what's missing."""
+        try:
+            from plugins.recipes.recipe_api import select_recipe, safe_parse_list, _last_search_results, _last_selected_recipe
+        except ImportError:
+            return {"status": "error", "message": "Recipe plugin is not available."}
+
+        # If no recipe specified, use the last selected or first search result
+        if not recipe_name:
+            if _last_selected_recipe:
+                recipe_name = _last_selected_recipe["title"]
+            elif _last_search_results:
+                recipe_name = _last_search_results[0]
+        if not recipe_name:
+            return {"status": "error", "message": "No recipe specified. Search for a recipe first."}
+
+        # Use cached data if it matches, otherwise select fresh
+        recipe_data = None
+        if _last_selected_recipe and _last_selected_recipe.get("title", "").lower() == recipe_name.lower():
+            recipe_data = _last_selected_recipe
+        else:
+            result = select_recipe(recipe_name)
+            if result.get("status") != "success":
+                return result
+            from plugins.recipes.recipe_api import _last_selected_recipe as fresh
+            recipe_data = fresh
+
+        if not recipe_data:
+            return {"status": "error", "message": "Could not load recipe data."}
+
+        raw_ingredients = recipe_data.get("ingredients", "")
+        ingredient_lines = [
+            line.strip().lstrip("- ").strip()
+            for line in raw_ingredients.split("\n")
+            if line.strip()
+        ]
+
+        have = []
+        missing = []
+        for ing in ingredient_lines:
+            if self._find_pantry_items(ing):
+                have.append(ing)
+            else:
+                missing.append(ing)
+
+        title = recipe_data.get("title", recipe_name)
+        return {
+            "status": "success",
+            "recipe": title,
+            "have": have,
+            "have_count": len(have),
+            "missing": missing,
+            "missing_count": len(missing),
+            "total": len(ingredient_lines),
+            "message": (
+                f"For {title}: you have {len(have)} of {len(ingredient_lines)} ingredients. "
+                + (f"Missing: {', '.join(missing[:5])}." if missing else "You have everything!")
+            ),
+        }
 
     def suggest_meals_from_pantry(self, use_expiring_first: bool = True) -> dict:
         """Suggest recipes based on pantry contents, prioritizing expiring items."""
@@ -834,15 +925,46 @@ class PantryPlugin(RunnableMCPPlugin):
 
         # Use the recipe plugin's ingredient search
         try:
-            from plugins.recipes.recipe_api import find_recipe_by_ingredients
-            query = ", ".join(query_items[:15])  # limit to avoid overly long queries
-            result = find_recipe_by_ingredients(query)
-            logger.info(f"[Pantry] Recipe suggestion query: {query[:100]}")
+            from plugins.recipes.recipe_api import search_by_ingredients, safe_parse_list
+            matches = search_by_ingredients(query_items[:15])
+            logger.info(f"[Pantry] Recipe suggestion: {len(matches)} matches from {len(query_items)} pantry items")
+
+            if not matches:
+                return {"status": "no_results", "message": "No recipes found matching your pantry items."}
+
+            top = matches[:10]
+
+            # Push results to display as recipe search view
+            display_results = [
+                {
+                    "title": m["title"],
+                    "image_name": m.get("image_name"),
+                    "ingredient_count": len(m.get("ingredients", [])),
+                }
+                for m in top
+            ]
+            self.event_system.publish(EventMessage(
+                role="display", name="recipe_search",
+                content={
+                    "title": "Recipes from Pantry",
+                    "query": "pantry ingredients",
+                    "results": display_results,
+                },
+                process_output=False,
+            ))
+
+            # Brief summary for LLM/TTS
+            titles = [m["title"] for m in top[:5]]
+            listing = ", ".join(titles)
             return {
                 "status": "success",
-                "pantry_items": query_items[:15],
-                "expiring_items": expiring if use_expiring_first else [],
-                "recipe_suggestions": result,
+                "count": len(top),
+                "top_recipes": titles,
+                "message": (
+                    f"Found {len(matches)} recipes you can make. I've put them on the screen. "
+                    f"The top matches are {listing}. "
+                    f"Say the first one, the second one, or the recipe name to select."
+                ),
             }
         except ImportError:
             return {"status": "error", "message": "Recipe plugin is not available."}
@@ -853,36 +975,52 @@ class PantryPlugin(RunnableMCPPlugin):
     def add_recipe_ingredients_to_list(self, recipe_name: str) -> dict:
         """Add ingredients from a recipe to the shopping list, skipping what we already have."""
         try:
-            from plugins.recipes.recipe_api import select_recipe
+            from plugins.recipes.recipe_api import select_recipe, _last_selected_recipe
         except ImportError:
             return {"status": "error", "message": "Recipe plugin is not available."}
 
-        result = select_recipe(recipe_name)
-        if result.get("status") != "success":
-            return result
+        # Use cached recipe data if available and matches, otherwise select fresh
+        recipe_data = None
+        if _last_selected_recipe and _last_selected_recipe.get("title", "").lower() == recipe_name.lower():
+            recipe_data = _last_selected_recipe
+        else:
+            result = select_recipe(recipe_name)
+            if result.get("status") != "success":
+                return result
+            # select_recipe stores full data in _last_selected_recipe
+            from plugins.recipes.recipe_api import _last_selected_recipe as fresh
+            recipe_data = fresh
+
+        if not recipe_data:
+            return {"status": "error", "message": "Could not load recipe data."}
 
         # Parse ingredients from the recipe
-        raw_ingredients = result.get("ingredients", "")
+        raw_ingredients = recipe_data.get("ingredients", "")
         ingredient_lines = [
             line.strip().lstrip("- ").strip()
             for line in raw_ingredients.split("\n")
             if line.strip()
         ]
 
+        from glados.nlp.ingredient_parser import parse_ingredient_list
+        parsed = parse_ingredient_list(ingredient_lines)
+
         added = []
         skipped = []
-        for ingredient in ingredient_lines:
+        for ing in parsed:
+            item_name = ing["item"]
+            quantity = ing["quantity"]
             # Check if we already have it in the pantry
-            if self._find_pantry_items(ingredient):
-                skipped.append(ingredient)
+            if self._find_pantry_items(item_name):
+                skipped.append(item_name)
                 continue
             # Check if already on shopping list
-            if self._find_shopping_item(ingredient):
-                skipped.append(ingredient)
+            if self._find_shopping_item(item_name):
+                skipped.append(item_name)
                 continue
-            # Add to shopping list
-            self.add_to_shopping_list(item=ingredient)
-            added.append(ingredient)
+            # Add to shopping list with parsed name and quantity
+            self.add_to_shopping_list(item=item_name, quantity=quantity)
+            added.append(item_name)
 
         self._publish_shopping_list_display()
         logger.info(f"[Pantry] Added {len(added)} recipe ingredients, skipped {len(skipped)}")
@@ -1251,6 +1389,40 @@ class PantryPlugin(RunnableMCPPlugin):
             process_output=False,
         ))
 
+    def _publish_dashboard_summary(self):
+        """Push summary counts for the dashboard cards."""
+        today = date.today()
+        expiring = []
+        for item in self._pantry["items"]:
+            if item.get("expires"):
+                try:
+                    exp = date.fromisoformat(item["expires"])
+                    days_left = (exp - today).days
+                    if days_left <= 7:
+                        expiring.append({"name": item["name"], "days_left": days_left})
+                except ValueError:
+                    pass
+        expiring.sort(key=lambda x: x["days_left"])
+
+        recurring_count = len(self._shopping_list.get("recurring_rules", []))
+        self.event_system.publish(EventMessage(
+            role="display",
+            name="dashboard_data",
+            content={
+                "view_type": "dashboard_data",
+                "shopping": {
+                    "count": len(self._shopping_list["items"]),
+                    "got": sum(1 for i in self._shopping_list["items"] if i.get("got")),
+                    "recurring": recurring_count,
+                },
+                "pantry": {
+                    "count": len(self._pantry["items"]),
+                    "expiring": expiring,
+                },
+            },
+            process_output=False,
+        ))
+
     def _publish_pantry_display(self, location_filter: str = None):
         """Push pantry view to the display."""
         locations_data = []
@@ -1338,10 +1510,12 @@ class PantryPlugin(RunnableMCPPlugin):
         "post shopping mode", "back from the store",
     ]
     _EXIT_TRIGGERS = [
-        "done", "that's everything", "finished", "exit", "done planning", "cancel",
+        "done", "that's everything", "finished", "exit", "done planning",
         "stop planning", "all done", "that's it", "that's all", "exit mode",
         "leave mode", "stop", "end planning mode", "end planning",
-        "exit planning mode", "exit planning", "end mode", "exit",
+        "exit planning mode", "exit planning", "end mode",
+        "cancel", "cancelled", "cancel that", "never mind", "nevermind",
+        "stop it", "quit", "close", "end", "that is cancelled",
     ]
 
     # Tool names allowed in each mode (for LLM tool_override)
@@ -1360,6 +1534,8 @@ class PantryPlugin(RunnableMCPPlugin):
         # Strip whitespace, trailing punctuation, lowercase
         return re.sub(r"[.!?,;]+$", "", text.strip().lower()).strip()
 
+    _SHOPPING_MODE_TIMEOUT_DEFAULT = 60  # seconds of inactivity before auto-exiting mode
+
     def _shopping_context_hook(self, ctx):
         """PRE_LLM hook: intercept commands when in a shopping sub-context."""
         text = self._clean_voice_text(ctx.user_text)
@@ -1368,6 +1544,7 @@ class PantryPlugin(RunnableMCPPlugin):
         if not self._shopping_mode:
             if any(text.startswith(t) or text == t for t in self._PLANNING_TRIGGERS):
                 self._shopping_mode = "planning"
+                self._shopping_mode_last_activity = datetime.now()
                 self._publish_shopping_list_display()
                 self.event_system.publish(EventMessage(
                     "status", "shopping_mode", {"mode": "planning"}
@@ -1380,6 +1557,7 @@ class PantryPlugin(RunnableMCPPlugin):
 
             if any(fuzz.ratio(text, t) >= 80 or text.startswith(t) for t in self._POST_SHOPPING_TRIGGERS):
                 self._shopping_mode = "post_shopping"
+                self._shopping_mode_last_activity = datetime.now()
                 self._publish_shopping_list_display()
                 self.event_system.publish(EventMessage(
                     "status", "shopping_mode", {"mode": "post_shopping"}
@@ -1393,7 +1571,7 @@ class PantryPlugin(RunnableMCPPlugin):
             return  # Not in a mode, let normal processing handle it
 
         # --- Check for mode exit ---
-        if any(text == t or text.startswith(t) for t in self._EXIT_TRIGGERS):
+        if any(text == t or text.startswith(t) or fuzz.ratio(text, t) >= 80 for t in self._EXIT_TRIGGERS):
             if self._shopping_mode == "post_shopping":
                 result = self.complete_shopping()
                 moved = result.get("moved", 0)
@@ -1417,6 +1595,9 @@ class PantryPlugin(RunnableMCPPlugin):
             handled = self._handle_planning_command(text, ctx)
         elif self._shopping_mode == "post_shopping":
             handled = self._handle_post_shopping_command(text, ctx)
+
+        if handled:
+            self._shopping_mode_last_activity = datetime.now()
 
         if not handled:
             # Command not recognized by short-form handlers — pass through to LLM
@@ -1484,6 +1665,19 @@ class PantryPlugin(RunnableMCPPlugin):
             return True
 
         # Default: treat as "add X" — bare item names
+        # But first, reject text that's clearly not a shopping item:
+        # - Too long (>6 words is probably a sentence, not an item)
+        # - Contains verbs/pronouns that indicate conversation, not items
+        words = text.split()
+        non_item_patterns = re.compile(
+            r"\b(i think|i want|why|how|what|when|where|because|that's why|"
+            r"this is|they|my|your|we need to|can you|could you|please help|"
+            r"it's|cancelled|cancel|beep|gladys|glados)\b", re.IGNORECASE
+        )
+        if len(words) > 6 or non_item_patterns.search(text):
+            # Doesn't look like a shopping item — pass to LLM with restricted tools
+            return False
+
         # Strip leading "add" / "and" / "also"
         item_text = re.sub(r"^(?:add|and|also|plus)\s+(?:some\s+)?", "", text).strip()
         if item_text and len(item_text) > 1:
@@ -1576,8 +1770,13 @@ class PantryPlugin(RunnableMCPPlugin):
         data = event.content if isinstance(event.content, dict) else {}
         action = data.get("action")
 
-        if action in ("show", "get_state"):
+        if action == "show":
             self._publish_shopping_list_display()
+            return
+
+        if action == "get_state":
+            # Dashboard data request — don't navigate, just send counts
+            self._publish_dashboard_summary()
             return
 
         if action == "toggle":
@@ -1652,6 +1851,21 @@ class PantryPlugin(RunnableMCPPlugin):
                 )
                 self._publish_shopping_list_display()
 
+        elif action == "edit_item":
+            # Edit item name/quantity from UI
+            item_id = data.get("item_id")
+            new_name = data.get("name", "").strip()
+            new_qty = data.get("quantity", "").strip() or None
+            for item in self._shopping_list["items"]:
+                if item["id"] == item_id:
+                    if new_name:
+                        item["name"] = new_name
+                        item["category"] = _categorize_item(new_name)
+                    item["quantity"] = new_qty
+                    break
+            self._save_shopping_list()
+            self._publish_shopping_list_display()
+
     def _on_pantry_action(self, event: EventMessage):
         """Handle interactive actions from the pantry display."""
         data = event.content if isinstance(event.content, dict) else {}
@@ -1659,6 +1873,10 @@ class PantryPlugin(RunnableMCPPlugin):
 
         if action == "show":
             self._publish_pantry_display()
+            return
+
+        if action == "get_summary":
+            self._publish_dashboard_summary()
             return
 
         if action == "remove_item":
@@ -1716,13 +1934,58 @@ class PantryPlugin(RunnableMCPPlugin):
             self._save_pantry()
             self._publish_pantry_display()
 
+        elif action == "edit_item":
+            # Edit pantry item name/notes from UI
+            item_id = data.get("item_id")
+            new_name = data.get("name", "").strip()
+            new_notes = data.get("notes", "").strip() or None
+            for item in self._pantry["items"]:
+                if item["id"] == item_id:
+                    if new_name:
+                        item["name"] = new_name
+                    item["notes"] = new_notes
+                    logger.info(f"[Pantry] UI: edited item '{new_name}'")
+                    break
+            self._save_pantry()
+            self._publish_pantry_display()
+
+        elif action == "check_recipe":
+            recipe_name = data.get("recipe_name", "")
+            if recipe_name:
+                result = self.check_recipe_ingredients(recipe_name)
+                # Speak the result
+                msg = result.get("message", "Could not check ingredients.")
+                self.event_system.publish(EventMessage("tts", "speak", msg))
+
+        elif action == "add_recipe_to_list":
+            recipe_name = data.get("recipe_name", "")
+            if recipe_name:
+                result = self.add_recipe_ingredients_to_list(recipe_name)
+                msg = result.get("message", "Could not add ingredients.")
+                self.event_system.publish(EventMessage("tts", "speak", msg))
+
     # -----------------------------------------------------------------------
     # Tick handler — recurring items + expiry warnings
     # -----------------------------------------------------------------------
 
     def _on_tick(self, event: EventMessage):
-        """Periodic check for recurring shopping items and expiry warnings."""
+        """Periodic check for recurring shopping items, expiry warnings, and mode timeout."""
         now = datetime.now()
+
+        # Auto-exit shopping mode on inactivity timeout
+        if self._shopping_mode and self._shopping_mode_last_activity:
+            elapsed = (now - self._shopping_mode_last_activity).total_seconds()
+            if elapsed > self._shopping_mode_timeout:
+                logger.info(f"[Pantry] Shopping mode timed out after {elapsed:.0f}s of inactivity")
+                self.event_system.publish(EventMessage(
+                    "status", "shopping_mode", {"mode": None}
+                ))
+                self.event_system.publish(EventMessage(
+                    "tts", "speak",
+                    f"Shopping {self._shopping_mode.replace('_', ' ')} mode timed out."
+                ))
+                self._shopping_mode = None
+                self._shopping_mode_last_activity = None
 
         # Check recurring items once per hour
         if self._last_recurring_check is None or (now - self._last_recurring_check).seconds >= 3600:

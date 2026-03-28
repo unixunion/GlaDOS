@@ -36,7 +36,20 @@ The activity system provides separate message contexts per activity with tool fi
 | SYSTEM | time, logs, list_plugins, memory tools |
 | ENTERTAINMENT | music player |
 
-The system prompt is shared across all activity contexts. The display UI shows the current activity as a pill icon in the top-left corner.
+The system prompt is shared across all activity contexts.
+
+### Display Architecture
+
+The web display (`http://<host>:5001`) uses a dashboard + full-screen view pattern:
+
+- **Dashboard home** — 4 summary cards (Shopping, Pantry, Recipes, Timers) with quick actions (inline add, recipe search). Clock at bottom.
+- **Full-screen views** — tapping a card or using a voice command opens the view full-screen with a back button. Views: shopping list, pantry, recipe, recipe search, info.
+- **Chat drawer** — slides from right, hidden by default. Hamburger icon to toggle. Contains chat history, input, send/stop buttons.
+- **Navigation history** — back button returns to previous view (not always dashboard). View stack.
+- **Timer overlay** — floating cards in bottom-right, persistent across all views.
+- **Mode banner** — planning/post-shopping mode shows a persistent banner with Exit button.
+- **Mobile** — bottom nav bar (Home, List, Pantry, Chat) on phone viewports. Responsive card grid.
+- **PWA** — manifest + service worker for add-to-home-screen.
 
 ### Shopping Sub-Contexts
 
