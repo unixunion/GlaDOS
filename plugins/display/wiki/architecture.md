@@ -50,6 +50,7 @@ The web display (`http://<host>:5001`) uses a dashboard + full-screen view patte
 - **Mode banner** — planning/post-shopping mode shows a persistent banner with Exit button.
 - **Mobile** — bottom nav bar (Home, List, Pantry, Chat) on phone viewports. Responsive card grid.
 - **PWA** — manifest + service worker for add-to-home-screen.
+- **Plugin UI actions** — plugins self-register SocketIO event handlers via `register_ui_action()`. The DisplayPlugin auto-creates handlers dynamically. No plugin-specific code in `display_server.py`.
 
 ### Shopping Sub-Contexts
 

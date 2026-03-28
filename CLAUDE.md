@@ -74,6 +74,44 @@ The memory system in `glados/llm/memory/store.py` uses ChromaDB PersistentClient
 - Prefix memory log lines with `[Memory]` (chat_client) or `[MemoryStore]` (store.py) for easy filtering
 - All TTS output must be natural spoken language — no markdown, no special characters
 
+## Plugin Containment Rules
+
+**ALL plugin logic MUST be self-contained within the plugin.** Never add plugin-specific code to core files (`display_server.py`, `chat_client.py`, `main.py`). Use the registration APIs instead:
+
+| Need | Use | NOT |
+|------|-----|-----|
+| LLM tool | `self.register_tool()` | Editing `chat_client.py` |
+| System prompt | `self.register_system_prompt()` | Editing system prompts elsewhere |
+| Chat pipeline hook | `self.register_chat_hook()` | Modifying `chat()` directly |
+| Display UI action (button, form) | `self.register_ui_action()` | Adding SocketIO handlers to `display_server.py` |
+| NLP intents | `intents=` param on `register_tool()` | Editing `intent_classifier.py` |
+| Event handling | `self.event_system.subscribe()` | Modifying event publishers |
+
+### UI Action Pattern
+
+For UI-driven actions (clicks, forms, widgets), use `register_ui_action()`:
+
+```python
+# In plugin __init__:
+self.register_ui_action("my_action", self._on_my_action)
+
+# In plugin start():
+self.event_system.subscribe("ui.my_action", EventHook("handler", callback=self._on_my_action))
+```
+
+Frontend emits directly to the plugin's event — no `user_message` → NLP → LLM round-trip:
+```javascript
+socket.emit('my_action', { action: 'do_thing', param: 'value' });
+```
+
+### When to use LLM vs. direct action
+
+- **UI button/form** → `register_ui_action()` (direct, instant)
+- **Clear voice command** → NLP fast-path via `register_tool()` with intents
+- **Ambiguous voice input** → LLM tool via `register_tool()` with `process_output=True`
+- **Data injection (not spoken)** → publish event with `process_output=False`, inject as system context
+- **Never** return large data (ingredients, directions) in tool results — the LLM will read it aloud. Put it in context tags instead (`<active_recipe>`, `<knowledge>`).
+
 ## Common Commands
 
 ```bash

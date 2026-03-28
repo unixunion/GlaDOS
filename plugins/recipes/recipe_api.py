@@ -367,6 +367,15 @@ def search_recipes(query: str) -> dict:
         process_output=False,
     ))
 
+    # Inject display state so the LLM knows what the user is seeing
+    titles_brief = ", ".join(r["title"] for r in display_results[:5])
+    event_system.publish(EventMessage(
+        "tool", "display_state",
+        f"<display_state>The user is viewing recipe search results for '{query}'. "
+        f"Showing: {titles_brief}. They can say 'the first one' or a recipe name to select.</display_state>",
+        process_output=False,
+    ))
+
     return (f"The following recipes were found by the recipe search API. Filter out all recipes "
             f"that are unrelated to the query '{query}', choose which best matches the query, "
             f"and ask the user to say 'select recipe' followed by the name of the recipe. "
@@ -533,6 +542,43 @@ try:
     load_vocabulary_from_recipes()
 except Exception as e:
     logger.debug(f"Could not load ingredient parser vocabulary: {e}")
+
+
+# -- UI action handler (direct SocketIO, no LLM/NLP) --------------------------
+
+def _on_recipe_action(event):
+    """Handle direct recipe UI actions from the display (no LLM round-trip)."""
+    data = event.content if isinstance(event.content, dict) else {}
+    action = data.get("action")
+
+    if action == "search":
+        query = data.get("query", "").strip()
+        if query:
+            search_recipes(query)
+    elif action == "select":
+        recipe_name = data.get("recipe_name", "").strip()
+        if recipe_name:
+            select_recipe(recipe_name)
+            # No TTS — the user clicked it in the UI, they can see the result
+    elif action == "search_from_pantry":
+        # Call pantry plugin's suggest_meals_from_pantry directly — no TTS for UI actions
+        try:
+            from plugins.pantry.pantry_plugin import PantryPlugin
+            pp = PantryPlugin()
+            pp.suggest_meals_from_pantry()
+        except Exception as e:
+            logger.warning(f"[Recipe] Pantry search failed: {e}")
+
+
+# Register the UI action with the plugin system
+plugin_manager.register_ui_action("recipe_action", _on_recipe_action)
+
+# Subscribe to the event so the handler gets called
+from glados.system.event_system import EventHook
+event_system.subscribe(
+    "ui.recipe_action",
+    EventHook("recipe_ui_handler", callback=_on_recipe_action, priority=5)
+)
 
 
 # -- NLP mode handlers ---------------------------------------------------------

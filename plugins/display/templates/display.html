@@ -591,9 +591,9 @@
             if (el && el.value.trim()) {
                 const query = el.value.trim();
                 if (pantryFilter && pantryFilter.checked) {
-                    socket.emit('user_message', { text: 'what can I make with what is in the pantry that is like ' + query });
+                    socket.emit('recipe_action', { action: 'search_from_pantry', query: query });
                 } else {
-                    socket.emit('user_message', { text: 'search recipes for ' + query });
+                    socket.emit('recipe_action', { action: 'search', query: query });
                 }
                 el.value = '';
             }
@@ -630,7 +630,7 @@
                 const img = r.image_name
                     ? `<img class="rs-thumb" src="/recipe-images/${encodeURIComponent(r.image_name)}.jpg" onerror="this.style.display='none'">`
                     : '<div class="rs-thumb-placeholder">&#127859;</div>';
-                return `<div class="rs-item" onclick="socket.emit('user_message',{text:'select recipe ${esc(r.title).replace(/'/g, "\\'")}'})">
+                return `<div class="rs-item" onclick="socket.emit('recipe_action',{action:'select',recipe_name:'${esc(r.title).replace(/'/g, "\\'")}'})">
                     ${img}
                     <div class="rs-info">
                         <div class="rs-title">${esc(r.title)}</div>

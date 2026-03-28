@@ -106,6 +106,21 @@ class RunnableMCPPlugin(RunnablePlugin):
         self._plugin_system.register_system_prompt(prompt)
         logger.info(f"System prompt addition registered by {self.__class__.__name__}")
 
+    def register_ui_action(self, event_name: str, callback: Callable):
+        """Register a SocketIO UI action handler.
+
+        The DisplayPlugin auto-creates SocketIO event handlers for these.
+        When the frontend emits the event, it's published to the EventSystem
+        and the callback is triggered. The plugin should also subscribe to
+        'ui.<event_name>' in start() to handle the events.
+
+        Args:
+            event_name: SocketIO event name (e.g. 'recipe_action', 'pantry_action')
+            callback: Function to handle the event data
+        """
+        self._plugin_system.register_ui_action(event_name, callback)
+        logger.info(f"UI action '{event_name}' registered by {self.__class__.__name__}")
+
     def register_tool(
         self,
         handler: Callable,

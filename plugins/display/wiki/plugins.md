@@ -207,6 +207,62 @@ The IntentClassifier uses Naive Bayes with bag-of-words:
 4. **Avoid collisions** — if two tools share words like "next" (music skip vs cooking next step), rely on activity scoping to disambiguate.
 5. Run `pytest tests/test_nlp.py -v` after adding intents to check for regressions.
 
+## UI Action Handlers
+
+Plugins can register SocketIO event handlers so the display UI can call plugin functions directly — no LLM or NLP round-trip needed. This is the correct pattern for UI-driven actions (button clicks, form submissions, widget interactions).
+
+### Registering a UI action
+
+```python
+class MyPlugin(RunnableMCPPlugin):
+    def __init__(self):
+        super().__init__()
+        # Register the SocketIO event name and subscribe to handle it
+        self.register_ui_action("my_plugin_action", self._on_ui_action)
+
+    def start(self):
+        self.event_system.subscribe(
+            "ui.my_plugin_action",
+            EventHook("my_ui_handler", callback=self._on_ui_action, priority=5)
+        )
+
+    def _on_ui_action(self, event: EventMessage):
+        data = event.content if isinstance(event.content, dict) else {}
+        action = data.get("action")
+        if action == "do_something":
+            result = self.do_something(data["param"])
+            # Optionally speak result
+            self.event_system.publish(EventMessage("tts", "speak", result["message"]))
+```
+
+### Frontend side
+
+```javascript
+// Direct action — no LLM, no NLP, instant
+socket.emit('my_plugin_action', { action: 'do_something', param: 'value' });
+```
+
+The DisplayPlugin auto-discovers registered UI actions and creates SocketIO handlers dynamically. No changes to `display_server.py` needed.
+
+### When to use UI actions vs. LLM tools
+
+| Scenario | Use |
+|----------|-----|
+| Button click, form submit, widget interaction | `register_ui_action()` — direct, fast |
+| Voice command with clear intent | NLP fast-path via `register_tool()` with intents |
+| Ambiguous voice command needing interpretation | LLM tool via `register_tool()` with `process_output=True` |
+| Background/periodic task | `system.tick` event subscription |
+
+**Rule of thumb:** If the action comes from a UI element with known parameters, use `register_ui_action()`. If it comes from voice/text that needs interpretation, use `register_tool()`.
+
+### Registered UI actions
+
+| Event Name | Plugin | Actions |
+|------------|--------|---------|
+| `shopping_list_action` | PantryPlugin | toggle, remove, add_item, edit_item, set_recurring, complete, show, get_state, exit_mode |
+| `pantry_action` | PantryPlugin | show, get_summary, remove_item, add_item, edit_item, set_expiry, add_location, remove_location, check_recipe, add_recipe_to_list |
+| `recipe_action` | RecipeAPI | search, select, search_from_pantry |
+
 ## Chat Pipeline Hooks
 
 Plugins can hook into the chat pipeline at specific phases to intercept, modify, or extend the conversation flow. This is how the memory system, hybrid NLP mode, and personality quips work — no core code modification needed.

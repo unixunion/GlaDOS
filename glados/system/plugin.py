@@ -67,6 +67,7 @@ def load_plugins(package_path: str):
 class PluginSystem:
     _instance = None  # Singleton instance
     _system_prompts = []  # future thing, so plugins can extend the system prompts.
+    _ui_actions = {}  # event_name → list of callbacks (plugins self-register UI SocketIO handlers)
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
@@ -258,6 +259,20 @@ class PluginSystem:
 
     def get_system_prompts(self):
         return self._system_prompts
+
+    def register_ui_action(self, event_name: str, callback):
+        """Register a SocketIO UI action handler for a plugin.
+
+        The DisplayPlugin auto-registers these as SocketIO event handlers.
+        When the frontend emits the event, it's published to the EventSystem
+        as 'ui.<event_name>' and the plugin's callback handles it.
+        """
+        logger.info(f"Registering UI action: {event_name}")
+        self._ui_actions[event_name] = callback
+
+    def get_ui_actions(self) -> dict:
+        """Get all registered UI action handlers."""
+        return self._ui_actions
 
     @staticmethod
     def validate_plugin_definition(plugin_definition: FunctionRequest) -> bool:

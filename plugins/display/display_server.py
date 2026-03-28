@@ -139,19 +139,8 @@ class DisplayPlugin(RunnablePlugin):
                     process_output=True
                 ))
 
-        @self._socketio.on("shopping_list_action")
-        def handle_shopping_list_action(data):
-            logger.info(f"[Display] Shopping list action: {data}")
-            self.event_system.publish(EventMessage(
-                "ui", "shopping_list_action", data
-            ))
-
-        @self._socketio.on("pantry_action")
-        def handle_pantry_action(data):
-            logger.info(f"[Display] Pantry action: {data}")
-            self.event_system.publish(EventMessage(
-                "ui", "pantry_action", data
-            ))
+        # Plugin UI actions are registered dynamically in start()
+        # after all plugins have loaded and registered their actions
 
     def _on_display_event(self, event: EventMessage):
         """Handle display.* events and push to all connected browsers."""
@@ -250,6 +239,18 @@ class DisplayPlugin(RunnablePlugin):
         logger.info("Starting DisplayPlugin...")
         if self._worker_thread and self._worker_thread.is_alive():
             return
+
+        # Auto-register plugin UI actions as SocketIO event handlers
+        ui_actions = plugin_manager.get_ui_actions()
+        for action_name in ui_actions:
+            # Create a SocketIO handler for each registered UI action
+            def make_handler(name):
+                @self._socketio.on(name)
+                def handler(data):
+                    logger.info(f"[Display] Plugin UI action: {name}: {data}")
+                    self.event_system.publish(EventMessage("ui", name, data))
+            make_handler(action_name)
+            logger.info(f"[Display] Registered SocketIO handler for plugin UI action: {action_name}")
 
         # Subscribe to display events, status events, and tick
         self.event_system.subscribe(

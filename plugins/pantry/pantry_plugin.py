@@ -393,6 +393,10 @@ class PantryPlugin(RunnableMCPPlugin):
         self._register_pantry_tools()
         self._register_recipe_integration_tools()
 
+        # Register UI action handlers (SocketIO events from the display)
+        self.register_ui_action("shopping_list_action", self._on_shopping_list_action)
+        self.register_ui_action("pantry_action", self._on_pantry_action)
+
         list_count = len(self._shopping_list["items"])
         pantry_count = len(self._pantry["items"])
         logger.success(f"[Pantry] Initialized — {list_count} shopping list items, {pantry_count} pantry items")
@@ -1389,6 +1393,15 @@ class PantryPlugin(RunnableMCPPlugin):
             process_output=False,
         ))
 
+        # Inject display state for LLM context
+        item_names = [i["name"] for i in items[:10]]
+        self.event_system.publish(EventMessage(
+            "tool", "display_state",
+            f"<display_state>The user is viewing their shopping list with {len(items)} items "
+            f"({got_count} checked). Items: {', '.join(item_names)}{'...' if len(items) > 10 else ''}.</display_state>",
+            process_output=False,
+        ))
+
     def _publish_dashboard_summary(self):
         """Push summary counts for the dashboard cards."""
         today = date.today()
@@ -1492,6 +1505,16 @@ class PantryPlugin(RunnableMCPPlugin):
                 "locations": locations_data,
                 "expiring_soon": expiring_soon,
             },
+            process_output=False,
+        ))
+
+        # Inject display state for LLM context
+        total = sum(len(loc.get("items", [])) for loc in locations_data)
+        exp_count = len(expiring_soon)
+        self.event_system.publish(EventMessage(
+            "tool", "display_state",
+            f"<display_state>The user is viewing the pantry with {total} items across "
+            f"{len(locations_data)} locations. {exp_count} items expiring soon.</display_state>",
             process_output=False,
         ))
 
@@ -1960,9 +1983,8 @@ class PantryPlugin(RunnableMCPPlugin):
         elif action == "add_recipe_to_list":
             recipe_name = data.get("recipe_name", "")
             if recipe_name:
-                result = self.add_recipe_ingredients_to_list(recipe_name)
-                msg = result.get("message", "Could not add ingredients.")
-                self.event_system.publish(EventMessage("tts", "speak", msg))
+                self.add_recipe_ingredients_to_list(recipe_name)
+                # No TTS — user clicked a UI button, they can see the shopping list update
 
     # -----------------------------------------------------------------------
     # Tick handler — recurring items + expiry warnings
