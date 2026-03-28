@@ -11,8 +11,15 @@ GlaDOS is a voice-first home assistant with a pluggable architecture. It connect
 ```
 glados/                    # Core application code
   llm/
-    cores/chat_client.py   # Main LLM orchestration — chat loop, memory interception, tool execution
-    stream_handler.py      # Builds and sends requests to the LLM, injects memory context
+    cores/chat_client.py   # Main LLM orchestrator — wires components, runs chat()
+    cores/event_handlers.py # Event subscriptions (tool events, vision, TTS speak)
+    cores/queue_processor.py # LLM input queue drain + dispatch
+    backends/              # LLM backend abstraction (OpenAI, Anthropic, LangChain)
+      base.py              # LLMBackend ABC, StreamChunk, ToolCallDelta
+      openai_backend.py    # OpenAI-compatible (LM Studio, Ollama via OpenAI API)
+      anthropic_backend.py # Claude API
+      langchain_backend.py # LangChain/Ollama native
+    stream_handler.py      # Delegates to backend.stream(), handles tool_choice
     message_manager.py     # Per-activity message contexts with rolling window
     response_processor.py  # Streams LLM output to TTS sentence-by-sentence
     memory/store.py        # ChromaDB-backed persistent vector memory (VectorMemoryStore singleton)

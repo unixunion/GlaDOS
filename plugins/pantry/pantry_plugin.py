@@ -1875,16 +1875,17 @@ class PantryPlugin(RunnableMCPPlugin):
                 self._publish_shopping_list_display()
 
         elif action == "edit_item":
-            # Edit item name/quantity from UI
+            # Edit item name and/or quantity from UI
             item_id = data.get("item_id")
             new_name = data.get("name", "").strip()
-            new_qty = data.get("quantity", "").strip() or None
             for item in self._shopping_list["items"]:
                 if item["id"] == item_id:
                     if new_name:
                         item["name"] = new_name
                         item["category"] = _categorize_item(new_name)
-                    item["quantity"] = new_qty
+                    # Only update quantity if explicitly provided in the request
+                    if "quantity" in data:
+                        item["quantity"] = data["quantity"].strip() or None
                     break
             self._save_shopping_list()
             self._publish_shopping_list_display()

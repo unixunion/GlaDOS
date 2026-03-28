@@ -13,9 +13,9 @@ from glados.system.plugin import PluginSystem
 
 
 class ToolExecutor:
-    def __init__(self, plugin_manager: PluginSystem = None):
-        self.plugin_manager = plugin_manager
-        self.event_system = EventSystem()
+    def __init__(self, plugin_manager: PluginSystem = None, event_system=None):
+        self.plugin_manager = plugin_manager or PluginSystem()
+        self.event_system = event_system or EventSystem()
         self.mcp_server = GladosMCPServer()
 
     def process_streamed_tool_calls(

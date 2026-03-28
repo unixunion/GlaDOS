@@ -352,46 +352,134 @@ class CountdownTimer(RunnableMCPPlugin):
         expired_timers = self.remove_expired_timers()
 
         for timer in expired_timers:
-            logger.info(f"Timer called: '{timer.description}' has expired, firing event")
+            logger.info(f"Timer expired: '{timer.description}', firing event")
+
+            # Start persistent ringing (like alarm system)
+            self._start_timer_ring(timer)
 
             self.event_system.publish(
                 EventMessage(
                     role="tool",
-                    name="set_timer",
-                    content={"message": f"A timer called: '{timer.description}' has expired."},
+                    name="timer_expired",
+                    content={"message": f"The timer '{timer.description}' has finished. Announce this to the user briefly. Do NOT set a new timer."},
                     process_output=True
                 )
             )
-
-            self.event_system.publish(
-                EventMessage(
-                    role="display",
-                    name="timer",
-                    content={
-                        "title": f"{timer.description} - Time's Up!",
-                        "content": "DONE",
-                        "alert": True,
-                    },
-                    process_output=False
-                )
-            )
-
-            try:
-                import subprocess
-                import os
-                alert_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sounds", "timer_alert.wav")
-                if os.path.exists(alert_path):
-                    subprocess.Popen(["afplay", alert_path])
-            except Exception as e:
-                logger.debug(f"Could not play timer alert sound: {e}")
 
         # After processing expirations, update display (clears to idle if nothing left)
         if expired_timers:
             self._publish_timer_display()
 
+    # -----------------------------------------------------------------------
+    # Timer ringing (persistent alert until dismissed or timeout)
+    # -----------------------------------------------------------------------
+
+    _RING_TIMEOUT = 180  # 3 minutes max ringing
+
+    def _start_timer_ring(self, timer):
+        """Start persistent ringing for an expired timer."""
+        import os
+        import threading
+
+        self._ring_stop = getattr(self, '_ring_stop', threading.Event())
+        if getattr(self, '_ring_active', False):
+            return  # Already ringing
+
+        self._ring_active = True
+        self._ringing_timer = timer
+        self._ring_stop.clear()
+
+        # Flash display
+        self.event_system.publish(EventMessage(
+            role="display", name="timer",
+            content={"title": f"{timer.description} - Time's Up!", "content": "DONE", "alert": True},
+            process_output=False
+        ))
+
+        # Load alert sound
+        alert_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sounds", "timer_alert.wav")
+        if not os.path.exists(alert_path):
+            logger.warning(f"Timer alert sound not found: {alert_path}")
+            self._ring_active = False
+            return
+
+        def ring_loop():
+            import subprocess
+            import time
+            start = time.monotonic()
+            while not self._ring_stop.is_set():
+                if time.monotonic() - start > self._RING_TIMEOUT:
+                    logger.info(f"Timer ring timeout after {self._RING_TIMEOUT}s")
+                    break
+                try:
+                    proc = subprocess.Popen(["afplay", alert_path])
+                    proc.wait(timeout=5)
+                except Exception as e:
+                    logger.debug(f"Ring playback error: {e}")
+                self._ring_stop.wait(timeout=2.0)
+            self._ring_active = False
+            self._ringing_timer = None
+            logger.info("Timer ring loop stopped.")
+            self._publish_timer_display()
+
+        self._ring_thread = threading.Thread(target=ring_loop, daemon=True)
+        self._ring_thread.start()
+        logger.info(f"Timer ringing: {timer.description}")
+
+    def dismiss_timer_ring(self) -> bool:
+        """Stop the timer ring. Called by voice commands or UI."""
+        if not getattr(self, '_ring_active', False):
+            return False
+        self._ring_stop.set()
+        dismissed = getattr(self, '_ringing_timer', None)
+        if dismissed:
+            logger.info(f"Timer ring dismissed: {dismissed.description}")
+        return True
+
+    def _on_timer_action(self, event):
+        """Handle direct timer UI actions (no LLM round-trip)."""
+        data = event.content if isinstance(event.content, dict) else {}
+        action = data.get("action")
+
+        if action == "create":
+            minutes = int(data.get("minutes", 0))
+            if minutes > 0:
+                result = self.set_timer(minutes=minutes)
+                self.event_system.publish(EventMessage(
+                    "tts", "speak", result.get("message", "Timer set.")
+                ))
+
+        elif action == "cancel":
+            description = data.get("description", "")
+            if description:
+                result = self.cancel_timer(description)
+            elif len(self.timers) == 1:
+                result = self.cancel_timer("")
+            else:
+                result = {"message": "No timer specified."}
+            self.event_system.publish(EventMessage(
+                "tts", "speak", result.get("message", "Done.")
+            ))
+
+        elif action == "dismiss_ring":
+            self.dismiss_timer_ring()
+
     def start(self):
         logger.info("Starting CountdownTimer.")
         self.event_system.subscribe("system.tick", EventHook("check_timers", callback=self._check_timers, priority=5))
+
+        # Register UI action for direct timer control from display
+        self.register_ui_action("timer_action", self._on_timer_action)
+        self.event_system.subscribe(
+            "ui.timer_action",
+            EventHook("timer_ui_handler", callback=self._on_timer_action, priority=5)
+        )
+
+        # Listen for interrupt events to dismiss ringing timers
+        self.event_system.subscribe(
+            "system.interrupt_tts",
+            EventHook("timer_dismiss_on_interrupt", callback=lambda e: self.dismiss_timer_ring(), priority=1)
+        )
 
     def stop(self):
         logger.info("Stopping CountdownTimer.")

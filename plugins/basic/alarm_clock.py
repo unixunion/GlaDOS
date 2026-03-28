@@ -326,8 +326,8 @@ class AlarmClock(RunnableMCPPlugin):
             logger.info(f"Alarm expired: {alarm.description}")
             self._start_ringing(alarm)
             self.event_system.publish(EventMessage(
-                "tool", "alarm",
-                f"Alarm triggered: {alarm.description}. The alarm is ringing and will continue until the user says stop, cancel, or silence.",
+                "tool", "alarm_triggered",
+                f"Alarm '{alarm.description}' is ringing. Tell the user their alarm is going off. Do NOT set a new alarm.",
                 process_output=True
             ))
             break

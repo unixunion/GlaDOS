@@ -120,6 +120,15 @@
         .dash-expiring-item { color: #ff8c00; font-size: 0.8rem; padding: 2px 0; }
         .dash-expiring-item.expired { color: #ff4444; }
         .dash-timer-countdown { font-size: 1.5rem; font-weight: 300; color: #ff6600; font-variant-numeric: tabular-nums; }
+        .timer-quick-btns { display: flex; gap: 6px; }
+        .tq-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #e0e0e0; padding: 8px 14px; cursor: pointer; font-size: 0.9rem; flex: 1; }
+        .tq-btn:hover { border-color: #ff6600; color: #ff6600; }
+        .timer-adjust-display { font-size: 2rem; font-weight: 300; color: #ff6600; text-align: center; margin: 8px 0 4px; font-variant-numeric: tabular-nums; }
+        .timer-adjust-btns { display: flex; gap: 4px; justify-content: center; }
+        .timer-adjust-btns button { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #ccc; padding: 6px 10px; cursor: pointer; font-size: 0.8rem; }
+        .timer-adjust-btns button:hover { border-color: #ff6600; color: #ff6600; }
+        .tq-start { background: #ff6600; color: #fff; border: none; border-radius: 8px; padding: 8px 20px; cursor: pointer; font-size: 0.9rem; flex: 1; }
+        .tq-cancel { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #888; padding: 8px 14px; cursor: pointer; font-size: 0.9rem; }
         .dash-clock {
             grid-column: 1 / -1;
             text-align: center; padding: 16px; color: #666; font-size: 0.9rem;
@@ -188,7 +197,10 @@
         .si-check::after { content: ''; display: none; width: 7px; height: 12px; border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); margin-bottom: 2px; }
         .shopping-item.got .si-check::after { display: block; }
         .si-name { flex: 1; font-size: 0.95rem; }
-        .si-qty { font-size: 0.8rem; color: #aaa; background: rgba(255,255,255,0.06); padding: 2px 10px; border-radius: 10px; }
+        .si-qty { font-size: 0.8rem; color: #aaa; background: rgba(255,255,255,0.06); padding: 2px 10px; border-radius: 10px; cursor: pointer; min-width: 30px; text-align: center; }
+        .si-qty:hover { border: 1px solid rgba(255,102,0,0.3); }
+        .si-name { cursor: pointer; }
+        .si-name:hover { color: #ff6600; }
         .si-recurring {
             background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
             border-radius: 4px; color: #888; font-size: 0.7rem; padding: 1px 2px; cursor: pointer; color-scheme: dark;
@@ -253,6 +265,8 @@
         .timer-float .tf-icon { font-size: 1.1rem; }
         .timer-float .tf-name { font-size: 0.85rem; color: #aaa; }
         .timer-float .tf-time { font-size: 2rem; font-weight: 300; color: #ff6600; font-variant-numeric: tabular-nums; }
+        .timer-float .tf-dismiss { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #888; padding: 4px 12px; cursor: pointer; font-size: 0.75rem; margin-top: 6px; }
+        .timer-float .tf-dismiss:hover { color: #f44336; border-color: rgba(244,67,54,0.4); }
 
         /* ── Chat drawer ───────────────────────────────── */
         #chat-backdrop {
@@ -565,7 +579,27 @@
                         <span class="dash-card-icon">&#9201;</span> Timers
                     </div>
                     <div class="dash-card-body" id="dash-timers">
-                        <span style="color:#555">None active</span>
+                        <div class="timer-quick-btns">
+                            <button class="tq-btn" onclick="timerQuickSelect(5)">5m</button>
+                            <button class="tq-btn" onclick="timerQuickSelect(10)">10m</button>
+                            <button class="tq-btn" onclick="timerQuickSelect(15)">15m</button>
+                            <button class="tq-btn" onclick="timerQuickSelect(30)">30m</button>
+                        </div>
+                        <div id="timer-adjust" style="display:none">
+                            <div class="timer-adjust-display"><span id="timer-adjust-val">15</span> min</div>
+                            <div class="timer-adjust-btns">
+                                <button onclick="timerAdjust(-10)">-10</button>
+                                <button onclick="timerAdjust(-5)">-5</button>
+                                <button onclick="timerAdjust(-1)">-1</button>
+                                <button onclick="timerAdjust(1)">+1</button>
+                                <button onclick="timerAdjust(5)">+5</button>
+                                <button onclick="timerAdjust(10)">+10</button>
+                            </div>
+                            <div style="display:flex;gap:6px;margin-top:6px">
+                                <button class="tq-start" onclick="timerStart()">Start</button>
+                                <button class="tq-cancel" onclick="timerAdjustCancel()">Cancel</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="dash-clock"><div class="time">${time}</div>${date}</div>
@@ -576,6 +610,27 @@
                     if (el) el.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 }, 1000);
             }
+        }
+
+        // Timer quick-create
+        let timerMinutes = 15;
+        function timerQuickSelect(mins) {
+            timerMinutes = mins;
+            document.getElementById('timer-adjust-val').textContent = mins;
+            document.querySelector('.timer-quick-btns').style.display = 'none';
+            document.getElementById('timer-adjust').style.display = '';
+        }
+        function timerAdjust(delta) {
+            timerMinutes = Math.max(1, timerMinutes + delta);
+            document.getElementById('timer-adjust-val').textContent = timerMinutes;
+        }
+        function timerStart() {
+            socket.emit('timer_action', { action: 'create', minutes: timerMinutes });
+            timerAdjustCancel();
+        }
+        function timerAdjustCancel() {
+            document.querySelector('.timer-quick-btns').style.display = '';
+            document.getElementById('timer-adjust').style.display = 'none';
         }
 
         function dashAddItem() {
@@ -670,9 +725,11 @@
                     const qty = item.quantity ? `<span class="si-qty">${esc(item.quantity)}</span>` : '';
                     const rOpts = [0,3,7,10,14,30].map(d => `<option value="${d}"${(item.recurring_days||0)===d?' selected':''}>${d?d+'d':'Off'}</option>`).join('');
                     const rec = `<select class="si-recurring${item.recurring?' active':''}" onclick="event.stopPropagation()" onchange="socket.emit('shopping_list_action',{action:'set_recurring',item_id:'${item.id}',interval_days:parseInt(this.value)||0})">${rOpts}</select>`;
-                    html += `<div class="shopping-item${gc}" onclick="socket.emit('shopping_list_action',{action:'toggle',item_id:'${item.id}'})">
-                        <div class="si-check"></div><span class="si-name">${esc(item.name)}</span>${qty}${rec}
-                        <button class="si-edit" onclick="event.stopPropagation();slEditItem('${item.id}','${esc(item.name).replace(/'/g,"\\'")}','${esc(item.quantity||'').replace(/'/g,"\\'")}')" title="Edit">&#9998;</button>
+                    html += `<div class="shopping-item${gc}">
+                        <div class="si-check" onclick="socket.emit('shopping_list_action',{action:'toggle',item_id:'${item.id}'})"></div>
+                        <span class="si-name" onclick="event.stopPropagation();slInlineEdit(this,'${item.id}','name','${esc(item.name).replace(/'/g,"\\'")}')" title="Click to edit name">${esc(item.name)}</span>
+                        <span class="si-qty" onclick="event.stopPropagation();slInlineEdit(this,'${item.id}','quantity','${esc(item.quantity||'').replace(/'/g,"\\'")}')" title="Click to edit quantity">${esc(item.quantity||'—')}</span>
+                        ${rec}
                         <button class="si-remove" onclick="event.stopPropagation();socket.emit('shopping_list_action',{action:'remove',item_id:'${item.id}'})" title="Remove">&#10005;</button>
                     </div>`;
                 });
@@ -688,17 +745,41 @@
             const n = document.getElementById('sl-add-name'), q = document.getElementById('sl-add-qty');
             if (n && n.value.trim()) { socket.emit('shopping_list_action', { action:'add_item', name:n.value.trim(), quantity:q?q.value.trim():'' }); n.value=''; if(q) q.value=''; }
         }
-        function slEditItem(id, name, qty) {
-            const newName = prompt('Item name:', name);
-            if (newName === null) return;
-            const newQty = prompt('Quantity (or leave blank):', qty);
-            if (newQty === null) return;
-            socket.emit('shopping_list_action', {
-                action: 'edit_item',
-                item_id: id,
-                name: newName.trim(),
-                quantity: newQty.trim(),
+        function slInlineEdit(el, itemId, field, currentValue) {
+            // Replace the element with an input field for inline editing
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentValue || '';
+            input.className = 'si-inline-edit';
+            input.style.cssText = 'background:rgba(255,255,255,0.1);border:1px solid #ff6600;border-radius:6px;padding:4px 8px;color:#e0e0e0;font-size:0.9rem;width:' + (field === 'quantity' ? '80px' : '180px');
+
+            let saved = false;
+            function save() {
+                if (saved) return;  // Prevent double-fire (blur + Enter)
+                saved = true;
+                const val = input.value.trim();
+                // Only emit if value actually changed
+                if (field === 'name' && val && val !== currentValue) {
+                    socket.emit('shopping_list_action', { action: 'edit_item', item_id: itemId, name: val });
+                } else if (field === 'quantity' && val !== (currentValue || '')) {
+                    socket.emit('shopping_list_action', { action: 'set_quantity', item_id: itemId, quantity: val });
+                } else {
+                    // No change — just restore the original element
+                    el.textContent = currentValue || (field === 'quantity' ? '—' : '');
+                    input.replaceWith(el);
+                }
+            }
+
+            input.addEventListener('keydown', (e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') { input.blur(); }
+                if (e.key === 'Escape') { saved = true; el.textContent = currentValue || (field === 'quantity' ? '—' : ''); input.replaceWith(el); }
             });
+            input.addEventListener('blur', save);
+            input.addEventListener('click', (e) => e.stopPropagation());
+            el.replaceWith(input);
+            input.focus();
+            input.select();
         }
 
         function renderPantry(data) {
@@ -765,7 +846,13 @@
             if (data.timers && data.timers.length > 0) {
                 timerOverlay.innerHTML = data.timers.map(t => {
                     const icon = t.type === 'alarm' ? '&#9200;' : '&#9201;';
-                    return `<div class="timer-float"><div class="tf-icon">${icon}</div><div class="tf-name">${esc(t.description||'Timer')}</div><div class="tf-time">${esc(t.expires_in||'--')}</div></div>`;
+                    const desc = esc(t.description || 'Timer');
+                    return `<div class="timer-float">
+                        <div class="tf-icon">${icon}</div>
+                        <div class="tf-name">${desc}</div>
+                        <div class="tf-time">${esc(t.expires_in||'--')}</div>
+                        <button class="tf-dismiss" onclick="socket.emit('timer_action',{action:'cancel',description:'${desc.replace(/'/g,"\\'")}'})">Cancel</button>
+                    </div>`;
                 }).join('');
                 timerOverlay.classList.add('visible');
             } else { timerOverlay.classList.remove('visible'); timerOverlay.innerHTML = ''; }

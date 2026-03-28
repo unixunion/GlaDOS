@@ -1,11 +1,7 @@
 import queue
 import re
 
-from langchain_core.messages import AIMessageChunk, BaseMessageChunk
 from loguru import logger
-from openai.types.chat import ChatCompletionChunk
-
-from glados.llm.client_type import ClientType
 
 
 class ResponseProcessor:
@@ -16,7 +12,7 @@ class ResponseProcessor:
         "word": None,  # handled separately by word count
     }
 
-    def __init__(self, tts_queue: queue.Queue = None, message_callback=None, client_type: ClientType = ClientType.OPENAI,
+    def __init__(self, tts_queue: queue.Queue = None, message_callback=None, client_type=None,
                  buffer_mode: str = "clause", word_buffer: int = 5):
         """
         Initialize the ResponseProcessor.
@@ -45,20 +41,26 @@ class ResponseProcessor:
             pass
         logger.info(f"ResponseProcessor buffer mode: {buffer_mode}")
 
-    def process_chunk(self, chunk: ChatCompletionChunk | AIMessageChunk):
+    def process_chunk(self, chunk):
         """
-        Append content from the chunk to the current sentence. Finalize the sentence if it ends with punctuation.
+        Append content from the chunk to the current sentence.
+        Accepts either a StreamChunk (normalized) or raw OpenAI/LangChain chunk (legacy).
         """
-
-        if self.client_type is ClientType.OPENAI:
+        # Handle normalized StreamChunk from the backend abstraction
+        if hasattr(chunk, 'content') and hasattr(chunk, 'tool_call_deltas'):
+            content = chunk.content
+        # Legacy: raw OpenAI ChatCompletionChunk
+        elif hasattr(chunk, 'choices'):
             if not chunk.choices[0].delta.content:
                 return
             content = chunk.choices[0].delta.content
-        elif self.client_type is ClientType.LANGCHAIN:
-            if not chunk.content:
-                return
+        # Legacy: raw LangChain AIMessageChunk
+        elif hasattr(chunk, 'content') and not hasattr(chunk, 'tool_call_deltas'):
             content = chunk.content
         else:
+            return
+
+        if not content:
             return
 
         # Strip [THINK]...[/THINK] blocks so they aren't sent to TTS.
