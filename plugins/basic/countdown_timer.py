@@ -317,12 +317,14 @@ class CountdownTimer(RunnableMCPPlugin):
             logger.debug(f"Could not fetch alarms for display: {e}")
 
         if not timers_info:
-            # No active timers or alarms — clear the display back to idle
+            # No active timers or alarms — clear the timer overlay
+            # (send an empty timer update rather than idle, so existing
+            # content like recipes isn't disrupted)
             self.event_system.publish(
                 EventMessage(
                     role="display",
-                    name="idle",
-                    content={},
+                    name="timer",
+                    content={"title": "", "timers": []},
                     process_output=False
                 )
             )

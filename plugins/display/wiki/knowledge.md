@@ -158,9 +158,19 @@ France: France is a country located in Western Europe. Its capital is Paris...
 
 The LLM sees this alongside the user's question and can use the passages to give an accurate, sourced answer. If no passages meet the threshold, nothing is injected and the LLM answers from its own training data.
 
+## Startup Behavior
+
+Both Knowledge RAG and Conversation RAG initialize their Qdrant connections and embedding models in **background threads** during startup. This means:
+
+- GlaDOS responds to voice/text immediately after boot — no waiting for Qdrant
+- The first few requests may not include RAG context if init is still in progress
+- Once ready, a success message appears in the log: `[KnowledgeRAG] Background init complete — ready`
+- If Qdrant is unavailable, RAG silently skips without blocking anything
+
 ## Troubleshooting
 
 - **"Cannot connect to Qdrant"**: Make sure Docker is running and port 6333 is accessible
 - **No results for queries**: Check `knowledge_threshold` (try lowering to 0.3) and verify the collection has data: `curl http://localhost:6333/collections/wikipedia`
 - **Slow embedding**: The embedding model downloads on first use (~90MB). Use GPU if available for faster encoding.
 - **RAG interfering with tools**: The hook skips inputs shorter than 10 characters and only runs if the request hasn't already been handled by memory or NLP fast-path
+- **"Not ready yet" in logs**: Normal during the first few seconds after startup while the embedding model loads in the background

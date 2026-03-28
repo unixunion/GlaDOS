@@ -204,6 +204,13 @@ class ResponseProcessor:
             logger.debug(f"Storing complete assistant response ({len(response)} chars)")
             if self.message_callback:
                 self.message_callback(response)
+            # Emit assistant_end with full text so the display always has the complete response
+            if self._event_system:
+                from glados.system.event_system import EventMessage
+                self._event_system.publish(EventMessage(
+                    "chat", "response_complete",
+                    {"role": "assistant_end", "content": response}
+                ))
         self.full_response = ""
 
 

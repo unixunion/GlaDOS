@@ -284,6 +284,7 @@ class MyPlugin(RunnableMCPPlugin):
 | **DisplayPlugin** | Tool + Server | `plugins/display/display_server.py` | show_on_display, Flask+SocketIO web display |
 | **RecipeAPI** | Tool | `plugins/recipes/recipe_api.py` | search_recipes, select_recipe |
 | **CookingContext** | NLP-only | `plugins/recipes/cooking_context.py` | Step navigation (next/previous/repeat/ingredients) |
+| **PantryPlugin** | Tool + Display | `plugins/pantry/pantry_plugin.py` | Shopping list, pantry inventory, expiry tracking, recipe integration (12 tools) |
 | **LoggingPlugin** | Tool | `plugins/system/logging.py` | get_logs diagnostic tool |
 | **Observe** | Tool | `plugins/vision/observe.py` | get_camera_feed (POC) |
 

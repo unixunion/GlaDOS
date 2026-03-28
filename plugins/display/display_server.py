@@ -130,6 +130,20 @@ class DisplayPlugin(RunnablePlugin):
                     process_output=True
                 ))
 
+        @self._socketio.on("shopping_list_action")
+        def handle_shopping_list_action(data):
+            logger.info(f"[Display] Shopping list action: {data}")
+            self.event_system.publish(EventMessage(
+                "ui", "shopping_list_action", data
+            ))
+
+        @self._socketio.on("pantry_action")
+        def handle_pantry_action(data):
+            logger.info(f"[Display] Pantry action: {data}")
+            self.event_system.publish(EventMessage(
+                "ui", "pantry_action", data
+            ))
+
     def _on_display_event(self, event: EventMessage):
         """Handle display.* events and push to all connected browsers."""
         logger.info(f"Display event received: {event.name}")

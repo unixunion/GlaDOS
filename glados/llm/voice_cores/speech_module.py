@@ -54,7 +54,6 @@ class SpeechModule(ABC):
 
     def stop(self):
         logger.info("Stopping SpeechModule...")
-        self._tts_queue.put("Shutting down...")
         self._stop_event.set()
         self._thread.join()
         if self._output_stream is not None:
@@ -62,7 +61,15 @@ class SpeechModule(ABC):
             self._output_stream = None
 
     def _on_interrupt(self, event: EventMessage):
-        """Handle TTS interruption from wake word during speech."""
+        """Handle TTS interruption from wake word or UI stop button.
+
+        IMPORTANT: Do NOT touch _output_stream here. This handler runs on the
+        EventSystem/SocketIO thread while _play_audio may be blocked inside
+        stream.write() on the TTS thread. Closing or aborting the stream from
+        another thread causes a segfault in PortAudio. Instead, just set the
+        _interrupted flag — the TTS thread checks it between chunks and after
+        write() returns (or raises), then handles stream cleanup itself.
+        """
         logger.info("TTS interrupted by wake word")
         self._interrupted.set()
 
@@ -77,17 +84,6 @@ class SpeechModule(ABC):
         if flushed:
             logger.info(f"Flushed {flushed} queued TTS item(s)")
 
-        # Stop any active audio output and fully clean up the stream
-        if self._output_stream is not None:
-            try:
-                if self._output_stream.active:
-                    self._output_stream.abort()
-                self._output_stream.close()
-            except Exception as e:
-                logger.debug(f"Error closing audio stream: {e}")
-            finally:
-                self._output_stream = None
-
         # Clear speaking lock so the mic activates
         self._speaking_lock.clear()
         self.event_system.publish(EventMessage("status", "idle", {"message": "Interrupted"}))
@@ -100,6 +96,14 @@ class SpeechModule(ABC):
                 # Check if we were interrupted while waiting
                 if self._interrupted.is_set():
                     self._interrupted.clear()
+                    # Close the stream on the TTS thread (safe — no concurrent write)
+                    if self._output_stream is not None:
+                        try:
+                            self._output_stream.abort()
+                            self._output_stream.close()
+                        except Exception:
+                            pass
+                        self._output_stream = None
                     while not self._tts_queue.empty():
                         try:
                             item = self._tts_queue.get_nowait()

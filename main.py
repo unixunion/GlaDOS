@@ -17,6 +17,11 @@ from glados.llm.speech_detection_cores.whisper_detection_module import WhisperVo
 logger.remove()
 logger.add(sys.stderr, level="INFO")
 
+# Suppress noisy warnings from HuggingFace/sentence-transformers/ChromaDB embedding model
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 from glados import tts, vad
 from glados.config import GladosConfig, VAD_MODEL
 from glados.llm.voice_cores.speech_module import SpeechModule

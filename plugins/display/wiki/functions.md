@@ -108,6 +108,38 @@ music_dir: ~/Music
 
 - Music is paused when an alarm fires and resumed after dismissal
 
+## Shopping List
+
+| Say this | What happens |
+|----------|-------------|
+| "add eggs to the shopping list" | Adds item (auto-categorized) |
+| "we're out of butter" | Adds to list + removes from pantry |
+| "we buy milk every two weeks" | Recurring item |
+| "what's on the shopping list" | Shows interactive list on display |
+| "remove milk from the list" | Removes item |
+| "we got everything except eggs" | Post-shopping: moves bought items to pantry |
+| "shopping done" | Moves all items to pantry |
+
+- Interactive display with checkboxes, category grouping, and "Done Shopping" button
+- See [Shopping List & Pantry](pantry) for full details
+
+## Pantry
+
+| Say this | What happens |
+|----------|-------------|
+| "I put the chicken in freezer drawer 2" | Records storage location |
+| "the bacon expires on the 24th" | Sets expiry date |
+| "where is the flour" | Finds item location |
+| "do we have eggs" | Checks pantry inventory |
+| "what's expiring soon" | Lists items expiring within 7 days |
+| "what's in the fridge" | Shows filtered pantry view |
+| "what can I make with what's in the pantry" | Recipe suggestions from pantry contents |
+| "add the ingredients for that to the list" | Adds missing recipe ingredients to shopping list |
+
+- Expiry colour coding on display: red (expired), orange (1-3 days), yellow (4-7 days)
+- Proactive TTS warnings for items expiring within 2 days
+- See [Shopping List & Pantry](pantry) for full details
+
 ## Display
 
 Web-based display at `http://<host>:5001` for a kitchen iPad or browser.

@@ -58,7 +58,8 @@
         .activity-icon { margin-right: 4px; }
 
         #top-right { display: flex; gap: 12px; align-items: center; font-size: 0.8rem; }
-        #wiki-link { color: #ff6600; text-decoration: none; }
+        #wiki-link, .nav-link { color: #ff6600; text-decoration: none; cursor: pointer; }
+        .nav-link:hover { text-decoration: underline; }
         #connection-status { color: #4caf50; }
         #connection-status.disconnected { color: #f44336; }
 
@@ -70,16 +71,23 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
-            justify-content: flex-end;
+        }
+
+        /* Push bubbles to bottom when content doesn't fill the panel */
+        #chat-history::before {
+            content: '';
+            flex: 1;
         }
 
         .chat-bubble {
-            max-width: 95%;
+            max-width: 85%;
             padding: 8px 12px;
             border-radius: 12px;
             font-size: 0.9rem;
             line-height: 1.4;
             word-wrap: break-word;
+            overflow-wrap: break-word;
+            word-break: break-word;
         }
 
         .chat-bubble.user {
@@ -107,6 +115,13 @@
             font-size: 0.65rem;
             color: #666;
             margin-top: 4px;
+        }
+
+        .bubble-no-sources {
+            font-size: 0.65rem;
+            color: #666;
+            margin-top: 2px;
+            font-style: italic;
         }
 
         /* Collapsible bubbles (knowledge, thinking, tool) */
@@ -313,6 +328,284 @@
         .timer-countdown { font-size: 3.5rem; font-weight: 300; color: #ff6600; font-variant-numeric: tabular-nums; }
         .timer-expires { font-size: 0.9rem; color: #666; margin-top: 4px; }
 
+        /* ── Floating timer overlay ────────────────────── */
+        #timer-overlay {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            z-index: 50;
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+        }
+
+        #timer-overlay.visible { display: flex; }
+
+        .timer-float-card {
+            background: rgba(20, 20, 40, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 102, 0, 0.2);
+            border-radius: 12px;
+            padding: 12px 20px;
+            text-align: center;
+            min-width: 180px;
+            pointer-events: auto;
+        }
+
+        .timer-float-card .timer-type { font-size: 1.1rem; margin-bottom: 2px; }
+        .timer-float-card .timer-name { font-size: 0.85rem; color: #aaa; margin-bottom: 4px; }
+        .timer-float-card .timer-countdown { font-size: 2rem; font-weight: 300; color: #ff6600; font-variant-numeric: tabular-nums; }
+        .timer-float-card .timer-expires { font-size: 0.75rem; color: #666; margin-top: 2px; }
+
+        /* ── Shopping List view ────────────────────────── */
+        .shopping-list { padding: 0 24px 24px; }
+        .shopping-category { margin-bottom: 16px; }
+        .shopping-category-header {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #888;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            margin-bottom: 6px;
+        }
+        .shopping-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 4px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .shopping-item:hover { background: rgba(255,255,255,0.04); }
+        .shopping-item.got { opacity: 0.4; }
+        .shopping-item.got .shopping-item-name { text-decoration: line-through; }
+        .shopping-item-check {
+            width: 22px; height: 22px;
+            border: 2px solid #555;
+            border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.15s;
+        }
+        .shopping-item.got .shopping-item-check {
+            background: #ff6600;
+            border-color: #ff6600;
+        }
+        .shopping-item-check::after {
+            content: '';
+            display: none;
+            width: 6px; height: 10px;
+            border: solid #fff; border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+            margin-bottom: 2px;
+        }
+        .shopping-item.got .shopping-item-check::after { display: block; }
+        .shopping-item-name { flex: 1; font-size: 0.95rem; }
+        .shopping-item-qty {
+            font-size: 0.75rem;
+            color: #aaa;
+            background: rgba(255,255,255,0.06);
+            padding: 2px 8px;
+            border-radius: 8px;
+        }
+        .shopping-recurring-select {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 4px;
+            color: #888;
+            font-size: 0.7rem;
+            padding: 1px 2px;
+            cursor: pointer;
+            color-scheme: dark;
+        }
+        .shopping-recurring-select.active { color: #ff6600; border-color: rgba(255,102,0,0.3); }
+        .shopping-recurring-select:hover { border-color: #ff6600; }
+        .shopping-add-form {
+            display: flex;
+            gap: 8px;
+            padding: 8px 24px 12px;
+        }
+        .shopping-add-form input {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: #e0e0e0;
+            font-size: 0.85rem;
+        }
+        .shopping-add-form input:first-child { flex: 1; }
+        .shopping-add-form input:focus { border-color: #ff6600; outline: none; }
+        .shopping-add-form button {
+            background: #ff6600;
+            color: #fff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .shopping-item-remove {
+            font-size: 0.8rem; color: #666;
+            background: none; border: none; cursor: pointer;
+            padding: 4px 8px; border-radius: 4px;
+        }
+        .shopping-item-remove:hover { color: #e55; background: rgba(255,0,0,0.08); }
+        .shopping-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 24px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            margin-top: 8px;
+        }
+        .shopping-progress { font-size: 0.85rem; color: #888; }
+        .shopping-done-btn {
+            background: #ff6600;
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .shopping-done-btn:hover { opacity: 0.85; }
+
+        /* ── Pantry view ───────────────────────────────── */
+        .pantry-view { padding: 0 24px 24px; }
+        .pantry-expiry-banner {
+            background: rgba(255,80,0,0.12);
+            border: 1px solid rgba(255,80,0,0.25);
+            border-radius: 10px;
+            padding: 10px 16px;
+            margin-bottom: 16px;
+            font-size: 0.85rem;
+        }
+        .pantry-expiry-banner-title { color: #ff6600; font-weight: 600; margin-bottom: 4px; }
+        .pantry-location {
+            margin-bottom: 12px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .pantry-location-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 16px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.04);
+            transition: background 0.15s;
+        }
+        .pantry-location-header:hover { background: rgba(255,255,255,0.06); }
+        .pantry-location-name { font-size: 0.95rem; font-weight: 500; }
+        .pantry-location-count {
+            font-size: 0.75rem;
+            color: #888;
+            background: rgba(255,255,255,0.06);
+            padding: 2px 8px;
+            border-radius: 8px;
+        }
+        .pantry-location-items { padding: 0 16px; display: none; }
+        .pantry-location.expanded .pantry-location-items { display: block; }
+        .pantry-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            font-size: 0.9rem;
+        }
+        .pantry-item:last-child { border-bottom: none; }
+        .pantry-item-name { flex: 1; }
+        .pantry-item-notes { font-size: 0.75rem; color: #888; }
+        .pantry-item-expiry {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 8px;
+        }
+        .pantry-item-expiry.expired { color: #ff4444; background: rgba(255,68,68,0.12); }
+        .pantry-item-expiry.expiring-soon { color: #ff8800; background: rgba(255,136,0,0.12); }
+        .pantry-item-expiry.expiring-week { color: #ffcc00; background: rgba(255,204,0,0.10); }
+        .pantry-item-expiry.ok { color: #66bb6a; background: rgba(102,187,106,0.10); }
+        .pantry-item-remove {
+            font-size: 0.8rem; color: #666;
+            background: none; border: none; cursor: pointer;
+            padding: 4px 8px; border-radius: 4px;
+        }
+        .pantry-item-remove:hover { color: #e55; background: rgba(255,0,0,0.08); }
+        .pantry-expiry-picker {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 4px;
+            color: inherit;
+            font-size: 0.7rem;
+            padding: 1px 4px;
+            width: 110px;
+            color-scheme: dark;
+            cursor: pointer;
+        }
+        .pantry-expiry-picker:hover { border-color: #ff6600; }
+        .pantry-expiry-picker.empty { width: 28px; opacity: 0.5; }
+        .pantry-expiry-picker.empty:hover { opacity: 1; }
+        .pantry-item-set-expiry { display: inline-flex; align-items: center; }
+        .pantry-add-item {
+            display: flex;
+            gap: 6px;
+            padding: 8px 0;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            margin-top: 4px;
+        }
+        .pantry-add-item input {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px;
+            padding: 5px 8px;
+            color: #e0e0e0;
+            font-size: 0.8rem;
+        }
+        .pantry-add-item input:first-child { flex: 1; }
+        .pantry-add-item input:focus { border-color: #ff6600; outline: none; }
+        .pantry-add-item input[type="date"] { color-scheme: dark; }
+        .pantry-add-item button {
+            background: #ff6600;
+            color: #fff;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        .pantry-empty { color: #555; font-style: italic; padding: 8px 0; font-size: 0.85rem; }
+        .pantry-add-location {
+            display: flex;
+            gap: 8px;
+            padding: 12px 0;
+            margin-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+        }
+        .pantry-add-location input {
+            flex: 1;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 6px 12px;
+            color: #e0e0e0;
+            font-size: 0.85rem;
+        }
+        .pantry-add-location button {
+            background: #ff6600;
+            color: #fff;
+            border: none;
+            padding: 6px 16px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
         .info-content { font-size: 1rem; color: #ccc; white-space: pre-wrap; line-height: 1.6; }
 
         /* Mobile: stack vertically */
@@ -327,6 +620,9 @@
                 max-width: 90%;
                 font-size: 1.2rem;
             }
+            #timer-overlay { top: 8px; right: 8px; }
+            .timer-float-card { min-width: 140px; padding: 8px 14px; }
+            .timer-float-card .timer-countdown { font-size: 1.5rem; }
         }
     </style>
 </head>
@@ -336,6 +632,8 @@
         <div id="top-bar">
             <div id="activity-indicator"><span class="activity-icon">🏠</span>general</div>
             <div id="top-right">
+                <span class="nav-link" onclick="socket.emit('shopping_list_action', {action:'show'})">List</span>
+                <span class="nav-link" onclick="socket.emit('pantry_action', {action:'show'})">Pantry</span>
                 <a id="wiki-link" href="/wiki">Wiki</a>
                 <div id="connection-status" class="connected">connected</div>
             </div>
@@ -352,6 +650,7 @@
     <div id="content-panel">
         <img id="glados-avatar" src="/images/glados.gif" alt="GlaDOS">
         <div id="display-container"></div>
+        <div id="timer-overlay"></div>
     </div>
 
     <!-- Status toast -->
@@ -388,12 +687,23 @@
             }
         });
 
+        const timerOverlay = document.getElementById('timer-overlay');
+
         function renderView(data) {
             const vt = data.view_type || 'idle';
+            if (vt === 'timer') {
+                // Timers float as an overlay — don't replace the main content
+                renderTimerOverlay(data);
+                return;
+            }
+            // Non-timer views clear the timer overlay
+            timerOverlay.classList.remove('visible');
+            timerOverlay.innerHTML = '';
             if (vt === 'idle') renderIdle();
             else if (vt === 'recipe') renderRecipe(data);
-            else if (vt === 'timer') renderTimer(data);
             else if (vt === 'info') renderInfo(data);
+            else if (vt === 'shopping_list') renderShoppingList(data);
+            else if (vt === 'pantry') renderPantry(data);
             else renderIdle();
         }
 
@@ -421,15 +731,17 @@
             }
         }
 
-        function renderTimer(data) {
+        function renderTimerOverlay(data) {
             if (data.timers && data.timers.length > 0) {
                 const cards = data.timers.map(t => {
                     const icon = t.type === 'alarm' ? '⏰' : '⏱';
-                    return `<div class="timer-card"><div class="timer-type">${icon}</div><div class="timer-name">${esc(t.description || 'Timer')}</div><div class="timer-countdown">${esc(t.expires_in || '--')}</div><div class="timer-expires">until ${esc(t.expires_at || '')}</div></div>`;
+                    return `<div class="timer-float-card"><div class="timer-type">${icon}</div><div class="timer-name">${esc(t.description || 'Timer')}</div><div class="timer-countdown">${esc(t.expires_in || '--')}</div><div class="timer-expires">until ${esc(t.expires_at || '')}</div></div>`;
                 }).join('');
-                container.innerHTML = `<div class="view-title">${esc(data.title || 'Timers')}</div><div class="timer-display">${cards}</div>`;
+                timerOverlay.innerHTML = cards;
+                timerOverlay.classList.add('visible');
             } else {
-                container.innerHTML = `<div class="timer-display"><div class="timer-card"><div class="timer-name">${esc(data.title || 'Timer')}</div><div class="timer-countdown">${esc(data.content || '')}</div></div></div>`;
+                timerOverlay.classList.remove('visible');
+                timerOverlay.innerHTML = '';
             }
         }
 
@@ -437,7 +749,202 @@
             container.innerHTML = `<div class="view-title">${esc(data.title || 'Information')}</div><div class="info-content">${esc(data.content || '')}</div>`;
         }
 
+        function renderShoppingList(data) {
+            const items = data.items || [];
+            const total = data.total || items.length;
+            const gotCount = items.filter(i => i.got).length;
+
+            // Add-item form (always shown)
+            let addForm = `<div class="shopping-add-form">
+                <input type="text" id="add-item-name" placeholder="Add item..." onkeydown="if(event.key==='Enter') addShoppingItemUI()">
+                <input type="text" id="add-item-qty" placeholder="Qty" style="width:80px;" onkeydown="if(event.key==='Enter') addShoppingItemUI()">
+                <button onclick="addShoppingItemUI()">Add</button>
+            </div>`;
+
+            if (items.length === 0) {
+                container.innerHTML = `<div class="view-title">Shopping List</div>${addForm}<div class="info-content" style="text-align:center; color:#666; padding:40px;">The shopping list is empty.</div>`;
+                return;
+            }
+
+            // Group by category
+            const categories = {};
+            const categoryOrder = ['dairy', 'produce', 'meat', 'seafood', 'bakery', 'frozen', 'dry_goods', 'beverages', 'condiments', 'snacks', 'other'];
+            const categoryLabels = {
+                dairy: 'Dairy & Eggs', produce: 'Produce', meat: 'Meat', seafood: 'Seafood',
+                bakery: 'Bakery', frozen: 'Frozen', dry_goods: 'Dry Goods',
+                beverages: 'Beverages', condiments: 'Condiments', snacks: 'Snacks', other: 'Other'
+            };
+            items.forEach(item => {
+                const cat = item.category || 'other';
+                if (!categories[cat]) categories[cat] = [];
+                categories[cat].push(item);
+            });
+
+            let html = '';
+            categoryOrder.forEach(cat => {
+                if (!categories[cat] || categories[cat].length === 0) return;
+                const label = categoryLabels[cat] || cat;
+                html += `<div class="shopping-category"><div class="shopping-category-header">${esc(label)}</div>`;
+                categories[cat].sort((a, b) => a.name.localeCompare(b.name));
+                categories[cat].forEach(item => {
+                    const gotClass = item.got ? ' got' : '';
+                    const qty = item.quantity ? `<span class="shopping-item-qty">${esc(item.quantity)}</span>` : '';
+                    const recurringOpts = [0,3,7,10,14,30].map(d => {
+                        const label = d === 0 ? 'Off' : d + 'd';
+                        const sel = (item.recurring_days || 0) === d ? ' selected' : '';
+                        return `<option value="${d}"${sel}>${label}</option>`;
+                    }).join('');
+                    const recurringBadge = `<select class="shopping-recurring-select${item.recurring ? ' active' : ''}" onclick="event.stopPropagation()" onchange="setRecurring('${item.id}', this.value)" title="Recurring interval">${recurringOpts}</select>`;
+                    html += `<div class="shopping-item${gotClass}" onclick="toggleShoppingItem('${item.id}')">
+                        <div class="shopping-item-check"></div>
+                        <span class="shopping-item-name">${esc(item.name)}</span>
+                        ${qty}${recurringBadge}
+                        <button class="shopping-item-remove" onclick="event.stopPropagation(); removeShoppingItem('${item.id}')" title="Remove">✕</button>
+                    </div>`;
+                });
+                html += '</div>';
+            });
+
+            container.innerHTML = `<div class="view-title">${esc(data.title || 'Shopping List')}</div>
+                ${addForm}
+                <div class="shopping-list">${html}</div>
+                <div class="shopping-footer">
+                    <span class="shopping-progress">${gotCount} of ${total} items</span>
+                    ${gotCount > 0 ? '<button class="shopping-done-btn" onclick="completeShoppingUI()">Done Shopping</button>' : ''}
+                </div>`;
+        }
+
+        function toggleShoppingItem(itemId) {
+            socket.emit('shopping_list_action', { action: 'toggle', item_id: itemId });
+        }
+        function removeShoppingItem(itemId) {
+            socket.emit('shopping_list_action', { action: 'remove', item_id: itemId });
+        }
+        function completeShoppingUI() {
+            socket.emit('shopping_list_action', { action: 'complete' });
+        }
+        function addShoppingItemUI() {
+            const nameEl = document.getElementById('add-item-name');
+            const qtyEl = document.getElementById('add-item-qty');
+            if (nameEl && nameEl.value.trim()) {
+                socket.emit('shopping_list_action', {
+                    action: 'add_item',
+                    name: nameEl.value.trim(),
+                    quantity: qtyEl ? qtyEl.value.trim() : '',
+                });
+                nameEl.value = '';
+                if (qtyEl) qtyEl.value = '';
+            }
+        }
+        function setRecurring(itemId, value) {
+            socket.emit('shopping_list_action', { action: 'set_recurring', item_id: itemId, interval_days: parseInt(value) || 0 });
+        }
+
+        function renderPantry(data) {
+            const locations = data.locations || [];
+            const expiringSoon = data.expiring_soon || [];
+
+            let html = '';
+
+            // Expiring soon banner
+            if (expiringSoon.length > 0) {
+                const items = expiringSoon.map(i => {
+                    const label = i.days_left < 0 ? 'expired' : i.days_left === 0 ? 'today' : i.days_left === 1 ? 'tomorrow' : `in ${i.days_left} days`;
+                    return `<div>${esc(i.name)} (${esc(i.location)}) — ${label}</div>`;
+                }).join('');
+                html += `<div class="pantry-expiry-banner"><div class="pantry-expiry-banner-title">⚠ Expiring Soon</div>${items}</div>`;
+            }
+
+            // Locations
+            locations.forEach((loc, idx) => {
+                const expanded = idx === 0 || loc.items.length > 0 ? ' expanded' : '';
+                const itemCount = loc.items.length;
+                let itemsHtml = '';
+                if (itemCount === 0) {
+                    itemsHtml = '<div class="pantry-empty">Empty</div>';
+                } else {
+                    loc.items.forEach(item => {
+                        const notes = item.notes ? `<span class="pantry-item-notes">${esc(item.notes)}</span>` : '';
+                        let expiryHtml = '';
+                        if (item.expires) {
+                            const expDate = new Date(item.expires + 'T00:00:00');
+                            const today = new Date(); today.setHours(0,0,0,0);
+                            const daysLeft = Math.floor((expDate - today) / 86400000);
+                            let cls = 'ok';
+                            if (daysLeft <= 0) cls = 'expired';
+                            else if (daysLeft <= 3) cls = 'expiring-soon';
+                            else if (daysLeft <= 7) cls = 'expiring-week';
+                            const relLabel = daysLeft < 0 ? 'expired' : daysLeft === 0 ? 'today' : daysLeft === 1 ? 'tomorrow' : `${daysLeft}d`;
+                            expiryHtml = `<span class="pantry-item-expiry ${cls}">${relLabel} <input type="date" class="pantry-expiry-picker" value="${item.expires}" onchange="setPantryExpiry('${item.id}', this.value)" onclick="event.stopPropagation()"></span>`;
+                        } else {
+                            expiryHtml = `<span class="pantry-item-set-expiry"><input type="date" class="pantry-expiry-picker empty" onchange="setPantryExpiry('${item.id}', this.value)" onclick="event.stopPropagation()" title="Set expiry"></span>`;
+                        }
+                        itemsHtml += `<div class="pantry-item">
+                            <span class="pantry-item-name">${esc(item.name)}</span>
+                            ${notes}${expiryHtml}
+                            <button class="pantry-item-remove" onclick="removePantryItem('${item.id}')" title="Remove">✕</button>
+                        </div>`;
+                    });
+                }
+                // Per-location add item form
+                const addItemHtml = `<div class="pantry-add-item">
+                    <input type="text" placeholder="Add item..." id="pantry-add-name-${loc.id}" onkeydown="if(event.key==='Enter') addPantryItemToLocation('${loc.id}')">
+                    <input type="text" placeholder="Notes" style="width:80px;" id="pantry-add-notes-${loc.id}" onkeydown="if(event.key==='Enter') addPantryItemToLocation('${loc.id}')">
+                    <input type="date" id="pantry-add-exp-${loc.id}" title="Expiry date" style="width:130px;">
+                    <button onclick="addPantryItemToLocation('${loc.id}')">+</button>
+                </div>`;
+                html += `<div class="pantry-location${expanded}">
+                    <div class="pantry-location-header" onclick="this.parentElement.classList.toggle('expanded')">
+                        <span class="pantry-location-name">${esc(loc.name)}</span>
+                        <span class="pantry-location-count">${itemCount}</span>
+                    </div>
+                    <div class="pantry-location-items">${itemsHtml}${addItemHtml}</div>
+                </div>`;
+            });
+
+            // Add location input
+            html += `<div class="pantry-add-location">
+                <input type="text" id="new-location-input" placeholder="New location name..." onkeydown="if(event.key==='Enter') addPantryLocation()">
+                <button onclick="addPantryLocation()">Add</button>
+            </div>`;
+
+            container.innerHTML = `<div class="view-title">${esc(data.title || 'Pantry')}</div><div class="pantry-view">${html}</div>`;
+        }
+
+        function removePantryItem(itemId) {
+            socket.emit('pantry_action', { action: 'remove_item', item_id: itemId });
+        }
+        function addPantryLocation() {
+            const input = document.getElementById('new-location-input');
+            if (input && input.value.trim()) {
+                socket.emit('pantry_action', { action: 'add_location', name: input.value.trim() });
+                input.value = '';
+            }
+        }
+        function addPantryItemToLocation(locationId) {
+            const nameEl = document.getElementById('pantry-add-name-' + locationId);
+            const notesEl = document.getElementById('pantry-add-notes-' + locationId);
+            const expEl = document.getElementById('pantry-add-exp-' + locationId);
+            if (nameEl && nameEl.value.trim()) {
+                socket.emit('pantry_action', {
+                    action: 'add_item',
+                    location_id: locationId,
+                    name: nameEl.value.trim(),
+                    notes: notesEl ? notesEl.value.trim() : '',
+                    expires: expEl ? expEl.value : '',
+                });
+                nameEl.value = '';
+                if (notesEl) notesEl.value = '';
+                if (expEl) expEl.value = '';
+            }
+        }
+        function setPantryExpiry(itemId, value) {
+            socket.emit('pantry_action', { action: 'set_expiry', item_id: itemId, expires: value || '' });
+        }
+
         // ── Chat messages (left panel) ─────────────────
+        let lastResponseHadKnowledge = false;
+
         socket.on('chat_message', (data) => {
             const role = data.role || 'system';
 
@@ -445,6 +952,7 @@
                 // Only voice input arrives here (display input is rendered locally)
                 finalizeStreaming();
                 addBubble('user', data.content);
+                lastResponseHadKnowledge = false;  // reset for upcoming response
             }
             else if (role === 'assistant_start') {
                 finalizeStreaming();
@@ -459,13 +967,33 @@
                 scrollChat();
             }
             else if (role === 'assistant_end') {
+                // Ensure full text is shown even if token events were delayed
+                if (data.content) {
+                    if (!currentAssistantBubble) {
+                        currentAssistantBubble = addBubble('assistant', '', true);
+                    }
+                    const streamEl = currentAssistantBubble.querySelector('.streaming');
+                    if (streamEl) streamEl.textContent = data.content;
+                }
+                // Add "no sources" badge if knowledge RAG was attempted but found nothing
+                if (!lastResponseHadKnowledge && currentAssistantBubble) {
+                    const badge = document.createElement('div');
+                    badge.className = 'bubble-no-sources';
+                    badge.textContent = 'answered from model \u2014 no knowledge base sources';
+                    currentAssistantBubble.appendChild(badge);
+                }
+                lastResponseHadKnowledge = false;
                 finalizeStreaming();
             }
             else if (role === 'spoken') {
-                // Spoken text replaces streaming tokens (since TTS processes the same text)
-                // Don't add to bubble — the streamed tokens already show the text
+                // Spoken text — streamed tokens + assistant_end already handle display
+            }
+            else if (role === 'knowledge_miss') {
+                lastResponseHadKnowledge = false;
+                handleStatusToast({status: 'idle', message: 'No knowledge base matches'});
             }
             else if (role === 'knowledge') {
+                lastResponseHadKnowledge = true;
                 finalizeStreaming();
                 const srcNames = (data.sources || []).map(s => s.title || s.source || '?').join(', ');
                 const label = srcNames ? `📚 Knowledge: ${srcNames}` : '📚 Knowledge';

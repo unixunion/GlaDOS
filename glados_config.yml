@@ -198,7 +198,7 @@ Glados:
   knowledge_collections:
     - wikipedia
   knowledge_top_k: 3          # passages to retrieve per query
-  knowledge_threshold: 0.5    # minimum similarity score
+  knowledge_threshold: 0.65    # minimum similarity score
   memory_enabled: true
   memory_db_path: "data/memory_db"
   memory_top_k: 5

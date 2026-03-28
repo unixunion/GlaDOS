@@ -7,6 +7,7 @@ exchanges from Qdrant via semantic search.
 PRE_LLM hook: searches for relevant prior conversations and injects them
 POST_RESPONSE hook: stores the current exchange for future retrieval
 """
+import threading
 import time
 
 from loguru import logger
@@ -28,18 +29,31 @@ class ConversationRAG(RunnableMCPPlugin):
         embed_model = getattr(config, "knowledge_embed_model", "all-MiniLM-L6-v2")
 
         self._store = None
-        if self.enabled:
-            try:
-                from glados.llm.memory.conversation_store import ConversationStore
-                self._store = ConversationStore(
-                    qdrant_url=qdrant_url,
-                    embed_model_name=embed_model,
-                )
-            except Exception as e:
-                logger.warning(f"[ConversationRAG] Failed to init store: {e}")
+        self._ready = False
+        self._qdrant_url = qdrant_url
+        self._embed_model_name = embed_model
+
+    def _init_store(self) -> bool:
+        """Initialize the conversation store. Thread-safe."""
+        if self._ready:
+            return True
+        try:
+            from glados.llm.memory.conversation_store import ConversationStore
+            self._store = ConversationStore(
+                qdrant_url=self._qdrant_url,
+                embed_model_name=self._embed_model_name,
+            )
+            # Force client init now (loads embedding model)
+            count = self._store.get_count()
+            self._ready = True
+            logger.success(f"[ConversationRAG] Ready — {count} prior exchanges")
+            return True
+        except Exception as e:
+            logger.warning(f"[ConversationRAG] Init failed: {e}")
+            return False
 
     def start(self):
-        if not self.enabled or not self._store:
+        if not self.enabled:
             logger.info("[ConversationRAG] Disabled via config")
             return
 
@@ -57,8 +71,11 @@ class ConversationRAG(RunnableMCPPlugin):
             priority=50,
         )
 
-        count = self._store.get_count()
-        logger.success(f"[ConversationRAG] Active — {count} prior exchanges, top_k={self.top_k}")
+        # Initialize in background so startup isn't blocked
+        def _bg_init():
+            logger.info("[ConversationRAG] Background init starting...")
+            self._init_store()
+        threading.Thread(target=_bg_init, daemon=True, name="conv-rag-init").start()
 
     def stop(self):
         pass
@@ -70,6 +87,8 @@ class ConversationRAG(RunnableMCPPlugin):
     def _pre_llm_hook(self, ctx: ChatContext) -> None:
         """Search for relevant prior exchanges and inject into context."""
         if ctx.handled:
+            return
+        if not self._ready:
             return
 
         # Skip very short inputs
@@ -106,7 +125,7 @@ class ConversationRAG(RunnableMCPPlugin):
 
     def _post_response_hook(self, ctx: ChatContext) -> None:
         """Store the user+assistant exchange for future retrieval."""
-        if not ctx.user_text:
+        if not ctx.user_text or not self._ready:
             return
 
         # Get the assistant's response from the extra dict or message manager

@@ -33,6 +33,8 @@ class KnowledgeRAG(RunnableMCPPlugin):
 
         self._qdrant = None
         self._embed_model = None
+        self._ready = False  # Set True once background init completes
+        self._init_lock = threading.Lock()
 
         if self.enabled and self.collections:
             collections_str = ", ".join(self.collections)
@@ -49,30 +51,33 @@ class KnowledgeRAG(RunnableMCPPlugin):
             )
 
     def _init_clients(self) -> bool:
-        """Lazy initialization of Qdrant client and embedding model."""
-        if self._qdrant is not None:
+        """Initialize Qdrant client and embedding model. Thread-safe."""
+        if self._ready:
             return True
-        try:
-            from qdrant_client import QdrantClient
-            self._qdrant = QdrantClient(url=self.qdrant_url, timeout=5)
-            # Verify connection
-            self._qdrant.get_collections()
-            logger.info(f"[KnowledgeRAG] Connected to Qdrant at {self.qdrant_url}")
-        except Exception as e:
-            logger.warning(f"[KnowledgeRAG] Cannot connect to Qdrant at {self.qdrant_url}: {e}")
-            self._qdrant = None
-            return False
+        with self._init_lock:
+            if self._ready:
+                return True
+            try:
+                from qdrant_client import QdrantClient
+                self._qdrant = QdrantClient(url=self.qdrant_url, timeout=5)
+                self._qdrant.get_collections()
+                logger.info(f"[KnowledgeRAG] Connected to Qdrant at {self.qdrant_url}")
+            except Exception as e:
+                logger.warning(f"[KnowledgeRAG] Cannot connect to Qdrant at {self.qdrant_url}: {e}")
+                self._qdrant = None
+                return False
 
-        try:
-            from sentence_transformers import SentenceTransformer
-            self._embed_model = SentenceTransformer(self.embed_model_name)
-            logger.info(f"[KnowledgeRAG] Loaded embedding model: {self.embed_model_name}")
-        except Exception as e:
-            logger.warning(f"[KnowledgeRAG] Cannot load embedding model: {e}")
-            self._qdrant = None
-            return False
+            try:
+                from sentence_transformers import SentenceTransformer
+                self._embed_model = SentenceTransformer(self.embed_model_name)
+                logger.info(f"[KnowledgeRAG] Loaded embedding model: {self.embed_model_name}")
+            except Exception as e:
+                logger.warning(f"[KnowledgeRAG] Cannot load embedding model: {e}")
+                self._qdrant = None
+                return False
 
-        return True
+            self._ready = True
+            return True
 
     def start(self):
         if not self.enabled:
@@ -81,6 +86,16 @@ class KnowledgeRAG(RunnableMCPPlugin):
         if not self.collections:
             logger.warning("[KnowledgeRAG] No collections configured (knowledge_collections)")
             return
+
+        # Initialize Qdrant + embedding model in background so it doesn't
+        # block startup or the first TTS response
+        def _bg_init():
+            logger.info("[KnowledgeRAG] Background init starting...")
+            if self._init_clients():
+                logger.success("[KnowledgeRAG] Background init complete — ready")
+            else:
+                logger.warning("[KnowledgeRAG] Background init failed — RAG will be unavailable")
+        threading.Thread(target=_bg_init, daemon=True, name="rag-init").start()
 
         # Register PRE_LLM hook — runs after memory (10), before hybrid NLP
         self.register_chat_hook(
@@ -134,8 +149,10 @@ class KnowledgeRAG(RunnableMCPPlugin):
 
     def lookup_knowledge(self, query: str) -> dict:
         """Search the knowledge base for detailed information. Called by the LLM as a tool."""
-        if not self._init_clients():
-            return {"status": "error", "message": "Knowledge base is not available."}
+        if not self._ready:
+            # Active tool call — worth waiting briefly for init to finish
+            if not self._init_clients():
+                return {"status": "error", "message": "Knowledge base is not available."}
 
         logger.info(f"[KnowledgeRAG] Tool lookup: '{query}'")
         t_start = time.perf_counter()
@@ -205,8 +222,9 @@ class KnowledgeRAG(RunnableMCPPlugin):
             logger.info(f"[KnowledgeRAG] Skipping short input: '{ctx.user_text}'")
             return
 
-        # Lazy init on first use
-        if not self._init_clients():
+        # Skip if background init hasn't finished yet (don't block the chat pipeline)
+        if not self._ready:
+            logger.debug("[KnowledgeRAG] Not ready yet (background init in progress), skipping")
             return
 
         logger.info(f"[KnowledgeRAG] Searching for: '{ctx.user_text[:80]}'")
@@ -245,6 +263,11 @@ class KnowledgeRAG(RunnableMCPPlugin):
 
         if not all_results:
             logger.info(f"[KnowledgeRAG] No results above threshold {self.threshold} ({elapsed_ms:.0f}ms)")
+            from glados.system.event_system import EventSystem, EventMessage as EM
+            EventSystem().publish(EM("chat", "knowledge_status", {
+                "role": "knowledge_miss",
+                "query": ctx.user_text[:80],
+            }))
             return
 
         # Sort by score, take top_k across all collections

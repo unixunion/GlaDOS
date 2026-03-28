@@ -2,13 +2,24 @@
 
 import queue
 import re
+from dataclasses import dataclass
+from typing import Any, Optional
 
 from loguru import logger
 
 from glados.context.activity import Activity
 from glados.nlp.handler import NLPHandlerRegistry
+from glados.system.event_system import EventSystem, EventMessage
 from glados.system.intent_classifier import IntentClassifier
 from glados.system.plugin import PluginSystem
+
+
+@dataclass
+class HybridResult:
+    """Result of a hybrid NLP fast-path dispatch attempt."""
+    handled: bool = False              # True = fully handled, caller should return
+    tool_result: Any = None            # If set, inject into history and let LLM summarize
+    tool_name: Optional[str] = None    # Name of executed tool
 
 
 class NLPDispatcher:
@@ -46,6 +57,73 @@ class NLPDispatcher:
     def get_session(self, activity: Activity) -> dict:
         """Get session data for an activity. Returns empty dict if none."""
         return self._session.get(activity, {})
+
+    def try_hybrid_dispatch(self, text: str, activity: Activity, threshold: float) -> HybridResult:
+        """Attempt hybrid NLP fast-path — high-confidence tool execution that bypasses the LLM.
+
+        Uses two-layer classification (scoped, then global). If confidence meets
+        the threshold, either dispatches via NLP handler or executes the tool
+        directly for LLM summarization.
+
+        Args:
+            text: User input text.
+            activity: Current activity context.
+            threshold: Minimum confidence to trigger fast-path.
+
+        Returns:
+            HybridResult with handled=True if fully dispatched, or tool_result set
+            if the caller should inject the result and let the LLM summarize.
+        """
+        if not self._classifier.model:
+            return HybridResult()
+
+        event_system = EventSystem()
+
+        # Try scoped classification first, then global fallback
+        scoped_tools = self._get_tool_names_for_activity(activity)
+        predicted, confidence = "", 0.0
+        if scoped_tools:
+            predicted, confidence = self._classifier.predict_intent_scoped(text, scoped_tools)
+        if not predicted or confidence < threshold:
+            predicted, confidence = self._classifier.predict_intent(text)
+
+        if not predicted or confidence < threshold or predicted.startswith("_memory"):
+            return HybridResult()
+
+        logger.info(f"[Hybrid] NLP fast-path: '{predicted}' confidence {confidence:.2f} >= {threshold}")
+
+        has_nlp_handler = self._registry.has_handler(predicted)
+        needs_llm = self._plugin_system.should_process_plugin_output(predicted)
+
+        if has_nlp_handler:
+            # NLP handler exists — dispatch directly (fast, no LLM)
+            event_system.publish(EventMessage("chat", "tool_call", {
+                "role": "tool_call",
+                "tool": predicted,
+                "args": {},
+                "via": "nlp",
+            }))
+            dispatched = self.dispatch(text, activity)
+            if dispatched:
+                logger.info(f"[Hybrid] Completed via NLP dispatch (skipped LLM)")
+                return HybridResult(handled=True)
+            logger.info("[Hybrid] NLP dispatch returned False, falling through to LLM")
+            return HybridResult()
+
+        if needs_llm:
+            # No NLP handler but tool needs LLM summarization —
+            # execute tool directly, return result for caller to inject
+            func = self._plugin_system.get_available_llm_functions().get(predicted)
+            if func:
+                try:
+                    result = func()
+                    tool_result = {"tool": predicted, "result": result}
+                    logger.info(f"[Hybrid] Executed '{predicted}' via direct call, handing to LLM for summary")
+                    return HybridResult(tool_result=tool_result, tool_name=predicted)
+                except Exception as e:
+                    logger.warning(f"[Hybrid] Direct execution failed for '{predicted}': {e}, falling through to LLM")
+
+        return HybridResult()
 
     def dispatch(self, text: str, activity: Activity) -> bool:
         """Classify and dispatch user input to the appropriate tool.

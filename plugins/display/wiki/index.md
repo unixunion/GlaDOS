@@ -14,5 +14,6 @@ A maniacal home assistant with pluggable architecture and function calling suppo
 - [NLP & Hybrid Mode](nlp-mode) — Hybrid NLP+LLM routing, pure NLP mode, plugin NLP handlers, testing
 - [Voice Commands](voice) — Wake word, mute/unmute, intercepted commands
 - [Functions](functions) — Timers, alarms, recipes, music, display, memory, vision, unit conversion, arithmetic
+- [Shopping List & Pantry](pantry) — Shopping list, pantry inventory, expiry tracking, recipe integration
 - [Knowledge Base](knowledge) — RAG with Qdrant, ZIM file ingestion, lookup_knowledge tool, conversation RAG
 - [Installation](installation) — Setup for Windows, macOS, Linux
