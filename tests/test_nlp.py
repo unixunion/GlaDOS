@@ -337,6 +337,49 @@ INTENT_TEST_CASES = [
     ("wake me up at 7", "set_fixed_time_alarm", 0.2),
     ("what is this song", "now_playing", 0.2),
     ("what can I cook with chicken", "search_recipes", 0.1),
+    # --- Shopping list ---
+    ("add eggs to the shopping list", "add_to_shopping_list", 0.8),
+    ("add milk to the shopping list", "add_to_shopping_list", 0.8),
+    ("put bread on the list", "add_to_shopping_list", 0.5),
+    ("we need butter", "add_to_shopping_list", 0.5),
+    ("we're out of eggs", "add_to_shopping_list", 0.5),
+    ("we're running low on rice", "add_to_shopping_list", 0.3),
+    ("add milk to shopping list", "add_to_shopping_list", 0.8),
+    ("remove milk from the shopping list", "remove_from_shopping_list", 0.3),
+    ("take eggs off the list", "remove_from_shopping_list", 0.2),
+    ("what's on the shopping list", "show_shopping_list", 0.3),
+    ("show the shopping list", "show_shopping_list", 0.3),
+    ("what do we need to buy", "show_shopping_list", 0.2),
+    # --- Complete shopping ---
+    ("we got everything on the shopping list", "complete_shopping", 0.7),
+    ("we got everything on the list", "complete_shopping", 0.7),
+    ("we bought everything", "complete_shopping", 0.7),
+    ("shopping done", "complete_shopping", 0.3),
+    ("done shopping", "complete_shopping", 0.3),
+    ("we did the shopping", "complete_shopping", 0.3),
+    ("we got everything except the milk", "complete_shopping", 0.7),
+    ("finished shopping", "complete_shopping", 0.2),
+    # --- Pantry: store item ---
+    ("I put the chicken in freezer drawer 2", "store_item", 0.3),
+    ("the flour is in the dry goods cupboard", "store_item", 0.3),
+    ("store the milk in the fridge", "store_item", 0.3),
+    # --- Pantry: set expiry ---
+    ("the bacon expires on the 24th", "set_expiry", 0.5),
+    ("the chicken expires in five days", "set_expiry", 0.5),
+    ("eggs expire tomorrow", "set_expiry", 0.2),
+    ("milk expires on monday", "set_expiry", 0.5),
+    ("the butter expires in three days", "set_expiry", 0.3),
+    ("eggs are best before 26th june", "set_expiry", 0.3),
+    # --- Pantry: find item (generic phrases — LLM path, not NLP fast-path) ---
+    ("where did I put the chicken", "find_item", 0.1),
+    # --- Pantry: show pantry ---
+    # Note: generic "where is" and "do we have" phrases collide with weather/memory
+    # at bag-of-words level. These route correctly via LLM tool descriptions.
+    # --- Recipe integration ---
+    ("what can I make with what's in the pantry", "suggest_meals_from_pantry", 0.8),
+    ("what can I cook with what we have", "suggest_meals_from_pantry", 0.8),
+    ("suggest a meal from the pantry", "suggest_meals_from_pantry", 0.5),
+    ("what meals can I make", "suggest_meals_from_pantry", 0.5),
 ]
 
 
@@ -434,6 +477,15 @@ class TestNLPHandlerRegistration:
         "convert_units",
         "search_recipes",
         "select_recipe",
+        "add_to_shopping_list",
+        "remove_from_shopping_list",
+        "show_shopping_list",
+        "complete_shopping",
+        "store_item",
+        "set_expiry",
+        "find_item",
+        "check_expiring",
+        "show_pantry",
         "_nlp_list_ingredients",
         "_nlp_list_steps",
         "_nlp_next_step",
@@ -531,6 +583,97 @@ class TestCancelAlarmExtraction:
         params = handler.extract_params("cancel the 5pm alarm")
         assert "query" in params
         assert "5pm" in params["query"].lower()
+
+
+class TestShoppingListExtraction:
+    """Test shopping list NLP extract functions."""
+
+    def test_add_simple(self, registry):
+        handler = registry.get("add_to_shopping_list")
+        assert handler is not None
+        params = handler.extract_params("add eggs to the shopping list")
+        assert params.get("item") == "eggs"
+
+    def test_add_out_of(self, registry):
+        handler = registry.get("add_to_shopping_list")
+        params = handler.extract_params("we're out of butter")
+        assert "butter" in params.get("item", "")
+
+    def test_add_with_recurring(self, registry):
+        handler = registry.get("add_to_shopping_list")
+        params = handler.extract_params("we buy eggs every 2 weeks")
+        assert params.get("item") == "eggs"
+        assert params.get("recurring_days") == 14
+
+    def test_add_word_number_recurring(self, registry):
+        handler = registry.get("add_to_shopping_list")
+        params = handler.extract_params("we buy bread every two weeks")
+        assert "bread" in params.get("item", "")
+        assert params.get("recurring_days") == 14
+
+    def test_remove(self, registry):
+        handler = registry.get("remove_from_shopping_list")
+        assert handler is not None
+        params = handler.extract_params("remove milk from the shopping list")
+        assert "milk" in params.get("item", "")
+
+    def test_complete_with_except(self, registry):
+        handler = registry.get("complete_shopping")
+        assert handler is not None
+        params = handler.extract_params("we got everything except eggs and butter")
+        assert "eggs" in params.get("except_items", "")
+        assert "butter" in params.get("except_items", "")
+
+    def test_complete_no_except(self, registry):
+        handler = registry.get("complete_shopping")
+        params = handler.extract_params("shopping done")
+        # No except_items when nothing is excepted
+        assert not params.get("except_items")
+
+
+class TestPantryExtraction:
+    """Test pantry NLP extract functions."""
+
+    def test_store_item(self, registry):
+        handler = registry.get("store_item")
+        assert handler is not None
+        params = handler.extract_params("I put the chicken in freezer drawer 2")
+        assert "chicken" in params.get("item", "")
+        assert "freezer" in params.get("location", "")
+
+    def test_set_expiry(self, registry):
+        handler = registry.get("set_expiry")
+        assert handler is not None
+        params = handler.extract_params("the bacon expires on the 24th")
+        assert "bacon" in params.get("item", "")
+        assert params.get("expires") is not None
+
+    def test_set_expiry_best_before(self, registry):
+        handler = registry.get("set_expiry")
+        params = handler.extract_params("eggs are best before 26th june")
+        assert "eggs" in params.get("item", "")
+
+    def test_find_item(self, registry):
+        handler = registry.get("find_item")
+        assert handler is not None
+        params = handler.extract_params("where is the flour")
+        assert "flour" in params.get("item", "")
+
+    def test_find_do_we_have(self, registry):
+        handler = registry.get("find_item")
+        params = handler.extract_params("do we have eggs")
+        assert "eggs" in params.get("item", "")
+
+    def test_check_expiring_days(self, registry):
+        handler = registry.get("check_expiring")
+        assert handler is not None
+        params = handler.extract_params("what expires in 3 days")
+        assert params.get("days") == 3
+
+    def test_check_expiring_this_week(self, registry):
+        handler = registry.get("check_expiring")
+        params = handler.extract_params("what expires this week")
+        assert params.get("days") == 7
 
 
 # ---------------------------------------------------------------------------

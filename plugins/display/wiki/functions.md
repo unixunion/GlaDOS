@@ -45,7 +45,7 @@ All commands can be spoken via voice (wake word + phrase) or typed in the displa
 
 ## Recipes
 
-Get a recipe CSV from [Kaggle](https://www.kaggle.com/datasets/wilmerarltstrmberg/recipe-dataset-over-2m) and place in `plugin_data/recipes/dataset.csv`.
+Recipe dataset with ~13,500 recipes and images at `data/recipes/dataset.csv`. Images in `data/recipes/img/Food Images/`.
 
 | Say this | What happens |
 |----------|-------------|
@@ -59,7 +59,9 @@ Get a recipe CSV from [Kaggle](https://www.kaggle.com/datasets/wilmerarltstrmber
 | "choose the lasagna recipe" | Alternate selection phrasing |
 | "lets cook spaghetti" | Natural cooking intent |
 
-- Selected recipes are automatically displayed on screen with ingredients and steps
+- Selected recipes are automatically displayed on screen with image, ingredients, and steps
+- Ingredient search uses fuzzy matching — "chicken" matches "chicken breast", "whole chicken", etc.
+- Integrates with the [pantry system](pantry) — suggest meals from pantry contents, add recipe ingredients to shopping list
 - After selecting, use cooking step commands (see below)
 
 ### Cooking Steps (after selecting a recipe)

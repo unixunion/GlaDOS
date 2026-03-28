@@ -25,7 +25,8 @@ glados/                    # Core application code
 
 plugins/                   # Auto-discovered plugins (walked recursively on startup)
   basic/                   # clock, timers, alarms, unit converter
-  recipes/                 # Recipe search and selection
+  recipes/                 # Recipe search and selection (13.5K recipes with images, fuzzy ingredient matching)
+  pantry/                  # Shopping list + pantry inventory, expiry tracking, recipe integration
   music/                   # Spotify playback control
   display/                 # Flask+SocketIO web display for iPad/browser
   chores/                  # Vacuum control
@@ -35,8 +36,10 @@ plugins/                   # Auto-discovered plugins (walked recursively on star
   knowledge/               # RAG retrieval plugin (Qdrant)
 
 models/                    # TTS model files (glados.onnx, kokoro-82m-onnx/)
+data/recipes/              # Recipe dataset CSV + images (data/recipes/img/Food Images/)
 data/memory_db/            # ChromaDB persistent storage (auto-created)
 data/glados_quotes/        # Themed GLaDOS personality quotes for PersonalityCore
+plugin_data/pantry/        # Shopping list + pantry JSON persistence
 tools/                     # Offline utilities (ingest_zim.py for Qdrant ingestion)
 tests/                     # NLP test suite, model benchmarks
 glados_config.yml          # All runtime configuration

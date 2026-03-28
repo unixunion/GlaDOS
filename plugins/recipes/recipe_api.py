@@ -1,196 +1,241 @@
 import ast
-import json
 import os
 import pickle
 import re
+from collections import defaultdict
 from typing import List, Dict, Any
 
-import spacy
 from loguru import logger
 from rapidfuzz import fuzz
-from tqdm import tqdm
 
 from glados.context.activity import Activity
 from glados.system.event_system import EventSystem, EventMessage
 from glados.system.function_calling import FunctionRequest, FunctionMetadata, Parameters, ParameterType
-
-# Load the spaCy language model
-nlp = spacy.load("en_core_web_sm")
-
 from glados.system.plugin import PluginSystem
 
 event_system = EventSystem()
 plugin_manager = PluginSystem()
-plugin_manager.register_system_prompt("When selecting a recipe, interpret the user's selection based on prior results "
-                                      "and proceed without restarting the search unless explicitely instructed to search again.")
+plugin_manager.register_system_prompt(
+    "When selecting a recipe, interpret the user's selection based on prior results "
+    "and proceed without restarting the search unless explicitly instructed to search again."
+)
 
-# Global variables to hold recipes and ingredients
-data_file = "plugin_data/recipes/dataset.csv"
-pickle_file = "plugin_data/recipes/cache.pkl"
+# Global variables
+data_file = "data/recipes/dataset.csv"
+pickle_file = "plugin_data/recipes/cache_v2.pkl"
 
-# the actual recipes
 recipes = []
-# the ingredients cache is used for ingredient based searching
-# and aligning the terms in the query to what exists in the dataset
 ingredient_set = set()
+# Reverse index: ingredient word → set of recipe indices (for fast ingredient search)
+ingredient_index = defaultdict(set)
 
 
 def load_recipes(file_path: str):
-    """
-    Load and preprocess recipes from a CSV file.
+    """Load and preprocess recipes from a CSV file."""
+    global recipes, ingredient_set, ingredient_index
 
-    Args:
-        file_path (str): Path to the CSV file.
-
-    Returns:
-        List[Dict]: A list of preprocessed recipes.
-    """
-    import pandas as pd
-
-    global recipes, ingredient_set
-
-    # Check if the pickle cache exists
     if os.path.exists(pickle_file):
         logger.info("Loading recipes from pickle cache...")
         with open(pickle_file, "rb") as f:
-            recipes, ingredient_set = pickle.load(f)
+            data = pickle.load(f)
+        recipes = data["recipes"]
+        ingredient_set = data["ingredient_set"]
+        ingredient_index = data.get("ingredient_index", defaultdict(set))
         logger.success(f"Loaded {len(recipes)} recipes from cache.")
         event_system.publish(EventMessage(
-            "tool",
-            "plugin_system",
-            f"The recip_api has loaded {len(recipes)} recipes from cache.",
+            "tool", "plugin_system",
+            f"The recipe system has loaded {len(recipes)} recipes from cache.",
             process_output=False
         ))
     else:
-        logger.info("Processing recipes from CSV file...")
-        df = pd.read_csv(file_path)
-        recipes = []
-        for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing Recipes", unit="recipe"):
-            ingredients = json.loads(row['NER'])
-            cleaned_ingredients = clean_ingredients(ingredients)
-            ingredient_set.update(cleaned_ingredients)
-
-            try:
-                recipes.append({
-                    "title": row['title'].strip(),
-                    "ingredients": row['ingredients'],
-                    "directions": json.loads(row['directions'])
-                })
-            except:
-                pass
-
+        if not os.path.exists(file_path):
+            logger.warning(f"Recipe dataset not found at {file_path}")
+            return
+        logger.info(f"Processing recipes from CSV file: {file_path}")
+        _load_from_csv(file_path)
+        # Save cache
+        os.makedirs(os.path.dirname(pickle_file), exist_ok=True)
         with open(pickle_file, "wb") as f:
-            pickle.dump((recipes, ingredient_set), f)
+            pickle.dump({
+                "recipes": recipes,
+                "ingredient_set": ingredient_set,
+                "ingredient_index": dict(ingredient_index),
+            }, f)
+        logger.success(f"Saved recipe cache to {pickle_file}")
+
+    # Rebuild index if not in cache
+    if not ingredient_index and recipes:
+        _build_ingredient_index()
 
     logger.success(f"Loaded {len(recipes)} recipes with {len(ingredient_set)} unique ingredients.")
-    logger.success(f"Ingredients: {ingredient_set}")
+
+
+def _load_from_csv(file_path: str):
+    """Parse the recipe CSV into the global recipes list."""
+    import csv
+
+    global recipes, ingredient_set, ingredient_index
+
+    recipes = []
+    ingredient_set = set()
+    ingredient_index = defaultdict(set)
+
+    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+        reader = csv.DictReader(f)
+        count = 0
+        for row in reader:
+            try:
+                title = row.get("Title", "").strip()
+                if not title:
+                    continue
+
+                # Parse ingredients (Python list literal)
+                raw_ingredients = safe_parse_list(row.get("Ingredients", "[]"))
+
+                # Parse instructions — split paragraph into steps
+                raw_instructions = row.get("Instructions", "")
+                directions = _split_instructions(raw_instructions)
+
+                # Clean ingredients for search (strip quantities, units, parentheticals)
+                cleaned = clean_ingredients(raw_ingredients)
+                ingredient_set.update(cleaned)
+
+                # Image name (maps to data/recipes/img/Food Images/{name}.jpg)
+                image_name = row.get("Image_Name", "").strip() or None
+
+                recipe_idx = len(recipes)
+                recipes.append({
+                    "title": title,
+                    "ingredients": raw_ingredients,
+                    "directions": directions,
+                    "cleaned_ingredients": cleaned,
+                    "image_name": image_name,
+                })
+
+                # Build ingredient word index
+                for ing in cleaned:
+                    for word in ing.split():
+                        if len(word) > 2:
+                            ingredient_index[word].add(recipe_idx)
+
+                count += 1
+                if count % 10000 == 0:
+                    logger.info(f"Processed {count} recipes...")
+            except Exception as e:
+                logger.debug(f"Skipping row: {e}")
+
+    logger.info(f"Processed {count} recipes from CSV")
+
+
+def _split_instructions(text: str) -> list[str]:
+    """Split instruction text into individual steps."""
+    if not text:
+        return []
+    # Split on newlines first
+    lines = text.split("\n")
+    steps = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # If very long (>200 chars), try splitting on sentence boundaries
+        if len(line) > 200:
+            sentences = re.split(r'(?<=[.!])\s+(?=[A-Z])', line)
+            steps.extend(s.strip() for s in sentences if s.strip())
+        else:
+            steps.append(line)
+    return steps
+
+
+def _build_ingredient_index():
+    """Build reverse index from ingredient words to recipe indices."""
+    global ingredient_index
+    ingredient_index = defaultdict(set)
+    for i, recipe in enumerate(recipes):
+        for ing in recipe.get("cleaned_ingredients", []):
+            for word in ing.split():
+                if len(word) > 2:
+                    ingredient_index[word].add(i)
 
 
 def clean_ingredients(raw_ingredients: List[str]) -> List[str]:
-    """
-    Cleans and normalizes ingredient names.
-
-    Args:
-        raw_ingredients (List[str]): List of raw ingredient strings.
-
-    Returns:
-        List[str]: Cleaned ingredient names.
-    """
+    """Clean and normalize ingredient names — strip quantities, units, parentheticals."""
     cleaned = []
     for ingredient in raw_ingredients:
-        # Normalize ingredient strings
-        ingredient = re.sub(r"\(.*?\)|\d+[\w\s\/\.]*", "", ingredient).strip()
-        ingredient = re.sub(r"\s+", " ", ingredient).lower()
-        if ingredient:
-            cleaned.append(ingredient)
+        # Remove parentheticals, quantities, units
+        ing = re.sub(r"\(.*?\)", "", ingredient)
+        ing = re.sub(r"^\s*\d[\d\s½¼¾⅓⅔⅛/.\-]*\s*", "", ing)
+        ing = re.sub(
+            r"^(?:tsp|tsps|tbsp|tbsps|cup|cups|oz|ounce|ounces|lb|lbs|pound|pounds|"
+            r"gallon|quart|pint|pinch|dash|can|cans|package|pkg|bunch|clove|cloves|"
+            r"slice|slices|piece|pieces|head|stalk|stalks|sprig|sprigs|"
+            r"small|medium|large|extra)s?\b\.?\s*",
+            "", ing, flags=re.IGNORECASE
+        )
+        ing = re.sub(r"\s+", " ", ing).strip().lower()
+        # Remove trailing punctuation and common suffixes
+        ing = re.sub(r"[,;]+$", "", ing).strip()
+        if ing and len(ing) > 1:
+            cleaned.append(ing)
     return cleaned
 
 
-def find_best_recipe(query: str) -> Any | None:
-    """
-    Find the best matching recipe for a given query using fuzzy matching.
-
-    Args:
-        query (str): The search query.
-
-    Returns:
-        Dict: The best matching recipe with its similarity score.
-    """
-    best_score = -1
-    best_recipe = None
-
-    for recipe in recipes:
-        score = fuzz.ratio(query.lower(), recipe['title'].lower())
-        if score > best_score:
-            best_score = score
-            best_recipe = recipe
-
-    if best_recipe:
-        best_recipe['similarity'] = round((best_score / 100), 2)
-        return best_recipe
-
-    return None
-
-
 def search_by_ingredients(query_ingredients: List[str]) -> List[Dict]:
-    """
-    Search recipes by matching ingredients.
+    """Search recipes by fuzzy ingredient matching. Uses the word index for speed."""
+    if not query_ingredients:
+        return []
 
-    Args:
-        query_ingredients (List[str]): List of ingredients to match.
+    # Find candidate recipes via word index
+    candidate_indices = set()
+    for q_ing in query_ingredients:
+        for word in q_ing.lower().split():
+            if word in ingredient_index:
+                candidate_indices.update(ingredient_index[word])
 
-    Returns:
-        List[Dict]: List of matching recipes sorted by relevance.
-    """
+    # Fuzzy match only against candidates
     matching_recipes = []
-    logger.success(f"Searching recipes that have ingredients {query_ingredients}")
-
-    for recipe in recipes:
-        common = set(query_ingredients).intersection(recipe['ingredients'])
-        if common:
+    for idx in candidate_indices:
+        recipe = recipes[idx]
+        recipe_ings = recipe.get("cleaned_ingredients", [])
+        matched = []
+        for q_ing in query_ingredients:
+            for r_ing in recipe_ings:
+                if fuzz.partial_ratio(q_ing.lower(), r_ing) >= 75:
+                    matched.append(q_ing)
+                    break
+        if matched:
             matching_recipes.append({
-                "title": recipe['title'],
-                "ingredients": recipe['ingredients'],
-                "directions": recipe['directions'],
-                "matched_ingredients": list(common),
-                "match_count": len(common)
+                "title": recipe["title"],
+                "ingredients": recipe["ingredients"],
+                "directions": recipe["directions"],
+                "image_name": recipe.get("image_name"),
+                "matched_ingredients": matched,
+                "match_count": len(matched),
             })
 
-    return sorted(matching_recipes, key=lambda x: x['match_count'], reverse=True)
+    return sorted(matching_recipes, key=lambda x: x["match_count"], reverse=True)
 
 
 def convert_fractions(text: str) -> str:
-    """Converts fractions and mixed numbers to TTS-friendly spoken forms.
-
-    Handles: 1/2, 1/4, 3/4, 1/3, 2/3, 1/8, 3/8, mixed like '1 1/2',
-    and arbitrary fractions like '5/6'.
-    """
+    """Converts fractions and mixed numbers to TTS-friendly spoken forms."""
     fraction_map = {
-        "1/2": "one half",
-        "1/3": "one third",
-        "2/3": "two thirds",
-        "1/4": "one quarter",
-        "3/4": "three quarters",
-        "1/8": "one eighth",
-        "3/8": "three eighths",
-        "5/8": "five eighths",
-        "7/8": "seven eighths",
+        "1/2": "one half", "1/3": "one third", "2/3": "two thirds",
+        "1/4": "one quarter", "3/4": "three quarters",
+        "1/8": "one eighth", "3/8": "three eighths",
+        "5/8": "five eighths", "7/8": "seven eighths",
     }
 
-    # Mixed numbers first: "1 1/2" -> "one and a half"
     def replace_mixed(match):
         whole = match.group(1)
         frac = match.group(2)
         spoken_frac = fraction_map.get(frac)
         if spoken_frac:
             return f"{whole} and {spoken_frac}"
-        # Fallback for unknown fractions
         num, den = frac.split("/")
         return f"{whole} and {num} over {den}"
 
     text = re.sub(r"(\d+)\s+(\d+/\d+)", replace_mixed, text)
 
-    # Standalone fractions: "1/2" -> "one half"
     def replace_fraction(match):
         frac = match.group(0)
         if frac in fraction_map:
@@ -199,34 +244,21 @@ def convert_fractions(text: str) -> str:
         return f"{num} over {den}"
 
     text = re.sub(r"\d+/\d+", replace_fraction, text)
-
     return text
 
 
 def convert_abbreviations(text: str) -> str:
     """Converts common cooking abbreviations to full forms for clarity."""
     abbreviation_map = {
-        "tsp": "teaspoon",
-        "tsps": "teaspoons",
-        "tbl": "tablespoon",
-        "tbls": "tablespoons",
-        "tbsp": "tablespoon",
-        "tbsps": "tablespoons",
-        "oz": "ounce",
-        "ozs": "ounces",
-        "c": "cup",
-        "qt": "quart",
-        "qts": "quarts",
-        "pt": "pint",
-        "pts": "pints",
-        "pkg": "package",
-        "pkgs": "packages",
-        "lb": "pound",
-        "lbs": "pounds",
-        "gal": "gallon",
-        "lg": "large",
-        "sm": "small",
-        "med": "medium",
+        "tsp": "teaspoon", "tsps": "teaspoons",
+        "tbl": "tablespoon", "tbls": "tablespoons",
+        "tbsp": "tablespoon", "tbsps": "tablespoons",
+        "oz": "ounce", "ozs": "ounces",
+        "c": "cup", "qt": "quart", "qts": "quarts",
+        "pt": "pint", "pts": "pints",
+        "pkg": "package", "pkgs": "packages",
+        "lb": "pound", "lbs": "pounds",
+        "gal": "gallon", "lg": "large", "sm": "small", "med": "medium",
     }
     words = text.split()
     return " ".join([abbreviation_map.get(word.lower(), word) for word in words])
@@ -240,13 +272,11 @@ def format_ingredient_for_speech(ingredient: str) -> str:
 def safe_parse_list(serialized_list: Any) -> list:
     """Safely parses a serialized list string into a Python list."""
     if isinstance(serialized_list, list):
-        # If already a list, return it as-is
         return serialized_list
     try:
-        # Try parsing if it is a string representation of a list
         return ast.literal_eval(serialized_list)
     except (ValueError, SyntaxError):
-        logger.error(f"Failed to parse ingredients/directions: {serialized_list}")
+        logger.debug(f"Failed to parse list: {str(serialized_list)[:80]}")
         return []
 
 
@@ -283,19 +313,8 @@ CURRENT_RECIPES = []
     activity=[Activity.COOKING, Activity.GENERAL]
 )
 def search_recipes(query: str) -> dict:
-    """
-    Search for recipes matching the query.
-
-    Args:
-        query (str): The search query.
-
-    Returns:
-        str: List of matching recipes.
-    """
-
-    # query = extract_relevant_terms_nlp(query)
-    logger.success(f"query for recipes: {query}")
-    global CURRENT_RECIPES
+    """Search for recipes matching the query."""
+    logger.info(f"Recipe search query: {query}")
 
     matches = []
     for recipe in recipes:
@@ -309,22 +328,19 @@ def search_recipes(query: str) -> dict:
         logger.warning(f"No recipes found for: {query}")
         return "No recipes found matching the enquiry was found in the recipe search API."
 
-    # CURRENT_RECIPES = matches[:10]  # Store top matches globally
-
     result_data = []
-    for score, recipe in matches[:10]:  # Limit to top 10 matches
+    for score, recipe in matches[:10]:
         try:
             parsed_ingredients = safe_parse_list(recipe["ingredients"])
-            ingredients_list = ", ".join(format_ingredient_for_speech(ing) for ing in parsed_ingredients)
+            ingredients_list = ", ".join(format_ingredient_for_speech(ing) for ing in parsed_ingredients[:8])
 
             structured_recipe = (
                 f"Title: {recipe['title']}, score: {score}, Ingredients: {ingredients_list}\n\n"
             )
-
-            logger.info(f"append recipe: {structured_recipe}")
             result_data.append(structured_recipe)
         except Exception as e:
-            logger.warning(f"Skipping recipe: {recipe}, cause: {e}")
+            logger.debug(f"Skipping recipe: {e}")
+
     return (f"The following recipes were found by the recipe search API. Filter out all recipes "
             f"that are unrelated to the query '{query}', choose which best matches the query, "
             f"and ask the user to say 'select recipe' followed by the name of the recipe. "
@@ -369,11 +385,7 @@ def search_recipes(query: str) -> dict:
     activity=[Activity.COOKING, Activity.GENERAL]
 )
 def select_recipe(query: str) -> dict:
-    """
-    Handles user selection of a recipe. Returns the recipe formatted for
-    voice interaction with TTS-friendly ingredients and numbered steps.
-    """
-
+    """Select and activate a recipe for cooking."""
     try:
         matches = []
         for recipe in recipes:
@@ -397,16 +409,17 @@ def select_recipe(query: str) -> dict:
         )
 
         # Format directions for speech
-        parsed_directions = safe_parse_list(best_match["directions"])
+        directions = best_match.get("directions", [])
+        if isinstance(directions, str):
+            directions = _split_instructions(directions)
         directions_section = "\n".join(
             f"Step {i + 1}: {format_ingredient_for_speech(step)}"
-            for i, step in enumerate(parsed_directions)
+            for i, step in enumerate(directions)
         )
 
         # Auto-display recipe on connected screen (iPad)
-        # Use raw ingredient strings with fractions since they're readable on screen
         display_ingredients = safe_parse_list(best_match["ingredients"])
-        display_directions = safe_parse_list(best_match["directions"])
+        display_directions = directions
         event_system.publish(EventMessage(
             role="display",
             name="recipe",
@@ -414,6 +427,7 @@ def select_recipe(query: str) -> dict:
                 "title": best_match["title"],
                 "ingredients": display_ingredients,
                 "directions": display_directions,
+                "image_name": best_match.get("image_name"),
             },
             process_output=False
         ))
@@ -442,20 +456,15 @@ def select_recipe(query: str) -> dict:
 
 
 def find_recipe_by_ingredients(query: str) -> str:
-    """
-    Find recipes by ingredients.
-
-    Args:
-        query (str): Comma-separated list of ingredients.
-
-    Returns:
-        str: Matching recipes.
-    """
+    """Find recipes by ingredients. Used by pantry plugin for meal suggestions."""
     query_ingredients = [
         word.strip().lower()
         for word in re.split(r'[,\s]+', query)
-        if word.strip().lower() in ingredient_set
+        if word.strip() and len(word.strip()) > 2
     ]
+    if not query_ingredients:
+        return "No valid ingredients provided."
+
     matches = search_by_ingredients(query_ingredients)
 
     if not matches:
@@ -467,24 +476,9 @@ def find_recipe_by_ingredients(query: str) -> str:
                 "Dont read the similarity score to the user, and then let the user choose a recipe to continue with. "
                 ":\n")
     for match in matches[:5]:
-        response += f"- {match['title']} ({match['match_count']} matches)\n"
+        matched = ", ".join(match.get("matched_ingredients", []))
+        response += f"- {match['title']} (matched: {matched})\n"
     return response
-
-
-def extract_relevant_terms_nlp(query: str) -> str:
-    """
-    Extracts the main search term from a query using spaCy NLP.
-
-    Args:
-        query (str): The full search query.
-
-    Returns:
-        str: The extracted relevant terms.
-    """
-    doc = nlp(query)
-    # Extract nouns and proper nouns as relevant terms
-    relevant_terms = [token.text for token in doc if token.pos_ in ("NOUN", "PROPN")]
-    return " ".join(relevant_terms)
 
 
 # Load recipes at initialization
@@ -494,7 +488,6 @@ load_recipes(data_file)
 # -- NLP mode handlers ---------------------------------------------------------
 def _recipe_query_extract(text: str) -> dict:
     """Extract recipe query from natural language."""
-    # Try several prefix-stripping patterns in order
     for pattern in [
         r"^(?:please\s+)?(?:find|search|look up|get)\s+(?:me\s+)?(?:a\s+)?(?:recipes?\s+)?(?:for\s+)?",
         r"^(?:what\s+recipes?\s+(?:for|do you know)\s+)",
@@ -512,10 +505,8 @@ def _search_recipes_nlp_response(result) -> str:
     if isinstance(result, str):
         if "No recipes found" in result:
             return "I couldn't find any matching recipes."
-        # Extract recipe titles from the result string
         titles = re.findall(r"Title:\s*([^,]+)", result)
         if titles:
-            # Speak the top matches (limit to 5 for brevity)
             top = titles[:5]
             listing = ", ".join(top[:-1]) + f", and {top[-1]}" if len(top) > 1 else top[0]
             return (f"I found {len(titles)} recipes. The top matches are: {listing}. "

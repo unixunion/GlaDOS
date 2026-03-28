@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 data/qdrant_storage
+data/memory_db
+data/recipes/img
+data/*.zim
+trash
 # C extensions
 *.so
 

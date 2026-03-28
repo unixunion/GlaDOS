@@ -60,6 +60,11 @@ class DisplayPlugin(RunnablePlugin):
             logger.debug(f"Serving image from: {images_dir}/{filename}")
             return send_from_directory(images_dir, filename)
 
+        @self._flask_app.route("/recipe-images/<path:filename>")
+        def serve_recipe_image(filename):
+            images_dir = os.path.join(os.getcwd(), "data", "recipes", "img", "Food Images")
+            return send_from_directory(images_dir, filename)
+
         @self._flask_app.route("/wiki")
         @self._flask_app.route("/wiki/")
         @self._flask_app.route("/wiki/<page>")

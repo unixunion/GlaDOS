@@ -282,7 +282,7 @@ class MyPlugin(RunnableMCPPlugin):
 | **AlarmClock** | Tool | `plugins/basic/alarm_clock.py` | set_fixed_time_alarm, get_alarms, cancel_alarm |
 | **MusicPlayer** | Tool | `plugins/music/music_player.py` | play_music, now_playing, list_devices |
 | **DisplayPlugin** | Tool + Server | `plugins/display/display_server.py` | show_on_display, Flask+SocketIO web display |
-| **RecipeAPI** | Tool | `plugins/recipes/recipe_api.py` | search_recipes, select_recipe |
+| **RecipeAPI** | Tool | `plugins/recipes/recipe_api.py` | search_recipes, select_recipe, find_recipe_by_ingredients — 13.5K recipes with images, fuzzy ingredient matching |
 | **CookingContext** | NLP-only | `plugins/recipes/cooking_context.py` | Step navigation (next/previous/repeat/ingredients) |
 | **PantryPlugin** | Tool + Display | `plugins/pantry/pantry_plugin.py` | Shopping list, pantry inventory, expiry tracking, recipe integration (12 tools) |
 | **LoggingPlugin** | Tool | `plugins/system/logging.py` | get_logs diagnostic tool |
