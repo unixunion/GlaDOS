@@ -54,6 +54,10 @@ class DisplayPlugin(RunnablePlugin):
         def index():
             return render_template("display.html")
 
+        @self._flask_app.route("/shopping")
+        def shopping_mobile():
+            return render_template("shopping_mobile.html")
+
         @self._flask_app.route("/images/<path:filename>")
         def serve_image(filename):
             images_dir = os.path.join(os.getcwd(), "glados_ui", "images")

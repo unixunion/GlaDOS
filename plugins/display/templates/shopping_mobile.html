@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#ff6600">
+    <title>Shopping List</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            padding-bottom: env(safe-area-inset-bottom, 20px);
+        }
+
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: #16162a;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 { font-size: 1.2rem; font-weight: 600; }
+        .header-right { display: flex; gap: 10px; align-items: center; font-size: 0.8rem; }
+        .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #666; }
+        .sync-dot.connected { background: #4caf50; }
+        .item-count { color: #888; }
+
+        .add-form {
+            display: flex;
+            gap: 8px;
+            padding: 12px 16px;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .add-form input {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 10px 14px;
+            color: #e0e0e0;
+            font-size: 1rem;
+        }
+        .add-form input:first-child { flex: 1; }
+        .add-form input:nth-child(2) { width: 80px; }
+        .add-form input:focus { border-color: #ff6600; outline: none; }
+        .add-form button {
+            background: #ff6600;
+            color: #fff;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 10px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        #list-container { padding: 0 0 80px; }
+
+        .category-header {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #888;
+            padding: 12px 16px 4px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .list-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        .list-item:active { background: rgba(255,255,255,0.04); }
+        .list-item.got { opacity: 0.4; }
+        .list-item.got .item-name { text-decoration: line-through; }
+
+        .check-box {
+            width: 26px; height: 26px;
+            border: 2px solid #555;
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+            transition: all 0.15s;
+        }
+        .list-item.got .check-box {
+            background: #ff6600;
+            border-color: #ff6600;
+        }
+        .check-box::after {
+            content: '';
+            display: none;
+            width: 7px; height: 12px;
+            border: solid #fff; border-width: 0 2.5px 2.5px 0;
+            transform: rotate(45deg);
+            margin-bottom: 2px;
+        }
+        .list-item.got .check-box::after { display: block; }
+
+        .item-name { flex: 1; font-size: 1rem; }
+        .item-qty {
+            font-size: 0.8rem;
+            color: #aaa;
+            background: rgba(255,255,255,0.06);
+            padding: 3px 10px;
+            border-radius: 10px;
+        }
+        .item-recurring { font-size: 0.8rem; color: #ff6600; }
+
+        .item-remove {
+            font-size: 1rem; color: #555;
+            background: none; border: none; cursor: pointer;
+            padding: 4px 8px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #555;
+            padding: 60px 20px;
+            font-size: 1.1rem;
+        }
+
+        .footer-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0; right: 0;
+            background: #16162a;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            padding: 12px 16px;
+            padding-bottom: max(12px, env(safe-area-inset-bottom));
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .progress { font-size: 0.9rem; color: #888; }
+        .done-btn {
+            background: #ff6600;
+            color: #fff;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 10px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .done-btn:disabled { opacity: 0.4; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Shopping List</h1>
+        <div class="header-right">
+            <span class="item-count" id="item-count">0 items</span>
+            <div class="sync-dot" id="sync-dot" title="Disconnected"></div>
+        </div>
+    </header>
+
+    <div class="add-form">
+        <input type="text" id="add-name" placeholder="Add item..." autocomplete="off">
+        <input type="text" id="add-qty" placeholder="Qty" autocomplete="off">
+        <button onclick="addItem()">+</button>
+    </div>
+
+    <div id="list-container"></div>
+
+    <div class="footer-bar">
+        <span class="progress" id="progress">0 of 0</span>
+        <button class="done-btn" id="done-btn" onclick="doneShopping()" disabled>Done Shopping</button>
+    </div>
+
+    <script src="/static/socket.io.min.js"></script>
+    <script>
+        const STORAGE_KEY = 'glados_shopping_list';
+        let items = [];
+        let connected = false;
+
+        // --- SocketIO ---
+        const socket = io({
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: Infinity,
+            transports: ['websocket', 'polling']
+        });
+
+        socket.on('connect', () => {
+            connected = true;
+            document.getElementById('sync-dot').classList.add('connected');
+            document.getElementById('sync-dot').title = 'Connected';
+            // Request fresh data from server
+            socket.emit('shopping_list_action', { action: 'get_state' });
+        });
+
+        socket.on('disconnect', () => {
+            connected = false;
+            document.getElementById('sync-dot').classList.remove('connected');
+            document.getElementById('sync-dot').title = 'Offline — using cached data';
+        });
+
+        // Server pushes display updates (same event as main display)
+        socket.on('display_update', (data) => {
+            if (data.view_type === 'shopping_list') {
+                items = data.items || [];
+                saveLocal();
+                render();
+            }
+        });
+
+        // --- localStorage ---
+        function saveLocal() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+            } catch (e) { /* quota exceeded, ignore */ }
+        }
+
+        function loadLocal() {
+            try {
+                const cached = localStorage.getItem(STORAGE_KEY);
+                if (cached) items = JSON.parse(cached);
+            } catch (e) { items = []; }
+        }
+
+        // --- Rendering ---
+        const categoryOrder = ['dairy', 'produce', 'meat', 'seafood', 'bakery', 'frozen', 'dry_goods', 'beverages', 'condiments', 'snacks', 'other'];
+        const categoryLabels = {
+            dairy: 'Dairy & Eggs', produce: 'Produce', meat: 'Meat', seafood: 'Seafood',
+            bakery: 'Bakery', frozen: 'Frozen', dry_goods: 'Dry Goods',
+            beverages: 'Beverages', condiments: 'Condiments', snacks: 'Snacks', other: 'Other'
+        };
+
+        function render() {
+            const container = document.getElementById('list-container');
+            const gotCount = items.filter(i => i.got).length;
+            const total = items.length;
+
+            document.getElementById('item-count').textContent = `${total} item${total !== 1 ? 's' : ''}`;
+            document.getElementById('progress').textContent = `${gotCount} of ${total}`;
+            document.getElementById('done-btn').disabled = gotCount === 0;
+
+            if (total === 0) {
+                container.innerHTML = '<div class="empty-state">Shopping list is empty</div>';
+                return;
+            }
+
+            // Group by category
+            const groups = {};
+            items.forEach(item => {
+                const cat = item.category || 'other';
+                if (!groups[cat]) groups[cat] = [];
+                groups[cat].push(item);
+            });
+
+            let html = '';
+            categoryOrder.forEach(cat => {
+                if (!groups[cat] || groups[cat].length === 0) return;
+                html += `<div class="category-header">${esc(categoryLabels[cat] || cat)}</div>`;
+                groups[cat].sort((a, b) => a.name.localeCompare(b.name));
+                groups[cat].forEach(item => {
+                    const gotCls = item.got ? ' got' : '';
+                    const qty = item.quantity ? `<span class="item-qty">${esc(item.quantity)}</span>` : '';
+                    const rec = item.recurring ? '<span class="item-recurring">&#8635;</span>' : '';
+                    html += `<div class="list-item${gotCls}" onclick="toggleItem('${item.id}')">
+                        <div class="check-box"></div>
+                        <span class="item-name">${esc(item.name)}</span>
+                        ${qty}${rec}
+                        <button class="item-remove" onclick="event.stopPropagation(); removeItem('${item.id}')">&#10005;</button>
+                    </div>`;
+                });
+            });
+            container.innerHTML = html;
+        }
+
+        // --- Actions ---
+        function toggleItem(id) {
+            const item = items.find(i => i.id === id);
+            if (item) {
+                item.got = !item.got;
+                saveLocal();
+                render();
+                if (connected) {
+                    socket.emit('shopping_list_action', { action: 'toggle', item_id: id });
+                }
+            }
+        }
+
+        function removeItem(id) {
+            items = items.filter(i => i.id !== id);
+            saveLocal();
+            render();
+            if (connected) {
+                socket.emit('shopping_list_action', { action: 'remove', item_id: id });
+            }
+        }
+
+        function addItem() {
+            const nameEl = document.getElementById('add-name');
+            const qtyEl = document.getElementById('add-qty');
+            const name = nameEl.value.trim();
+            if (!name) return;
+
+            if (connected) {
+                socket.emit('shopping_list_action', {
+                    action: 'add_item',
+                    name: name,
+                    quantity: qtyEl.value.trim(),
+                });
+            } else {
+                // Offline — add locally with temp ID
+                items.push({
+                    id: 'tmp_' + Date.now(),
+                    name: name,
+                    quantity: qtyEl.value.trim() || null,
+                    category: 'other',
+                    got: false,
+                    recurring: false,
+                });
+                saveLocal();
+                render();
+            }
+            nameEl.value = '';
+            qtyEl.value = '';
+            nameEl.focus();
+        }
+
+        function doneShopping() {
+            if (connected) {
+                socket.emit('shopping_list_action', { action: 'complete' });
+            }
+        }
+
+        // Enter key on inputs
+        document.getElementById('add-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') addItem(); });
+        document.getElementById('add-qty').addEventListener('keydown', (e) => { if (e.key === 'Enter') addItem(); });
+
+        function esc(str) {
+            if (!str) return '';
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        // --- Init ---
+        loadLocal();
+        render();
+
+        // Register service worker for offline caching
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+        }
+    </script>
+</body>
+</html>

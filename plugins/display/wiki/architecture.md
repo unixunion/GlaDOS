@@ -38,6 +38,14 @@ The activity system provides separate message contexts per activity with tool fi
 
 The system prompt is shared across all activity contexts. The display UI shows the current activity as a pill icon in the top-left corner.
 
+### Shopping Sub-Contexts
+
+The pantry plugin adds a layer on top of activities: **shopping modes** (planning and post-shopping). These are PRE_LLM hooks that:
+1. Intercept short commands directly (add/remove/got/store) for instant execution
+2. For unrecognized commands, restrict the LLM's tool set to only shopping/pantry tools via `ctx.extra["tool_override"]`
+
+This allows focused voice workflows like "lets plan shopping" → "eggs" → "milk" → "3 of those" → "done" without verbose phrasing.
+
 ## Event System
 
 The EventSystem is a singleton pub-sub system using topic-based subscriptions with `fnmatch` pattern matching.

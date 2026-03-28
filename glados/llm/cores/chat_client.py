@@ -476,10 +476,18 @@ class ChatClient:
             self._nlp_dispatcher.dispatch(str(content), self.message_manager.current_context)
             return
 
-        relevant_tools = plugin_manager.get_available_tools(
-            architecture=self.client_type,
-            activity=self.message_manager.current_context
-        )
+        # Check if a PRE_LLM hook wants to restrict the tool set (e.g. shopping sub-context)
+        tool_override = None
+        if hasattr(self, '_chat_ctx') and self._chat_ctx and self._chat_ctx.extra.get("tool_override"):
+            tool_override = self._chat_ctx.extra["tool_override"]
+
+        if tool_override is not None:
+            relevant_tools = tool_override
+        else:
+            relevant_tools = plugin_manager.get_available_tools(
+                architecture=self.client_type,
+                activity=self.message_manager.current_context
+            )
         logger.debug(f"Proposed relevant_tools: {[t.get('function', {}).get('name', '?') if isinstance(t, dict) else str(t)[:40] for t in relevant_tools]}")
 
         model_to_use = self.model

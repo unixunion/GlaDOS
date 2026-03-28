@@ -148,6 +148,75 @@ Locations can also be added via the display UI.
 - Expiring items are prioritized in recipe suggestions
 - `add_recipe_ingredients_to_list` checks what you already have and only adds missing ingredients
 
+## Shopping Modes (Sub-Contexts)
+
+Voice-activated modes that lock GlaDOS into shopping-focused commands for faster batch operations.
+
+### Planning Mode
+
+| Say this | What happens |
+|----------|-------------|
+| "lets plan the shopping" | Enters planning mode |
+| "lets plan shopping" | Alternate phrasing |
+| "planning mode" | Short form |
+
+While in planning mode:
+- Just say the item name to add it — no need for "add X to the shopping list"
+- "remove eggs" — removes item
+- "3 of those" / "make that 5" — updates quantity of last-added item
+- "show the list" — displays current list
+- "done" / "that's everything" — exits planning mode
+
+### Post-Shopping Mode
+
+| Say this | What happens |
+|----------|-------------|
+| "back from shopping" | Enters post-shopping mode |
+| "we're back from shopping" | Alternate phrasing |
+| "unpack the shopping" | Alternate phrasing |
+
+While in post-shopping mode:
+- "got the eggs" — marks item as bought
+- "didn't get milk" / "skip the butter" — keeps item on list
+- "put chicken in freezer drawer 2" — stores item (same as normal)
+- "chicken expires on the 24th" — sets expiry (same as normal)
+- "done" — completes shopping (moves bought items to pantry), exits mode
+
+### How it works
+
+- A PRE_LLM hook intercepts commands at priority 5 (before memory, knowledge, NLP)
+- Short commands (add/remove/got/store) are handled instantly without the LLM
+- Unrecognized commands still go to the LLM but with a restricted tool set — only shopping/pantry tools are available
+- The display shows a mode indicator: "Planning" or "Post-Shopping" in orange
+- Say "done", "exit", or "that's everything" to leave any mode
+
+## Mobile Shopping List
+
+Access the shopping list on your phone at `http://<glados-ip>:5001/shopping`.
+
+### Features
+
+- Mobile-optimized standalone page (not the full GlaDOS display)
+- Add items with name + quantity
+- Check items off as you shop (checkboxes)
+- Grouped by category (Dairy, Produce, Meat, etc.)
+- "Done Shopping" button
+- **PWA** — add to home screen on iPhone/Android for app-like experience
+
+### Offline Support
+
+- **localStorage** caches the list — survives page refreshes and going offline
+- **Service worker** caches the page itself — loads even without WiFi
+- **SocketIO** syncs live when connected to home WiFi
+- If you go offline at the store, the cached list stays visible and checkable
+- When you reconnect at home, changes sync back to GlaDOS
+
+### Setup
+
+1. Open `http://<glados-ip>:5001/shopping` on your phone
+2. On iPhone: tap Share > Add to Home Screen
+3. On Android: tap the browser menu > Add to Home Screen
+
 ## Data Storage
 
 All data is stored as human-readable JSON in `plugin_data/pantry/`:

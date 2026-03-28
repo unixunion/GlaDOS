@@ -1089,6 +1089,19 @@
                 activityEl.innerHTML = '<span class="activity-icon">' + icon + '</span>' + name.toLowerCase();
                 return;
             }
+            if (data.status === 'shopping_mode') {
+                const mode = data.mode;
+                if (mode === 'planning') {
+                    activityEl.innerHTML = '<span class="activity-icon">📝</span>planning';
+                    activityEl.style.color = '#ff6600';
+                } else if (mode === 'post_shopping') {
+                    activityEl.innerHTML = '<span class="activity-icon">🛒</span>post-shopping';
+                    activityEl.style.color = '#ff6600';
+                } else {
+                    activityEl.style.color = '';
+                }
+                return;
+            }
             handleStatusToast(data);
         });
 

@@ -355,7 +355,7 @@ class PantryPlugin(RunnableMCPPlugin):
         self._initialized = True
         super().__init__()
 
-        self._data_dir = os.path.join("plugin_data", "pantry")
+        self._data_dir = os.environ.get("PANTRY_DATA_DIR", os.path.join("plugin_data", "pantry"))
         os.makedirs(self._data_dir, exist_ok=True)
 
         self._shopping_list = self._load_json("shopping_list.json", {"items": [], "recurring_rules": []})
@@ -372,6 +372,8 @@ class PantryPlugin(RunnableMCPPlugin):
 
         self._last_recurring_check = None
         self._expiry_warned_today = False
+        self._shopping_mode = None  # None, "planning", or "post_shopping"
+        self._last_added_item = None  # for "make that 3" / quantity update commands
 
         self.register_system_prompt(
             "SHOPPING LIST & PANTRY: A shopping list and pantry inventory system is available. "
@@ -900,6 +902,12 @@ class PantryPlugin(RunnableMCPPlugin):
     # -----------------------------------------------------------------------
 
     def start(self):
+        from glados.llm.chat_hooks import ChatPipelinePhase
+        self.register_chat_hook(
+            phase=ChatPipelinePhase.PRE_LLM,
+            callback=self._shopping_context_hook,
+            priority=5,  # Before memory (10), knowledge (15), etc.
+        )
         self.event_system.subscribe(
             "ui.shopping_list_action",
             EventHook("shopping_list_ui", callback=self._on_shopping_list_action, priority=5),
@@ -912,7 +920,7 @@ class PantryPlugin(RunnableMCPPlugin):
             "system.tick",
             EventHook("pantry_recurring", callback=self._on_tick, priority=1),
         )
-        logger.info("[Pantry] Started — subscribed to UI events and tick")
+        logger.info("[Pantry] Started — subscribed to UI events, tick, and shopping context hook")
 
     def stop(self):
         self._save_shopping_list()
@@ -1316,6 +1324,250 @@ class PantryPlugin(RunnableMCPPlugin):
         ))
 
     # -----------------------------------------------------------------------
+    # Shopping sub-context (planning / post-shopping modes)
+    # -----------------------------------------------------------------------
+
+    _PLANNING_TRIGGERS = [
+        "lets plan the shopping", "lets plan shopping", "shopping planning mode",
+        "plan the shopping list", "lets make a shopping list", "plan shopping",
+        "planning mode", "start planning", "lets plan", "shopping mode",
+    ]
+    _POST_SHOPPING_TRIGGERS = [
+        "we're back from shopping", "back from the shops", "back from shopping",
+        "post shopping", "lets put away the shopping", "unpack the shopping",
+        "post shopping mode", "back from the store",
+    ]
+    _EXIT_TRIGGERS = [
+        "done", "that's everything", "finished", "exit", "done planning", "cancel",
+        "stop planning", "all done", "that's it", "that's all", "exit mode",
+        "leave mode", "stop", "end planning mode", "end planning",
+        "exit planning mode", "exit planning", "end mode", "exit",
+    ]
+
+    # Tool names allowed in each mode (for LLM tool_override)
+    _PLANNING_TOOLS = [
+        "add_to_shopping_list", "remove_from_shopping_list", "show_shopping_list",
+        "suggest_meals_from_pantry", "find_item", "check_expiring",
+    ]
+    _POST_SHOPPING_TOOLS = [
+        "complete_shopping", "store_item", "set_expiry", "find_item",
+        "show_pantry", "show_shopping_list",
+    ]
+
+    @staticmethod
+    def _clean_voice_text(text: str) -> str:
+        """Clean Whisper transcription artifacts for trigger matching."""
+        # Strip whitespace, trailing punctuation, lowercase
+        return re.sub(r"[.!?,;]+$", "", text.strip().lower()).strip()
+
+    def _shopping_context_hook(self, ctx):
+        """PRE_LLM hook: intercept commands when in a shopping sub-context."""
+        text = self._clean_voice_text(ctx.user_text)
+
+        # --- Check for mode entry ---
+        if not self._shopping_mode:
+            if any(text.startswith(t) or text == t for t in self._PLANNING_TRIGGERS):
+                self._shopping_mode = "planning"
+                self._publish_shopping_list_display()
+                self.event_system.publish(EventMessage(
+                    "status", "shopping_mode", {"mode": "planning"}
+                ))
+                ctx.tts_queue.put("Shopping planning mode. Just say the item name to add it, or remove followed by the item.")
+                ctx.tts_queue.put("<EOS>")
+                ctx.handled = True
+                logger.info("[Pantry] Entered planning mode")
+                return
+
+            if any(fuzz.ratio(text, t) >= 80 or text.startswith(t) for t in self._POST_SHOPPING_TRIGGERS):
+                self._shopping_mode = "post_shopping"
+                self._publish_shopping_list_display()
+                self.event_system.publish(EventMessage(
+                    "status", "shopping_mode", {"mode": "post_shopping"}
+                ))
+                ctx.tts_queue.put("Post-shopping mode. Tell me what you got and where you put things. Say done when finished.")
+                ctx.tts_queue.put("<EOS>")
+                ctx.handled = True
+                logger.info("[Pantry] Entered post-shopping mode")
+                return
+
+            return  # Not in a mode, let normal processing handle it
+
+        # --- Check for mode exit ---
+        if any(text == t or text.startswith(t) for t in self._EXIT_TRIGGERS):
+            if self._shopping_mode == "post_shopping":
+                result = self.complete_shopping()
+                moved = result.get("moved", 0)
+                remaining = result.get("remaining", 0)
+                ctx.tts_queue.put(f"Done. Moved {moved} items to the pantry. {remaining} items remain on the list.")
+            else:
+                count = len(self._shopping_list["items"])
+                ctx.tts_queue.put(f"Done planning. You have {count} items on the shopping list.")
+            ctx.tts_queue.put("<EOS>")
+            self.event_system.publish(EventMessage(
+                "status", "shopping_mode", {"mode": None}
+            ))
+            logger.info(f"[Pantry] Exited {self._shopping_mode} mode")
+            self._shopping_mode = None
+            ctx.handled = True
+            return
+
+        # --- Handle commands within the active mode ---
+        handled = False
+        if self._shopping_mode == "planning":
+            handled = self._handle_planning_command(text, ctx)
+        elif self._shopping_mode == "post_shopping":
+            handled = self._handle_post_shopping_command(text, ctx)
+
+        if not handled:
+            # Command not recognized by short-form handlers — pass through to LLM
+            # but with restricted tool set
+            tool_names = self._PLANNING_TOOLS if self._shopping_mode == "planning" else self._POST_SHOPPING_TOOLS
+            mode_label = "shopping planning" if self._shopping_mode == "planning" else "post-shopping"
+
+            # Build the filtered tool list for the LLM
+            from glados.system.plugin import PluginSystem
+            from glados.llm.client_type import ClientType
+            all_tools = PluginSystem().get_available_tools(architecture=ClientType.OPENAI)
+            filtered = [t for t in all_tools if isinstance(t, dict) and
+                        t.get("function", {}).get("name") in tool_names]
+            ctx.extra["tool_override"] = filtered
+
+            # Inject mode context
+            mode_prompt = (
+                f"You are in {mode_label} mode. Only use the available shopping/pantry tools. "
+                f"Help the user manage their shopping list and pantry."
+            )
+            if ctx.memory_context:
+                ctx.memory_context = mode_prompt + "\n\n" + ctx.memory_context
+            else:
+                ctx.memory_context = mode_prompt
+
+    def _handle_planning_command(self, text: str, ctx) -> bool:
+        """Handle short commands in planning mode. Returns True if handled."""
+        # "remove X"
+        if text.startswith("remove ") or text.startswith("delete "):
+            item = re.sub(r"^(?:remove|delete)\s+(?:the\s+)?", "", text).strip()
+            if item:
+                result = self.remove_from_shopping_list(item)
+                msg = _remove_from_list_nlp_response(result)
+                ctx.tts_queue.put(msg)
+                ctx.tts_queue.put("<EOS>")
+                ctx.handled = True
+                return True
+
+        # "make that 6" / "made that six bananas" / "6 of those" / "actually 3"
+        qty_match = re.match(
+            r"(?:ma[dk]e\s+(?:that|it)\s+|actually\s+)(\w+)(?:\s+.*)?$"
+            r"|(\w+)\s+of\s+(?:those|them)",
+            text
+        )
+        if qty_match and self._last_added_item:
+            raw_qty = (qty_match.group(1) or qty_match.group(2) or "").strip()
+            from glados.nlp.extractors import word_to_number
+            num = word_to_number(raw_qty)
+            if num is not None or raw_qty.isdigit():
+                qty = str(num) if num is not None else raw_qty
+                self._last_added_item["quantity"] = qty
+                self._save_shopping_list()
+                self._publish_shopping_list_display()
+                ctx.tts_queue.put(f"Updated to {qty} {self._last_added_item['name']}.")
+                ctx.tts_queue.put("<EOS>")
+                ctx.handled = True
+                return True
+
+        # "show the list" / "list"
+        if text in ("show the list", "list", "show list", "what's on the list"):
+            self.show_shopping_list()
+            ctx.tts_queue.put(f"You have {len(self._shopping_list['items'])} items on the list.")
+            ctx.tts_queue.put("<EOS>")
+            ctx.handled = True
+            return True
+
+        # Default: treat as "add X" — bare item names
+        # Strip leading "add" / "and" / "also"
+        item_text = re.sub(r"^(?:add|and|also|plus)\s+(?:some\s+)?", "", text).strip()
+        if item_text and len(item_text) > 1:
+            # Split "X and Y" or "X, Y and Z" into separate items
+            items = re.split(r"\s*(?:,\s*(?:and\s+)?|\s+and\s+)\s*", item_text)
+            items = [i.strip() for i in items if i.strip() and len(i.strip()) > 1]
+            if not items:
+                return False
+            added_names = []
+            for item in items:
+                # Strip leading "a/an/some"
+                item = re.sub(r"^(?:a|an|some)\s+", "", item).strip()
+                if item:
+                    result = self.add_to_shopping_list(item)
+                    self._last_added_item = next(
+                        (i for i in self._shopping_list["items"] if i["name"].lower() == item.lower()), None
+                    )
+                    added_names.append(item)
+            if added_names:
+                listing = ", ".join(added_names)
+                ctx.tts_queue.put(f"Added {listing} to the shopping list.")
+                ctx.tts_queue.put("<EOS>")
+                ctx.handled = True
+                return True
+
+        return False
+
+    def _handle_post_shopping_command(self, text: str, ctx) -> bool:
+        """Handle short commands in post-shopping mode. Returns True if handled."""
+        # "got X" / "got the X" / "yes" (marks last mentioned)
+        got_match = re.match(r"(?:got|got\s+the|we\s+got|yes)\s*(.*)", text)
+        if got_match:
+            item_name = got_match.group(1).strip()
+            if item_name:
+                match = self._find_shopping_item(item_name)
+                if match:
+                    match["got"] = True
+                    self._save_shopping_list()
+                    self._publish_shopping_list_display()
+                    ctx.tts_queue.put(f"Marked {match['name']} as got.")
+                    ctx.tts_queue.put("<EOS>")
+                    ctx.handled = True
+                    return True
+
+        # "didn't get X" / "no X" / "not the X" / "skip X"
+        skip_match = re.match(r"(?:didn't\s+get|no|not\s+the|skip|not)\s+(.*)", text)
+        if skip_match:
+            item_name = skip_match.group(1).strip()
+            if item_name:
+                match = self._find_shopping_item(item_name)
+                if match:
+                    match["got"] = False
+                    self._save_shopping_list()
+                    self._publish_shopping_list_display()
+                    ctx.tts_queue.put(f"{match['name']} stays on the list.")
+                    ctx.tts_queue.put("<EOS>")
+                    ctx.handled = True
+                    return True
+
+        # "put X in Y" — delegate to store_item
+        store_match = re.search(r"(?:put|stored|placed)\s+(?:the\s+)?(.+?)\s+(?:in|into)\s+(?:the\s+)?(.+)", text)
+        if store_match:
+            item = store_match.group(1).strip()
+            location = store_match.group(2).strip()
+            result = self.store_item(item, location)
+            ctx.tts_queue.put(_store_item_nlp_response(result))
+            ctx.tts_queue.put("<EOS>")
+            ctx.handled = True
+            return True
+
+        # "X expires Y" — delegate to set_expiry
+        expiry_match = re.search(r"(.+?)\s+(?:expires?|best\s+before|use\s+by)\s+(?:on\s+)?(.+)", text)
+        if expiry_match:
+            item = expiry_match.group(1).strip().lstrip("the ")
+            expires = expiry_match.group(2).strip()
+            result = self.set_expiry(item, expires)
+            ctx.tts_queue.put(_set_expiry_nlp_response(result))
+            ctx.tts_queue.put("<EOS>")
+            ctx.handled = True
+            return True
+
+        return False  # Not handled — pass to LLM with restricted tools
+
+    # -----------------------------------------------------------------------
     # UI event handlers
     # -----------------------------------------------------------------------
 
@@ -1324,7 +1576,7 @@ class PantryPlugin(RunnableMCPPlugin):
         data = event.content if isinstance(event.content, dict) else {}
         action = data.get("action")
 
-        if action == "show":
+        if action in ("show", "get_state"):
             self._publish_shopping_list_display()
             return
 

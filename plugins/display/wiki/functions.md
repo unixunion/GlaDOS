@@ -121,8 +121,11 @@ music_dir: ~/Music
 | "remove milk from the list" | Removes item |
 | "we got everything except eggs" | Post-shopping: moves bought items to pantry |
 | "shopping done" | Moves all items to pantry |
+| **"lets plan shopping"** | Enters planning mode — short commands like "eggs", "remove milk" |
+| **"back from shopping"** | Enters post-shopping mode — "got eggs", "put X in fridge" |
 
 - Interactive display with checkboxes, category grouping, and "Done Shopping" button
+- Mobile shopping list at `/shopping` — add to home screen on phone, works offline
 - See [Shopping List & Pantry](pantry) for full details
 
 ## Pantry
