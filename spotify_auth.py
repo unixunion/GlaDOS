@@ -7,6 +7,7 @@ Setup:
 4. Run this script — it starts a local server, opens browser, catches the callback automatically
 """
 import os
+import sys
 import threading
 import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -15,8 +16,12 @@ from urllib.parse import urlparse, parse_qs
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
-CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID", "e85e1999f6964f07995660d744f9cd20")
-CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET", "902d7a967dfa4cc29f16501a24f71424")
+CLIENT_ID = os.environ.get("SPOTIPY_CLIENT_ID", "")
+CLIENT_SECRET = os.environ.get("SPOTIPY_CLIENT_SECRET", "")
+if not CLIENT_ID or not CLIENT_SECRET:
+    print("Set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET environment variables.")
+    print("Get them from https://developer.spotify.com/dashboard")
+    sys.exit(1)
 REDIRECT_URI = "https://127.0.0.1:8888/callback"
 SCOPE = "user-modify-playback-state user-read-playback-state user-read-currently-playing"
 CACHE_PATH = ".spotify_cache"
