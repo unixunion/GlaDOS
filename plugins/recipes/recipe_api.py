@@ -581,6 +581,10 @@ def _on_recipe_action(event):
 # Register the UI action with the plugin system
 plugin_manager.register_ui_action("recipe_action", _on_recipe_action)
 
+# Register display views
+plugin_manager.register_view("recipe", "plugins/recipes/views/recipe.js", dashboard_card=True)
+plugin_manager.register_view("recipe_search", "plugins/recipes/views/recipe.js")
+
 # Subscribe to the event so the handler gets called
 from glados.system.event_system import EventHook
 event_system.subscribe(

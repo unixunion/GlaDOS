@@ -68,6 +68,7 @@ class PluginSystem:
     _instance = None  # Singleton instance
     _system_prompts = []  # future thing, so plugins can extend the system prompts.
     _ui_actions = {}  # event_name → list of callbacks (plugins self-register UI SocketIO handlers)
+    _views = {}  # view_type → {"js_path": str, "css_path": str|None, "dashboard_card": bool}
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
@@ -298,6 +299,27 @@ class PluginSystem:
     def get_ui_actions(self) -> dict:
         """Get all registered UI action handlers."""
         return self._ui_actions
+
+    def register_view(self, view_type: str, js_path: str, css_path: str = None,
+                       dashboard_card: bool = False):
+        """Register a display view renderer provided by a plugin.
+
+        Args:
+            view_type: The EventMessage name this view handles (e.g. 'pantry')
+            js_path: Path to the JS file (relative to project root)
+            css_path: Optional path to a CSS file
+            dashboard_card: Whether this view provides a dashboard card
+        """
+        self._views[view_type] = {
+            "js_path": js_path,
+            "css_path": css_path,
+            "dashboard_card": dashboard_card,
+        }
+        logger.info(f"Registered view: {view_type} → {js_path}")
+
+    def get_views(self) -> dict:
+        """Get all registered view renderers."""
+        return self._views
 
     @staticmethod
     def validate_plugin_definition(plugin_definition: FunctionRequest) -> bool:

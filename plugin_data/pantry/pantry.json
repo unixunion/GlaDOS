@@ -1,0 +1,371 @@
+{
+  "locations": [
+    {
+      "id": "fridge",
+      "name": "Fridge"
+    },
+    {
+      "id": "freezer-1",
+      "name": "Freezer Drawer 1"
+    },
+    {
+      "id": "freezer-2",
+      "name": "Freezer Drawer 2"
+    },
+    {
+      "id": "freezer-3",
+      "name": "Freezer Drawer 3"
+    },
+    {
+      "id": "dry-goods",
+      "name": "Dry Goods Cupboard"
+    },
+    {
+      "id": "spices",
+      "name": "Spices"
+    }
+  ],
+  "items": [
+    {
+      "id": "f5987ea2",
+      "name": "chicken cuts",
+      "location_id": "fridge",
+      "stored": "2026-03-28T15:51:30",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "c01f7b83",
+      "name": "saussage",
+      "location_id": "fridge",
+      "stored": "2026-03-28T15:51:34",
+      "expires": null,
+      "notes": null
+    },
+    {
+      "id": "19808060",
+      "name": "milk",
+      "location_id": "fridge",
+      "stored": "2026-03-28T15:51:37",
+      "expires": "2026-04-03",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "3a1ebfb0",
+      "name": "garlic",
+      "location_id": "fridge",
+      "stored": "2026-03-28T15:51:58",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "71cd740a",
+      "name": "lettuce",
+      "location_id": "fridge",
+      "stored": "2026-03-28T15:52:02",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "6f8e2767",
+      "name": "eggs",
+      "location_id": "fridge",
+      "stored": "2026-03-28T15:52:07",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "6007ce92",
+      "name": "wraps",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:52:13",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "42195fd8",
+      "name": "flour",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:52:16",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "89aa4dd0",
+      "name": "sugar",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:52:18",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "1cb826f2",
+      "name": "cornflour",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:52:23",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "bd497066",
+      "name": "baking powder",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:52:28",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "e13a5cbe",
+      "name": "bicarbonate of soda",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:52:35",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "64e80f03",
+      "name": "sunflower seeds",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:52:42",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "f3cbf55b",
+      "name": "pumpkin seeds",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:52:50",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "27e4fbe5",
+      "name": "almonds",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:52:53",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "cf94da43",
+      "name": "ketchup",
+      "location_id": "fridge",
+      "stored": "2026-03-28T15:52:59",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "321599ef",
+      "name": "mustard",
+      "location_id": "fridge",
+      "stored": "2026-03-28T15:53:05",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "87f5c2d3",
+      "name": "onion",
+      "location_id": "fridge",
+      "stored": "2026-03-28T15:53:16",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "9fc87ccd",
+      "name": "yoghurt",
+      "location_id": "fridge",
+      "stored": "2026-03-28T15:53:21",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "b111fe1f",
+      "name": "chicken breast",
+      "location_id": "freezer-1",
+      "stored": "2026-03-28T15:53:29",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "5fc2909c",
+      "name": "bread",
+      "location_id": "freezer-1",
+      "stored": "2026-03-28T15:53:33",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "2a79a6db",
+      "name": "eel food",
+      "location_id": "freezer-3",
+      "stored": "2026-03-28T15:53:38",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "973a76d8",
+      "name": "ice cream",
+      "location_id": "freezer-3",
+      "stored": "2026-03-28T15:53:44",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "3ebe3b87",
+      "name": "whole pealed tomatoes canned",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:55:03",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "044b03cb",
+      "name": "spaghetti",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:55:10",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "56c5da42",
+      "name": "tagliatelle",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:55:19",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "a4fb20ab",
+      "name": "lasagne tiles",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:55:25",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "a2b49e04",
+      "name": "noodles",
+      "location_id": "dry-goods",
+      "stored": "2026-03-28T15:55:38",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "e490bbc9",
+      "name": "salt",
+      "location_id": "spices",
+      "stored": "2026-03-28T15:57:19",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "a6487e0a",
+      "name": "pepper",
+      "location_id": "spices",
+      "stored": "2026-03-28T15:57:22",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "72426e17",
+      "name": "paprika",
+      "location_id": "spices",
+      "stored": "2026-03-28T15:57:25",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "b12dd511",
+      "name": "smoked paprika",
+      "location_id": "spices",
+      "stored": "2026-03-28T15:57:28",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "e8956854",
+      "name": "cayenne pepper",
+      "location_id": "spices",
+      "stored": "2026-03-28T15:58:03",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "ebad343d",
+      "name": "thyme",
+      "location_id": "spices",
+      "stored": "2026-03-28T15:58:10",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "3d205551",
+      "name": "mince",
+      "location_id": "fridge",
+      "stored": "2026-03-28T16:33:27",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "a5399995",
+      "name": "bread",
+      "location_id": "dry-goods",
+      "stored": "2026-03-29T11:56:08",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "cd8ab151",
+      "name": "burger patties",
+      "location_id": "freezer-2",
+      "stored": "2026-03-29T11:56:22",
+      "expires": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "2e2eab5c",
+      "name": "lasagna",
+      "location_id": "freezer-3",
+      "stored": "2026-03-29T14:59:39",
+      "expires": null,
+      "notes": "2 portions",
+      "item_type": "ready_meal"
+    }
+  ]
+}

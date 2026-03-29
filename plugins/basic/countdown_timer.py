@@ -584,8 +584,9 @@ class CountdownTimer(RunnableMCPPlugin):
         logger.info("Starting CountdownTimer.")
         self.event_system.subscribe("system.tick", EventHook("check_timers", callback=self._check_timers, priority=5))
 
-        # Register UI action for direct timer control from display
+        # Register UI action and view for direct timer control from display
         self.register_ui_action("timer_action", self._on_timer_action)
+        self.register_view("timer", "plugins/basic/views/timer.js", dashboard_card=True)
         self.event_system.subscribe(
             "ui.timer_action",
             EventHook("timer_ui_handler", callback=self._on_timer_action, priority=5)

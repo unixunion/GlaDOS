@@ -69,6 +69,32 @@ class DisplayPlugin(RunnablePlugin):
             images_dir = os.path.join(os.getcwd(), "data", "recipes", "img", "Food Images")
             return send_from_directory(images_dir, filename)
 
+        @self._flask_app.route("/plugin-views/<path:filepath>")
+        def serve_plugin_view(filepath):
+            """Serve plugin view JS/CSS files from their plugin directories."""
+            # Sanitize path
+            filepath = filepath.replace("..", "")
+            full_path = os.path.join(os.getcwd(), filepath)
+            if not os.path.exists(full_path):
+                return "Not found", 404
+            directory = os.path.dirname(full_path)
+            filename = os.path.basename(full_path)
+            return send_from_directory(directory, filename)
+
+        @self._flask_app.route("/api/views")
+        def api_views():
+            """Return registered plugin views for the frontend to load."""
+            from flask import jsonify
+            views = plugin_manager.get_views()
+            result = []
+            for view_type, info in views.items():
+                entry = {"view_type": view_type, "js_url": f"/plugin-views/{info['js_path']}"}
+                if info.get("css_path"):
+                    entry["css_url"] = f"/plugin-views/{info['css_path']}"
+                entry["dashboard_card"] = info.get("dashboard_card", False)
+                result.append(entry)
+            return jsonify(result)
+
         @self._flask_app.route("/wiki")
         @self._flask_app.route("/wiki/")
         @self._flask_app.route("/wiki/<page>")
@@ -269,6 +295,9 @@ class DisplayPlugin(RunnablePlugin):
         logger.info("Starting DisplayPlugin...")
         if self._worker_thread and self._worker_thread.is_alive():
             return
+
+        # Register the built-in info view
+        plugin_manager.register_view("info", "plugins/display/views/info.js")
 
         # Auto-register plugin UI actions as SocketIO event handlers
         ui_actions = plugin_manager.get_ui_actions()

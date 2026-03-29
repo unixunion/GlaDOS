@@ -86,3 +86,51 @@ Results are saved to `tests/benchmark_results/` as JSON. The `--all` flag auto-s
 - **LM Studio** — `http://localhost:1234/v1`
 - **Ollama** — `http://localhost:11434/v1`
 - **Cloud APIs** — set `completion_url` and `api_key` in config
+
+## Dual-Model Architecture
+
+GlaDOS can use two models simultaneously — a **main model** for chat/tool calling and a **fast model** for lightweight tasks:
+
+| Role | Config Key | Example Model | Used For |
+|------|-----------|---------------|----------|
+| **Main** | `model` | `qwen/qwen3-30b-a3b-2507` | Chat, tool calling, response generation |
+| **Fast** | `knowledge_rewrite_model` | `liquid/lfm2.5-1.2b` | Knowledge query rewriting, pantry item classification |
+
+The fast model handles simple classification/rewriting tasks (~50 tokens output) that don't need a large model. This keeps the main model free for conversation while background tasks run on the small model.
+
+```yaml
+# glados_config.yml
+model: "qwen/qwen3-30b-a3b-2507"           # Main chat model
+knowledge_query_mode: "rewrite"              # Use fast model for query rewriting
+knowledge_rewrite_model: "liquid/lfm2.5-1.2b"  # 1.2B model for fast tasks
+# knowledge_rewrite_url: null                # null = same LM Studio endpoint
+```
+
+### Tasks using the fast model
+
+- **Knowledge query rewriting** — reformulates conversational follow-ups into focused search queries before hitting Qdrant
+- **Pantry item classification** — classifies items as "ingredient" vs "ready_meal" when stored (background, fire-and-forget)
+- **Batch reclassification** — "reclassify the pantry" processes all items through the fast model
+
+### LM Studio Setup
+
+Both models must be loaded simultaneously in LM Studio:
+
+1. Go to **Developer** tab
+2. Load your main model (e.g. `qwen/qwen3-30b-a3b-2507`)
+3. Load the fast model (e.g. `liquid/lfm2.5-1.2b`)
+4. **Important**: Go to `Settings → Developer → JIT models auto-evict = Off` so both stay in memory
+5. LM Studio routes API requests by the `model` parameter — each call goes to the right model
+
+### Recommended fast models
+
+Benchmarked with `python tests/benchmark_knowledge.py`:
+
+| Model | Knowledge Hit Rate | Avg Latency |
+|-------|-------------------|-------------|
+| `liquid/lfm2.5-1.2b` | 100% | 564ms |
+| `qwen2.5-1.5b-instruct@8bit` | 100% | 798ms |
+| `qwen/qwen3-4b-2507` | 100% | 827ms |
+| `phi-3-mini-4k-instruct` | 90% | 970ms |
+
+Thinking models (`qwen3-4b-thinking`, `nemotron-3-nano`) output `<think>` tags and fail — avoid them for rewrite tasks.

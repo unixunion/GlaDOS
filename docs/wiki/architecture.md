@@ -42,17 +42,31 @@ The system prompt is shared across all activity contexts.
 
 ### Display Architecture
 
-The web display (`http://<host>:5001`) uses a dashboard + full-screen view pattern:
+The web display (`http://<host>:5001`) uses a modular plugin-driven architecture:
 
-- **Dashboard home** — 4 summary cards (Shopping, Pantry, Recipes, Timers) with quick actions (inline add, recipe search). Clock at bottom.
-- **Full-screen views** — tapping a card or using a voice command opens the view full-screen with a back button. Views: shopping list, pantry, recipe, recipe search, info.
-- **Chat drawer** — slides from right, hidden by default. Hamburger icon to toggle. Contains chat history, input, send/stop buttons.
-- **Navigation history** — back button returns to previous view (not always dashboard). View stack.
+**Framework shell** (`display.html`, ~370 lines) — header, navigation, chat drawer, status toast, GlaDOS avatar. Contains no plugin-specific view code.
+
+**Plugin view modules** — each plugin provides its own JS renderer loaded dynamically at runtime:
+```
+plugins/pantry/views/shopping.js   — shopping list view + dashboard card
+plugins/pantry/views/pantry.js     — pantry view + dashboard card
+plugins/recipes/views/recipe.js    — recipe views + dashboard card
+plugins/basic/views/timer.js       — timer overlay + dashboard card
+plugins/display/views/info.js      — generic info view
+```
+
+**Registration**: `self.register_view("pantry", "plugins/pantry/views/pantry.js", dashboard_card=True)`
+**Loading**: Framework fetches `/api/views` and loads JS/CSS dynamically. Each module registers on `GlaDOS.views[viewType]` with `render(container, data)` and optionally `renderCard(container)`.
+**Dashboard**: Auto-populates cards from registered views — no hardcoded grid.
+
+**Other display features:**
+- **Chat drawer** — slides from right with pin to keep open. Collapsible knowledge/tool bubbles.
 - **Timer overlay** — floating cards in bottom-right, persistent across all views.
-- **Mode banner** — planning/post-shopping mode shows a persistent banner with Exit button.
-- **Mobile** — bottom nav bar (Home, List, Pantry, Chat) on phone viewports. Responsive card grid.
-- **PWA** — manifest + service worker for add-to-home-screen.
-- **Plugin UI actions** — plugins self-register SocketIO event handlers via `register_ui_action()`. The DisplayPlugin auto-creates handlers dynamically. No plugin-specific code in `display_server.py`.
+- **Mode banner** — planning/post-shopping mode shows a persistent banner.
+- **Mobile** — bottom nav bar on phone viewports. Responsive card grid. PWA for add-to-home-screen.
+- **Plugin UI actions** — plugins self-register SocketIO event handlers via `register_ui_action()`. No plugin-specific code in `display_server.py`.
+
+See [Plugin Display Views](plugin-display.md) for the full developer guide.
 
 ### LLM Backend Abstraction
 

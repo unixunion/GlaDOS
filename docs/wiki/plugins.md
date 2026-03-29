@@ -109,6 +109,7 @@ These are injected as system messages into all activity contexts.
 | `nlp_extractors` | dict | NLP mode: param name → regex patterns for extraction |
 | `nlp_response` | callable | NLP mode: formats tool result as spoken text |
 | `nlp_extract_fn` | callable | NLP mode: custom function to extract params from text |
+| `nlp_threshold` | float | Per-tool NLP confidence threshold (overrides global `hybrid_nlp_threshold`) |
 
 The `nlp_*` parameters enable [NLP mode](nlp-mode.md) support, allowing the tool to work without an LLM. See the [NLP Mode](nlp-mode.md) page for details.
 
@@ -206,6 +207,21 @@ The IntentClassifier uses Naive Bayes with bag-of-words:
 3. Include **variations**: "set a timer", "start a countdown", "timer for 5 minutes".
 4. **Avoid collisions** — if two tools share words like "next" (music skip vs cooking next step), rely on activity scoping to disambiguate.
 5. Run `pytest tests/test_nlp.py -v` after adding intents to check for regressions.
+
+## Display Views
+
+Plugins can provide their own display views (full-screen pages and dashboard cards) without editing the display framework. Views are JavaScript modules loaded dynamically at runtime.
+
+```python
+# Register a view in __init__ or start()
+self.register_view(
+    view_type="my_view",                      # matches EventMessage name
+    js_path="plugins/my_plugin/views/my.js",  # JS renderer module
+    dashboard_card=True,                       # provides a dashboard card
+)
+```
+
+The JS file registers on `GlaDOS.views` with `render(container, data)` and optionally `renderCard(container)`. See [Plugin Display Views](plugin-display.md) for the full guide, module contract, and CSS classes.
 
 ## UI Action Handlers
 

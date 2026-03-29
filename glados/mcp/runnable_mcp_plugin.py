@@ -121,6 +121,16 @@ class RunnableMCPPlugin(RunnablePlugin):
         self._plugin_system.register_ui_action(event_name, callback)
         logger.info(f"UI action '{event_name}' registered by {self.__class__.__name__}")
 
+    def register_view(self, view_type: str, js_path: str, css_path: str = None,
+                       dashboard_card: bool = False):
+        """Register a display view renderer for this plugin.
+
+        The JS file should register itself on GlaDOS.views[view_type] with a
+        render(container, data) method. The display framework will auto-load
+        the file and dispatch display events to it.
+        """
+        self._plugin_system.register_view(view_type, js_path, css_path, dashboard_card)
+
     def register_tool(
         self,
         handler: Callable,

@@ -496,6 +496,10 @@ class PantryPlugin(RunnableMCPPlugin):
         self.register_ui_action("shopping_list_action", self._on_shopping_list_action)
         self.register_ui_action("pantry_action", self._on_pantry_action)
 
+        # Register display views
+        self.register_view("shopping_list", "plugins/pantry/views/shopping.js", dashboard_card=True)
+        self.register_view("pantry", "plugins/pantry/views/pantry.js", dashboard_card=True)
+
         list_count = len(self._shopping_list["items"])
         pantry_count = len(self._pantry["items"])
         logger.success(f"[Pantry] Initialized — {list_count} shopping list items, {pantry_count} pantry items")
