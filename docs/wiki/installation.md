@@ -49,6 +49,32 @@ Untested — contributions welcome.
 | `python main.py --text` | Keyboard | TTS (speaker) | TTS only |
 | `python main.py --no-speech` | Keyboard | Text (console) | None |
 
+## Raspberry Pi (NLP-only mode)
+
+GlaDOS runs on Raspberry Pi without an LLM server using pure NLP mode. Requires Python 3.11+ (Bookworm).
+
+```bash
+# Install audio dependencies
+sudo apt update && sudo apt install libportaudio2
+
+# Clone and set up
+git clone https://github.com/unixunion/glados.git
+cd glados
+python3 -m venv .venv && source .venv/bin/activate
+
+# Use lightweight requirements (skips torch, langchain, chromadb, etc.)
+pip install -r requirements_rpi.txt
+
+# Enable NLP mode in config
+# Edit glados_config.yml:
+#   nlp_mode: true
+#   nlp_confidence_threshold: 0.4
+
+python main.py
+```
+
+The `requirements_rpi.txt` is ~2GB smaller than the full requirements — it excludes PyTorch, LangChain, ChromaDB, sentence-transformers, and other LLM-dependent packages. All NLP-capable tools (31 out of 33) work without an LLM. See [NLP Mode](nlp-mode.md) for the coverage table.
+
 ## Changing the Model
 
 Update `model` in `glados_config.yml` to match the model name in your LLM server.

@@ -9,7 +9,7 @@ data/*.zim
 trash
 # C extensions
 *.so
-
+tests/benchmark_results
 # Distribution / packaging
 .Python
 build/
