@@ -8,7 +8,7 @@ All settings are in `glados_config.yml`.
 Glados:
   completion_url: "http://localhost:1234/v1"   # LLM server endpoint
   model: "qwen/qwen3-30b-a3b-2507"            # model name
-  client_type: OPENAI                           # OPENAI, LANGCHAIN, or MISTRAL
+  client_type: OPENAI                           # OPENAI, ANTHROPIC, or LANGCHAIN
   api_key: "lm-studio"
 ```
 
@@ -19,7 +19,7 @@ Glados:
   voice_model: "glados.onnx"      # TTS model file or directory (in models/ dir)
   speaker_id: null                # speaker ID (int for Piper, string for Kokoro e.g. "bf_isabella")
   speech_buffer_ms: 1200          # ms of silence before finalizing speech
-  tts_buffer_mode: "clause"       # "sentence", "clause", or "word" (see below)
+  tts_buffer_mode: "sentence"       # "sentence", "clause", or "word" (see below)
   tts_word_buffer: 5              # words per flush in "word" mode
   interrupt_on_wakeword: true     # say wake word while speaking to interrupt TTS
   hardware_echo_cancellation: false  # set true if speaker has hardware echo cancellation
@@ -108,6 +108,25 @@ When `hybrid_nlp_threshold < 1.0`, the IntentClassifier runs before the LLM on e
 
 Set `hybrid_nlp_threshold: 1.0` to disable hybrid and use pure LLM mode.
 
+#### Per-plugin NLP threshold
+
+Individual plugins can set a lower confidence threshold so they take the NLP fast-path even when the global threshold is high. This is useful for well-defined tools (clock, timers) that suffer from confidence dilution as more plugins are added.
+
+Set in code (default):
+```python
+@mcp_tool(..., nlp_threshold=0.6)
+```
+
+Override in config (takes priority):
+```yaml
+plugins:
+  - name: get_current_time
+    config:
+      nlp_threshold: 0.5
+```
+
+Resolution order: **YAML config > code default > global `hybrid_nlp_threshold`**.
+
 ### Disabling forced tool selection
 
 `plugin_intent_threshold` controls when the LLM is forced to call a specific tool (`tool_choice='required'`). When the IntentClassifier confidence exceeds this threshold, the LLM **must** call a tool rather than responding with text.
@@ -180,13 +199,18 @@ Optional Qdrant-powered knowledge retrieval. Requires a running Qdrant server an
   knowledge_top_k: 3                          # passages per query
   knowledge_threshold: 0.5                    # minimum similarity (0.0-1.0)
   knowledge_embed_model: "all-MiniLM-L6-v2"  # embedding model
+  knowledge_query_mode: "context"             # "raw", "context", or "rewrite"
+  # knowledge_rewrite_model: "liquid/lfm2.5-1.2b"  # model for rewrite mode
+  # knowledge_rewrite_url: null               # separate API endpoint for rewrite
 ```
 
 When enabled, the KnowledgeRAG plugin registers a PRE_LLM hook that:
-1. Embeds the user's question using the configured model
-2. Searches all configured Qdrant collections
+1. Builds a search query (mode-dependent: raw text, context-augmented, or LLM-rewritten)
+2. Embeds the query and searches all configured Qdrant collections
 3. Injects the top matching passages into the LLM context
 4. Skips short commands (<10 chars) to avoid noise on tool invocations
+
+See [Knowledge Base](knowledge) for details on query modes and benchmarks.
 
 See [Knowledge Base](knowledge) wiki page for setup and ingestion instructions.
 
@@ -231,6 +255,18 @@ See [Knowledge Base](knowledge) wiki page for setup and ingestion instructions.
 | **PersonalityCore** | Appends contextual quips from `data/glados_quotes/` after responses | `quip_chance`, `cooldown_seconds`, `themes` |
 | **ThreeLawsCore** | Adds Asimov's three laws of robotics to the system prompt | `enabled: true/false` |
 | **LoopGuard** | Monitors TTS for repeated sentences and interrupts | `buffer_size` |
+| **LogAnalyzer** | Ring buffer log capture, error analysis, saved reports | `buffer_size` |
+
+### Log Analyzer
+
+```yaml
+  plugins:
+    - name: log_analyzer
+      config:
+        buffer_size: 5000   # max log entries in ring buffer (default: 5000)
+```
+
+All loguru logs (DEBUG and above) are captured into a ring buffer. Ask "check the logs" or "any errors?" to get a summary, or "save a log report" to dump a structured JSON report to `plugin_data/log_analyzer/`.
 
 ## External MCP Servers
 
@@ -240,6 +276,62 @@ See [Knowledge Base](knowledge) wiki page for setup and ingestion instructions.
       command: npx
       args: ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
 ```
+
+## LLM Backends
+
+GlaDOS supports multiple LLM backends via the `client_type` config:
+
+| Backend | Config | Description |
+|---------|--------|-------------|
+| `OPENAI` | `completion_url` + `api_key` | OpenAI-compatible API (LM Studio, Ollama via OpenAI API, actual OpenAI) |
+| `ANTHROPIC` | `api_key` | Claude API (Anthropic). No `completion_url` needed. |
+| `LANGCHAIN` | `completion_url` | LangChain/Ollama native integration |
+
+### Using Claude
+
+```yaml
+  client_type: ANTHROPIC
+  model: "claude-sonnet-4-20250514"
+  api_key: "sk-ant-api03-..."
+```
+
+Requires: `pip install anthropic`
+
+### Using a local model (LM Studio / Ollama)
+
+```yaml
+  client_type: OPENAI
+  completion_url: "http://localhost:1234/v1"
+  model: "qwen2.5-7b-instruct"
+  api_key: "lm-studio"
+```
+
+Each backend is in `glados/llm/backends/`. Adding a new provider = one file extending `LLMBackend`.
+
+## Pantry & Shopping List
+
+```yaml
+  plugins:
+    - name: pantry_plugin
+      config:
+        shopping_mode_timeout: 60   # seconds of inactivity before auto-exiting planning/post-shopping mode
+```
+
+No other config needed — pantry works out of the box with default storage locations. Locations are managed via voice or the display UI.
+
+## Logging
+
+Logs are colorized by subsystem for easy scanning:
+
+| Color | Subsystem | Modules |
+|-------|-----------|---------|
+| Cyan/Blue | Plugins | plugin registration, pantry, recipes, music, etc. |
+| Yellow | LLM Pipeline | chat_client, stream_handler, response_processor, tool_executor |
+| Magenta | NLP | dispatcher, intent classifier, NLP handlers |
+| Green | Voice/Audio | speech_module, whisper, wake word detection |
+| White | Display/Events | display_server, event_system |
+
+Log level defaults to INFO. Configured in `main.py:17-18`.
 
 ## Other
 

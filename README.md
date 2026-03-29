@@ -289,7 +289,7 @@ Glados:
   speaker_id: null                              # speaker ID (int for Piper, string for Kokoro)
   music_dir: ~/Music                            # music player directory
   speech_buffer_ms: 1200                        # ms of silence before finalizing speech
-  tts_buffer_mode: "clause"                     # "sentence", "clause" (faster), or "word" (fastest)
+  tts_buffer_mode: "sentence"                     # "sentence", "clause" (faster), or "word" (fastest)
   max_context_messages: 20                      # max messages per activity context
   plugin_intent_threshold: 0.7                  # confidence threshold for intent classifier
   hybrid_nlp_threshold: 0.8                     # NLP fast-path (1.0 to disable)

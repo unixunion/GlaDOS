@@ -18,10 +18,12 @@ All commands can be spoken via voice (wake word + phrase) or typed in the displa
 | "cancel the egg timer" | Cancels by name |
 | "cancel the 5 minute timer" | Cancels by duration description |
 
-- Timer alerts flash the display screen and play a sound
-- Active timers show as cards on the display with live countdown
-- Multiple timers display as separate cards
-- Display returns to idle when all timers expire or are cancelled
+- Active timers show as floating cards in the bottom-right with live countdown and a Cancel button
+- Dashboard has quick-create: tap 5m/10m/15m/30m presets, adjust with +/- buttons, then Start
+- When a timer expires: card stays visible with "DONE" and pulsing border, sound plays persistently
+- **Dismiss**: tap the Dismiss button on the card, say "stop"/"cancel", or use the mute button
+- Sound auto-stops after 3 minutes if not dismissed
+- Multiple timers supported — all show as separate cards
 
 ## Alarms
 
@@ -38,10 +40,20 @@ All commands can be spoken via voice (wake word + phrase) or typed in the displa
 | "dismiss the alarm" | While alarm is ringing |
 | "cancel the 7am alarm" | Cancel by time |
 
-- Alarms fire a repeating audio alert until dismissed
+- Alarms use the same unified ringing system as timers
+- When an alarm fires: card appears with "DONE" and Dismiss button, sound plays persistently
 - Pauses any playing music during alarm, resumes after dismissal
-- Dismiss by saying wake word + "stop", "cancel", "silence", or "dismiss"
-- Active alarms show alongside timers on the display
+- **Dismiss**: tap the Dismiss button, say wake word + "stop"/"cancel"/"silence", or mute button
+- Active alarms show alongside timers in the floating overlay
+
+## Display Controls
+
+| Button | Location | Action |
+|--------|----------|--------|
+| Speaker (🔈) | Top-left header | Mute/unmute TTS output. When muted, LLM still processes but doesn't speak. |
+| Microphone (🎤) | Top-left header | Mute/unmute voice input. When muted, wake words and all audio input ignored. |
+| Chat (☰) | Top-right header | Toggle chat drawer |
+| Back (←) | Top-left header | Return to previous view |
 
 ## Recipes
 

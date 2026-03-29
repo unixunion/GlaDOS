@@ -45,14 +45,14 @@ def load_plugins(package_path: str):
 
                     # Import the module dynamically
                     module = importlib.import_module(module_name)
-                    logger.success(f"Loaded module: {module_name}")
+                    logger.success(f"Loaded plugin: {module_name}")
 
                     # Automatically instantiate subclasses of RunnablePlugin
                     for attr_name in dir(module):
                         attr = getattr(module, attr_name)
                         if isinstance(attr, type) and issubclass(attr, RunnablePlugin) and attr is not RunnablePlugin and attr.__module__ != "glados.mcp.runnable_mcp_plugin":
                             PluginSystem().load_plugin_instance(attr)
-                            logger.info(f"Loaded plugin instance: {attr_name}")
+                            logger.success(f"Loaded plugin instance: {attr_name}")
 
                 except Exception as e:
                     logger.exception(f"Failed to load module {file[:-3]}: {e}")
@@ -89,7 +89,8 @@ class PluginSystem:
                  process_output: bool = True,
                  is_callable: Callable = None,
                  intents: List = None,
-                 activity: List[Activity] = None
+                 activity: List[Activity] = None,
+                 nlp_threshold: float = None,
                  ):
         """
         Decorator to register a plugin with the given name, description, and parameters.
@@ -124,13 +125,24 @@ class PluginSystem:
 
             logger.debug(f"Registering plugin: {plugin_name} with llm_function_request: {llm_function_request}")
             if llm_function_request and self.validate_plugin_definition(llm_function_request):
+                # Resolve nlp_threshold: YAML config > code default > None
+                effective_nlp_threshold = nlp_threshold
+                try:
+                    from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
+                    yaml_config = RunnableMCPPlugin.get_plugin_config(plugin_name)
+                    if "nlp_threshold" in yaml_config:
+                        effective_nlp_threshold = float(yaml_config["nlp_threshold"])
+                except Exception:
+                    pass
+
                 self.plugins[plugin_name] = {
                     "function": func,  # the function that the LLM can call
                     "description": plugin_description,  # The description of the funtion
                     LLM_FUNCTION_REQUEST: llm_function_request.to_dict() if llm_function_request else {},
                     "process_output": process_output,
                     "callable": is_callable,
-                    "activity": activity or [Activity.GENERAL]
+                    "activity": activity or [Activity.GENERAL],
+                    "nlp_threshold": effective_nlp_threshold,
                 }
                 logger.success(f"Registered plugin: {plugin_name}")
                 logger.debug(f"plugin: {self.plugins[plugin_name]}")
@@ -213,6 +225,18 @@ class PluginSystem:
         finally:
             return available_functions
 
+    def get_nlp_threshold(self, tool_name: str, default: float = None) -> float:
+        """Get the NLP confidence threshold for a tool.
+
+        Resolution: per-tool value > default fallback.
+        """
+        plugin = self.plugins.get(tool_name)
+        if plugin:
+            threshold = plugin.get("nlp_threshold")
+            if threshold is not None:
+                return float(threshold)
+        return default
+
     def should_process_plugin_output(self, name):
         if name in self.plugins:
             if self.plugins[name][LLM_FUNCTION_REQUEST]:
@@ -269,6 +293,7 @@ class PluginSystem:
         """
         logger.info(f"Registering UI action: {event_name}")
         self._ui_actions[event_name] = callback
+        logger.success(f"Registered UI action: {event_name}")
 
     def get_ui_actions(self) -> dict:
         """Get all registered UI action handlers."""
@@ -333,12 +358,13 @@ class PluginSystem:
                     "description": getattr(cls, "__doc__", "No description available."),
                     LLM_FUNCTION_REQUEST: {}
                 }
-                logger.success(f"Loaded plugin instance: {plugin_name}")
+                logger.success(f"Loaded plugin runnable instance: {plugin_name}")
 
                 # Automatically start RunnablePlugin instances
                 if isinstance(instance, RunnablePlugin):
                     logger.info(f"Starting plugin: {plugin_name}")
                     instance.start()
+                    logger.success(f"Started plugin: {plugin_name}")
 
                 return instance
             else:

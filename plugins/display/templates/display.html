@@ -25,27 +25,42 @@
         #app-header {
             display: flex;
             align-items: center;
-            padding: 10px 16px;
+            padding: 12px 20px;
             background: #16162a;
             border-bottom: 1px solid rgba(255,255,255,0.08);
             z-index: 20;
-            min-height: 48px;
+            min-height: 56px;
+            gap: 6px;
         }
         #back-btn {
-            font-size: 1.2rem; color: #ff6600; background: none; border: none;
-            cursor: pointer; padding: 4px 12px 4px 0; display: none;
+            font-size: 1.4rem; color: #ff6600; background: none; border: none;
+            cursor: pointer; padding: 6px 14px 6px 0; display: none;
         }
-        #header-title { flex: 1; font-size: 1.1rem; font-weight: 600; }
+        #header-title { flex: 1; font-size: 1.2rem; font-weight: 600; }
         #status-dot {
-            width: 10px; height: 10px; border-radius: 50%; background: #666;
-            margin-right: 12px; transition: background 0.3s;
+            width: 12px; height: 12px; border-radius: 50%; background: #666;
+            margin-right: 10px; transition: background 0.3s;
         }
         #status-dot.listening { background: #4caf50; animation: pulse 1.5s infinite; }
         #status-dot.thinking { background: #ff9800; animation: pulse 1s infinite; }
         #status-dot.speaking { background: #ff6600; animation: pulse 0.8s infinite; }
+        .header-mute-btn {
+            font-size: 1.3rem; background: none; border: none; color: #888;
+            cursor: pointer; padding: 6px 8px; border-radius: 8px; transition: all 0.15s;
+            min-width: 40px; min-height: 40px; display: flex; align-items: center; justify-content: center;
+        }
+        .header-mute-btn:hover { color: #e0e0e0; }
+        .header-mute-btn.muted { color: #f44336; background: rgba(244,67,54,0.12); }
+        .header-link {
+            font-size: 1.2rem; background: none; border: none; color: #666;
+            cursor: pointer; padding: 6px 8px; border-radius: 8px; text-decoration: none;
+            min-width: 40px; min-height: 40px; display: flex; align-items: center; justify-content: center;
+        }
+        .header-link:hover { color: #ff6600; }
         #chat-toggle {
-            font-size: 1.3rem; background: none; border: none; color: #aaa;
-            cursor: pointer; padding: 4px 8px;
+            font-size: 1.4rem; background: none; border: none; color: #aaa;
+            cursor: pointer; padding: 6px 10px; min-width: 44px; min-height: 44px;
+            display: flex; align-items: center; justify-content: center;
         }
         #chat-toggle:hover { color: #ff6600; }
 
@@ -77,11 +92,11 @@
 
         /* ── Dashboard ─────────────────────────────────── */
         .dashboard {
-            padding: 24px;
+            padding: 28px;
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            max-width: 800px;
+            gap: 20px;
+            max-width: 900px;
             margin: 0 auto;
         }
         .dash-card {
@@ -93,35 +108,35 @@
         }
         .dash-card:hover { border-color: rgba(255,102,0,0.3); }
         .dash-card-header {
-            display: flex; align-items: center; gap: 8px;
-            padding: 14px 16px 8px;
-            cursor: pointer; font-weight: 600; font-size: 0.95rem;
+            display: flex; align-items: center; gap: 10px;
+            padding: 16px 18px 10px;
+            cursor: pointer; font-weight: 600; font-size: 1.05rem;
         }
         .dash-card-header:hover { color: #ff6600; }
-        .dash-card-icon { font-size: 1.3rem; }
+        .dash-card-icon { font-size: 1.5rem; }
         .dash-card-badge {
-            margin-left: auto; font-size: 0.75rem; font-weight: 400;
-            background: rgba(255,255,255,0.06); padding: 2px 10px; border-radius: 10px; color: #888;
+            margin-left: auto; font-size: 0.8rem; font-weight: 400;
+            background: rgba(255,255,255,0.06); padding: 3px 12px; border-radius: 10px; color: #888;
         }
         .dash-card-badge.urgent { background: rgba(255,80,0,0.15); color: #ff6600; }
-        .dash-card-body { padding: 0 16px 14px; font-size: 0.85rem; color: #888; }
+        .dash-card-body { padding: 0 18px 16px; font-size: 0.9rem; color: #888; }
         .dash-card-body .quick-input {
             display: flex; gap: 6px; margin-top: 8px;
         }
         .dash-card-body .quick-input input {
             flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 8px; padding: 8px 10px; color: #e0e0e0; font-size: 0.85rem;
+            border-radius: 10px; padding: 10px 14px; color: #e0e0e0; font-size: 0.95rem;
         }
         .dash-card-body .quick-input input:focus { border-color: #ff6600; outline: none; }
         .dash-card-body .quick-input button {
-            background: #ff6600; color: #fff; border: none; padding: 8px 14px;
-            border-radius: 8px; cursor: pointer; font-size: 0.9rem;
+            background: #ff6600; color: #fff; border: none; padding: 10px 16px;
+            border-radius: 10px; cursor: pointer; font-size: 1rem; min-height: 44px;
         }
         .dash-expiring-item { color: #ff8c00; font-size: 0.8rem; padding: 2px 0; }
         .dash-expiring-item.expired { color: #ff4444; }
         .dash-timer-countdown { font-size: 1.5rem; font-weight: 300; color: #ff6600; font-variant-numeric: tabular-nums; }
         .timer-quick-btns { display: flex; gap: 6px; }
-        .tq-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #e0e0e0; padding: 8px 14px; cursor: pointer; font-size: 0.9rem; flex: 1; }
+        .tq-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #e0e0e0; padding: 10px 16px; cursor: pointer; font-size: 1rem; flex: 1; min-height: 44px; }
         .tq-btn:hover { border-color: #ff6600; color: #ff6600; }
         .timer-adjust-display { font-size: 2rem; font-weight: 300; color: #ff6600; text-align: center; margin: 8px 0 4px; font-variant-numeric: tabular-nums; }
         .timer-adjust-btns { display: flex; gap: 4px; justify-content: center; }
@@ -133,14 +148,14 @@
             grid-column: 1 / -1;
             text-align: center; padding: 16px; color: #666; font-size: 0.9rem;
         }
-        .dash-clock .time { font-size: 2.5rem; font-weight: 200; color: #e0e0e0; }
+        .dash-clock .time { font-size: 3rem; font-weight: 200; color: #e0e0e0; }
 
         /* ── Full-screen view container ────────────────── */
-        #view-container { display: none; padding: 16px; }
+        #view-container { display: none; padding: 20px; }
         #view-container.active { display: block; }
 
         /* ── View shared styles ────────────────────────── */
-        .view-title { font-size: 1.3rem; font-weight: 600; color: #ff6600; margin-bottom: 16px; border-bottom: 1px solid rgba(255,102,0,0.2); padding-bottom: 8px; }
+        .view-title { font-size: 1.4rem; font-weight: 600; color: #ff6600; margin-bottom: 18px; border-bottom: 1px solid rgba(255,102,0,0.2); padding-bottom: 10px; }
 
         /* ── Recipe view ───────────────────────────────── */
         .recipe-image { width: 100%; max-height: 300px; object-fit: cover; border-radius: 12px; margin-bottom: 16px; }
@@ -148,22 +163,22 @@
         /* Recipe search results */
         .rs-list { display: flex; flex-direction: column; gap: 8px; }
         .rs-item {
-            display: flex; align-items: center; gap: 14px; padding: 10px 12px;
+            display: flex; align-items: center; gap: 16px; padding: 12px 14px;
             background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 12px; cursor: pointer; min-height: 64px;
+            border-radius: 14px; cursor: pointer; min-height: 72px;
             transition: border-color 0.15s;
         }
         .rs-item:hover { border-color: rgba(255,102,0,0.3); }
         .rs-item:active { background: rgba(255,102,0,0.08); }
-        .rs-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+        .rs-thumb { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
         .rs-thumb-placeholder {
-            width: 56px; height: 56px; border-radius: 8px; flex-shrink: 0;
+            width: 64px; height: 64px; border-radius: 10px; flex-shrink: 0;
             background: rgba(255,255,255,0.04); display: flex; align-items: center;
-            justify-content: center; font-size: 1.5rem;
+            justify-content: center; font-size: 1.8rem;
         }
         .rs-info { flex: 1; min-width: 0; }
-        .rs-title { font-size: 0.95rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .rs-meta { font-size: 0.75rem; color: #888; margin-top: 2px; }
+        .rs-title { font-size: 1.05rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rs-meta { font-size: 0.8rem; color: #888; margin-top: 3px; }
         .recipe-section-label { font-size: 0.9rem; font-weight: 600; color: #ff6600; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.05em; }
         .ingredient-list { list-style: disc; padding-left: 24px; }
         .ingredient-list li { margin: 4px 0; color: #ccc; }
@@ -183,8 +198,8 @@
         .shopping-add-form button { background: #ff6600; color: #fff; border: none; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
         .shopping-category-header { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #888; padding: 8px 0 4px; border-bottom: 1px solid rgba(255,255,255,0.04); }
         .shopping-item {
-            display: flex; align-items: center; gap: 12px; padding: 12px 4px;
-            border-bottom: 1px solid rgba(255,255,255,0.03); cursor: pointer; min-height: 48px;
+            display: flex; align-items: center; gap: 14px; padding: 14px 6px;
+            border-bottom: 1px solid rgba(255,255,255,0.03); cursor: pointer; min-height: 52px;
         }
         .shopping-item:active { background: rgba(255,255,255,0.04); }
         .shopping-item.got { opacity: 0.4; }
@@ -196,7 +211,7 @@
         .shopping-item.got .si-check { background: #ff6600; border-color: #ff6600; }
         .si-check::after { content: ''; display: none; width: 7px; height: 12px; border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); margin-bottom: 2px; }
         .shopping-item.got .si-check::after { display: block; }
-        .si-name { flex: 1; font-size: 0.95rem; }
+        .si-name { flex: 1; font-size: 1rem; }
         .si-qty { font-size: 0.8rem; color: #aaa; background: rgba(255,255,255,0.06); padding: 2px 10px; border-radius: 10px; cursor: pointer; min-width: 30px; text-align: center; }
         .si-qty:hover { border: 1px solid rgba(255,102,0,0.3); }
         .si-name { cursor: pointer; }
@@ -225,7 +240,7 @@
         .pantry-loc-count { font-size: 0.75rem; color: #888; background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 8px; }
         .pantry-loc-items { padding: 0 16px; display: none; }
         .pantry-location.expanded .pantry-loc-items { display: block; }
-        .pantry-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 0.9rem; min-height: 44px; }
+        .pantry-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 0.95rem; min-height: 48px; }
         .pantry-item:last-child { border-bottom: none; }
         .pi-name { flex: 1; }
         .pi-notes { font-size: 0.75rem; color: #888; }
@@ -267,6 +282,11 @@
         .timer-float .tf-time { font-size: 2rem; font-weight: 300; color: #ff6600; font-variant-numeric: tabular-nums; }
         .timer-float .tf-dismiss { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #888; padding: 4px 12px; cursor: pointer; font-size: 0.75rem; margin-top: 6px; }
         .timer-float .tf-dismiss:hover { color: #f44336; border-color: rgba(244,67,54,0.4); }
+        .timer-float.timer-done { border-color: rgba(255,80,0,0.5); animation: pulse-border 1s infinite; }
+        .timer-float.timer-done .tf-time { color: #ff4444; }
+        .timer-float .tf-dismiss-done { background: #ff6600; color: #fff; border-color: #ff6600; padding: 6px 16px; font-size: 0.85rem; }
+        .timer-float .tf-dismiss-done:hover { background: #e55500; }
+        @keyframes pulse-border { 0%,100% { border-color: rgba(255,80,0,0.5); } 50% { border-color: rgba(255,80,0,0.15); } }
 
         /* ── Chat drawer ───────────────────────────────── */
         #chat-backdrop {
@@ -282,17 +302,23 @@
         }
         #chat-drawer.open { right: 0; }
         #chat-drawer-header {
-            padding: 12px 16px; display: flex; align-items: center;
-            border-bottom: 1px solid rgba(255,255,255,0.08); min-height: 48px;
+            padding: 14px 18px; display: flex; align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.08); min-height: 56px;
         }
-        #chat-drawer-header h2 { flex: 1; font-size: 1rem; font-weight: 600; }
-        #chat-close { font-size: 1.2rem; background: none; border: none; color: #888; cursor: pointer; padding: 8px; }
+        #chat-drawer-header h2 { flex: 1; font-size: 1.1rem; font-weight: 600; }
+        #chat-close { font-size: 1.3rem; background: none; border: none; color: #888; cursor: pointer; padding: 8px; min-width: 40px; min-height: 40px; }
+        #chat-pin {
+            font-size: 1.1rem; background: none; border: none; color: #555; cursor: pointer;
+            padding: 6px 8px; border-radius: 6px; transition: all 0.15s; min-width: 40px; min-height: 40px;
+        }
+        #chat-pin.pinned { color: #ff6600; transform: rotate(45deg); }
+        #chat-pin:hover { color: #ff6600; }
         #chat-history {
             flex: 1; overflow-y: auto; padding: 12px;
             display: flex; flex-direction: column; gap: 10px;
         }
         #chat-history::before { content: ''; flex: 1; }
-        .chat-bubble { max-width: 90%; padding: 8px 12px; border-radius: 12px; font-size: 0.88rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word; }
+        .chat-bubble { max-width: 90%; padding: 10px 14px; border-radius: 14px; font-size: 0.95rem; line-height: 1.45; word-wrap: break-word; overflow-wrap: break-word; }
         .chat-bubble.user { align-self: flex-end; background: #2a3a5c; border-bottom-right-radius: 4px; color: #c8d8f8; }
         .chat-bubble.assistant { align-self: flex-start; background: #2a2a3e; border-bottom-left-radius: 4px; }
         .chat-bubble.assistant .streaming { color: #888; }
@@ -347,12 +373,12 @@
         }
         #bottom-nav .nav-items { display: flex; justify-content: space-around; }
         .nav-item {
-            display: flex; flex-direction: column; align-items: center; gap: 2px;
-            color: #888; font-size: 0.65rem; cursor: pointer; padding: 4px 16px;
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+            color: #888; font-size: 0.7rem; cursor: pointer; padding: 6px 18px;
             border: none; background: none;
         }
         .nav-item.active { color: #ff6600; }
-        .nav-item .nav-icon { font-size: 1.2rem; }
+        .nav-item .nav-icon { font-size: 1.4rem; }
 
         /* ── Responsive ────────────────────────────────── */
         @media (max-width: 768px) {
@@ -377,8 +403,11 @@
     <!-- Header -->
     <div id="app-header">
         <button id="back-btn" onclick="goBack()">&#8592;</button>
+        <button id="mute-tts-btn" class="header-mute-btn" onclick="toggleMuteTTS()" title="Mute/unmute speech">&#128264;</button>
+        <button id="mute-mic-btn" class="header-mute-btn" onclick="toggleMuteMic()" title="Mute/unmute microphone">&#127908;</button>
         <div id="header-title">GlaDOS</div>
         <div id="status-dot"></div>
+        <a href="/wiki/" class="header-link" title="Wiki">&#128214;</a>
         <button id="chat-toggle" onclick="toggleChat()">&#9776;</button>
     </div>
 
@@ -401,11 +430,12 @@
     <div id="status-toast"><span class="status-text"></span></div>
 
     <!-- Chat drawer -->
-    <div id="chat-backdrop" onclick="toggleChat()"></div>
+    <div id="chat-backdrop" onclick="if(!chatPinned) toggleChat()"></div>
     <div id="chat-drawer">
         <div id="chat-drawer-header">
             <h2>Chat</h2>
             <div id="connection-status" style="font-size:0.75rem; color:#4caf50; margin-right:8px;">connected</div>
+            <button id="chat-pin" onclick="toggleChatPin()" title="Pin chat open">&#128204;</button>
             <button id="chat-close" onclick="toggleChat()">&#10005;</button>
         </div>
         <div id="chat-history"></div>
@@ -568,10 +598,7 @@
                             <input type="text" id="dash-recipe-search" placeholder="Search recipes..." onkeydown="if(event.key==='Enter') dashSearchRecipe()">
                             <button onclick="dashSearchRecipe()">&#128269;</button>
                         </div>
-                        <div style="margin-top:4px;display:flex;align-items:center;gap:6px">
-                            <input type="checkbox" id="dash-recipe-pantry-filter" style="accent-color:#ff6600">
-                            <label for="dash-recipe-pantry-filter" style="font-size:0.75rem;color:#888;cursor:pointer">Only makeable from pantry</label>
-                        </div>
+                        <button onclick="socket.emit('recipe_action',{action:'search_from_pantry'})" style="margin-top:6px;width:100%;padding:6px 0;background:rgba(255,102,0,0.12);color:#ff8c00;border:1px solid rgba(255,102,0,0.2);border-radius:6px;cursor:pointer;font-size:0.8rem">What can I make?</button>
                     </div>
                 </div>
                 <div class="dash-card">
@@ -845,13 +872,18 @@
         function renderTimerOverlay(data) {
             if (data.timers && data.timers.length > 0) {
                 timerOverlay.innerHTML = data.timers.map(t => {
-                    const icon = t.type === 'alarm' ? '&#9200;' : '&#9201;';
                     const desc = esc(t.description || 'Timer');
-                    return `<div class="timer-float">
+                    const isDone = t.type === 'timer_done' || t.type === 'alarm_done';
+                    const icon = t.type === 'alarm' ? '&#9200;' : isDone ? '&#9888;' : '&#9201;';
+                    const doneClass = isDone ? ' timer-done' : '';
+                    const btn = isDone
+                        ? `<button class="tf-dismiss tf-dismiss-done" onclick="socket.emit('timer_action',{action:'dismiss_ring'})">Dismiss</button>`
+                        : `<button class="tf-dismiss" onclick="socket.emit('timer_action',{action:'cancel',description:'${desc.replace(/'/g,"\\'")}'})">Cancel</button>`;
+                    return `<div class="timer-float${doneClass}">
                         <div class="tf-icon">${icon}</div>
                         <div class="tf-name">${desc}</div>
                         <div class="tf-time">${esc(t.expires_in||'--')}</div>
-                        <button class="tf-dismiss" onclick="socket.emit('timer_action',{action:'cancel',description:'${desc.replace(/'/g,"\\'")}'})">Cancel</button>
+                        ${btn}
                     </div>`;
                 }).join('');
                 timerOverlay.classList.add('visible');
@@ -863,11 +895,23 @@
         }
 
         // ── Chat ───────────────────────────────────────
+        let chatPinned = false;
         function toggleChat() {
+            if (chatPinned) return;  // pinned = always open
             const d = document.getElementById('chat-drawer'), b = document.getElementById('chat-backdrop');
             const open = d.classList.toggle('open');
             b.classList.toggle('visible', open);
             if (open) document.getElementById('chat-input').focus();
+        }
+        function toggleChatPin() {
+            chatPinned = !chatPinned;
+            const pin = document.getElementById('chat-pin');
+            const d = document.getElementById('chat-drawer'), b = document.getElementById('chat-backdrop');
+            pin.classList.toggle('pinned', chatPinned);
+            if (chatPinned) {
+                d.classList.add('open');
+                b.classList.remove('visible');  // no backdrop when pinned
+            }
         }
         function sendChat() {
             const el = document.getElementById('chat-input');
@@ -946,6 +990,27 @@
         });
 
         function esc(str) { if (!str) return ''; const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+        // ── Mute controls ──────────────────────────────
+        let ttsMuted = false;
+        let micMuted = false;
+        function toggleMuteTTS() {
+            ttsMuted = !ttsMuted;
+            const btn = document.getElementById('mute-tts-btn');
+            btn.classList.toggle('muted', ttsMuted);
+            btn.innerHTML = ttsMuted ? '&#128263;' : '&#128264;';
+            btn.title = ttsMuted ? 'Unmute speech' : 'Mute speech';
+            socket.emit('system_control', { action: ttsMuted ? 'mute_tts' : 'unmute_tts' });
+            if (ttsMuted) socket.emit('interrupt');
+        }
+        function toggleMuteMic() {
+            micMuted = !micMuted;
+            const btn = document.getElementById('mute-mic-btn');
+            btn.classList.toggle('muted', micMuted);
+            btn.innerHTML = micMuted ? '&#128263;' : '&#127908;';
+            btn.title = micMuted ? 'Unmute microphone' : 'Mute microphone';
+            socket.emit('system_control', { action: micMuted ? 'mute_mic' : 'unmute_mic' });
+        }
 
         // ── Init ───────────────────────────────────────
         navigateTo('dashboard');

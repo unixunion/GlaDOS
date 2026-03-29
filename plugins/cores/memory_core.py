@@ -63,30 +63,8 @@ class MemoryCore(RunnableMCPPlugin):
             "remember I am",
             "remember I have",
         ])
-        classifier.add_intent(MEMORY_RECALL_INTENT, [
-            "do you remember",
-            "what did I say about",
-            "what did I tell you about",
-            "what did I mention about",
-            "what do you remember about",
-            "what do you know about",
-            "recall",
-            "can you recall",
-            "have we talked about",
-            "have we discussed",
-            "what are my preferences",
-            "what is my preference",
-            "what do you remember",
-            "do you know my",
-            "what's in your memory about",
-            "search your memory",
-            "summarise memories",
-            "summarize memories",
-            "what is in the memory",
-            "what's in memory",
-            "list all stored memories",
-            "show me what you remember",
-        ])
+        # Note: recall intent removed — memory recall is handled by auto-retrieval
+        # which injects relevant memories into LLM context. The LLM answers naturally.
         classifier.add_intent(MEMORY_FORGET_ALL_INTENT, [
             "forget everything",
             "clear your memory",
@@ -115,7 +93,7 @@ class MemoryCore(RunnableMCPPlugin):
         # Register with PluginSystem so activity inference works for memory intents
         from glados.system.plugin import PluginSystem
         plugin_system = PluginSystem()
-        for intent_name in [MEMORY_REMEMBER_INTENT, MEMORY_RECALL_INTENT, MEMORY_FORGET_ALL_INTENT, MEMORY_DEBUG_INTENT]:
+        for intent_name in [MEMORY_REMEMBER_INTENT, MEMORY_FORGET_ALL_INTENT, MEMORY_DEBUG_INTENT]:
             plugin_system.plugins[intent_name] = {
                 "function": None,
                 "description": "Memory operation (handled pre-LLM)",
@@ -197,19 +175,8 @@ class MemoryCore(RunnableMCPPlugin):
             ctx.handled = True
             return
 
-        if intent_type == "recall":
-            memories = self._store.search(query=intent_content or text)
-            if memories:
-                ctx.memory_context = self._format_memories(
-                    memories, header="Memory search results — use these to answer the user's question"
-                )
-                logger.info(f"[Memory] Recall returned {len(memories)} results")
-            else:
-                ctx.tts_queue.put("I don't have any memories about that.")
-                ctx.tts_queue.put("<EOS>")
-                logger.info("[Memory] Recall returned no results")
-                ctx.handled = True
-            return
+        # Recall is handled by auto-retrieval below — the LLM sees injected
+        # memories in its context and answers naturally. No NLP interception needed.
 
         # 2. Default: automatic retrieval for context enrichment
         try:
@@ -257,7 +224,7 @@ class MemoryCore(RunnableMCPPlugin):
                 else:
                     logger.debug(f"[Memory] REMEMBER intent detected but extraction failed for: {text}")
 
-            elif predicted == MEMORY_RECALL_INTENT and confidence >= 0.3:
+            elif predicted == MEMORY_RECALL_INTENT and confidence >= 0.85:
                 logger.info(f"[Memory] Detected RECALL intent (confidence={confidence:.2f})")
                 return "recall", text
 

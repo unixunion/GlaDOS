@@ -45,9 +45,12 @@ class StreamHandler:
         if query and self.plugin_manager.get_intent_classifier():
             try:
                 predicted_intent, confidence = self.plugin_manager.get_intent_classifier().predict_intent(query)
-                if confidence >= confidence_threshold:
+                # Per-tool threshold overrides global
+                effective_threshold = self.plugin_manager.get_nlp_threshold(predicted_intent, default=confidence_threshold)
+                if confidence >= effective_threshold:
                     tool_choice = "required"
-                    logger.info(f"Intent classifier matched '{predicted_intent}' with confidence {confidence:.2f}, using tool_choice='required'")
+                    logger.info(f"Intent classifier matched '{predicted_intent}' with confidence {confidence:.2f}, "
+                                f"using tool_choice='required' (threshold={effective_threshold:.2f})")
             except Exception as e:
                 logger.exception(f"Intent classifier threw exception: {e}")
 

@@ -54,7 +54,7 @@ class MyRunnablePlugin(RunnablePlugin):
 
     def start(self):
         logger.info("Starting...")
-        if self._worker_thread and self._worker_thread.is_alive():
+        if getattr(self, '_worker_thread', None) and self._worker_thread.is_alive():
             return
 
         def ticker():

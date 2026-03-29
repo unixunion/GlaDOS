@@ -65,6 +65,9 @@ class KnowledgeConfig:
     top_k: int = 3
     threshold: float = 0.5
     embed_model: str = "all-MiniLM-L6-v2"
+    query_mode: str = "context"  # "raw", "context", or "rewrite"
+    rewrite_model: str = None    # model for rewrite mode (null = use main model)
+    rewrite_url: str = None      # separate API endpoint for rewrite (null = use main)
     conversation_rag_enabled: bool = False
     conversation_rag_top_k: int = 5
     conversation_rag_threshold: float = 0.4
@@ -107,6 +110,9 @@ _FLAT_TO_NESTED = {
     "knowledge_top_k": ("knowledge", "top_k"),
     "knowledge_threshold": ("knowledge", "threshold"),
     "knowledge_embed_model": ("knowledge", "embed_model"),
+    "knowledge_query_mode": ("knowledge", "query_mode"),
+    "knowledge_rewrite_model": ("knowledge", "rewrite_model"),
+    "knowledge_rewrite_url": ("knowledge", "rewrite_url"),
     "conversation_rag_enabled": ("knowledge", "conversation_rag_enabled"),
     "conversation_rag_top_k": ("knowledge", "conversation_rag_top_k"),
     "conversation_rag_threshold": ("knowledge", "conversation_rag_threshold"),
@@ -210,6 +216,18 @@ class GladosConfig:
     @property
     def knowledge_embed_model(self) -> str:
         return self.knowledge.embed_model
+
+    @property
+    def knowledge_query_mode(self) -> str:
+        return self.knowledge.query_mode
+
+    @property
+    def knowledge_rewrite_model(self):
+        return self.knowledge.rewrite_model
+
+    @property
+    def knowledge_rewrite_url(self):
+        return self.knowledge.rewrite_url
 
     @property
     def conversation_rag_enabled(self) -> bool:

@@ -23,7 +23,10 @@ class AnthropicBackend(LLMBackend):
     def create_client(self, config):
         try:
             import anthropic
-            return anthropic.Anthropic(api_key=config.api_key)
+            import os
+            # Prefer config, fall back to ANTHROPIC_API_KEY env var, then let SDK auto-detect
+            api_key = config.api_key or os.environ.get("ANTHROPIC_API_KEY")
+            return anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
         except ImportError:
             raise ImportError("anthropic package not installed. Run: pip install anthropic")
 
@@ -97,19 +100,50 @@ class AnthropicBackend(LLMBackend):
         return "\n\n".join(system_parts), merged
 
     def _convert_tools(self, tools: list[dict] | None) -> list[dict] | None:
-        """Convert OpenAI-format tools to Anthropic format."""
+        """Convert OpenAI-format tools to Anthropic format.
+
+        Cleans up JSON Schema to match Claude's requirements (draft 2020-12):
+        - Remove null enum values
+        - Remove additionalProperties (Claude doesn't support it in tool schemas)
+        - Ensure all properties have a type
+        """
         if not tools:
             return None
         anthropic_tools = []
         for tool in tools:
             if isinstance(tool, dict) and tool.get("type") == "function":
                 func = tool.get("function", {})
+                schema = func.get("parameters", {"type": "object", "properties": {}})
+                # Deep clean the schema
+                schema = self._clean_schema(schema)
                 anthropic_tools.append({
                     "name": func.get("name", ""),
                     "description": func.get("description", ""),
-                    "input_schema": func.get("parameters", {"type": "object", "properties": {}}),
+                    "input_schema": schema,
                 })
         return anthropic_tools or None
+
+    def _clean_schema(self, schema: dict) -> dict:
+        """Clean a JSON Schema dict for Claude compatibility."""
+        if not isinstance(schema, dict):
+            return schema
+        cleaned = {}
+        for key, value in schema.items():
+            # Remove additionalProperties (Claude doesn't support in tool schemas)
+            if key == "additionalProperties":
+                continue
+            # Clean null values from enum
+            if key == "enum" and value is None:
+                continue
+            # Recurse into nested dicts
+            if isinstance(value, dict):
+                cleaned[key] = self._clean_schema(value)
+            elif key == "properties" and isinstance(value, dict):
+                # Clean each property definition
+                cleaned[key] = {k: self._clean_schema(v) for k, v in value.items()}
+            else:
+                cleaned[key] = value
+        return cleaned
 
     def stream(
         self,
@@ -150,7 +184,6 @@ class AnthropicBackend(LLMBackend):
             "messages": anthropic_messages,
             "max_tokens": max_tokens or self.max_response_tokens,
             "temperature": temperature,
-            "stream": True,
         }
         if system_prompt:
             create_kwargs["system"] = system_prompt

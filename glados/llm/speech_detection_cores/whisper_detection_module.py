@@ -72,6 +72,15 @@ class WhisperVoiceDetectionModule:
             "system.listen_for_response",
             EventHook(name="listen_for_response", callback=self.listen_for_response, priority=1)
         )
+        # UI mute/unmute controls
+        self.event_system.subscribe(
+            "system.mute_mic",
+            EventHook(name="mute_mic", callback=lambda e: self._set_muted(True), priority=1)
+        )
+        self.event_system.subscribe(
+            "system.unmute_mic",
+            EventHook(name="unmute_mic", callback=lambda e: self._set_muted(False), priority=1)
+        )
 
         # Whisper ASR Model
         logger.info(f"Loading Whisper model: {whisper_model_size}")
@@ -85,6 +94,16 @@ class WhisperVoiceDetectionModule:
         logger.info(f"  VAD chunk size: {self.vad_chunk_size} ms")
         logger.info(f"  Buffer size: {self.buffer_size * self.vad_chunk_size} ms")
         logger.info(f"  VAD threshold: {self.vad_threshold}")
+
+    def _set_muted(self, muted: bool):
+        """Set mute state from UI control."""
+        self.muted = muted
+        if muted:
+            logger.success("Muted via UI — ignoring all input until unmuted.")
+            self.event_system.publish(EventMessage("status", "idle", {"message": "Microphone muted"}))
+        else:
+            logger.success("Unmuted via UI — resuming normal operation.")
+            self.event_system.publish(EventMessage("status", "listening", {"message": "Listening resumed"}))
 
     def _play_listen_beep(self):
         """Play a short confirmation tone to signal that recording has started."""

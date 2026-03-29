@@ -125,6 +125,12 @@ class DisplayPlugin(RunnablePlugin):
                 "system", "interrupt_tts", {}
             ))
 
+        @self._socketio.on("system_control")
+        def handle_system_control(data):
+            action = data.get("action", "")
+            logger.info(f"[Display] System control: {action}")
+            self.event_system.publish(EventMessage("system", action, {}))
+
         @self._socketio.on("user_message")
         def handle_user_message(data):
             text = data.get("text", "").strip()
@@ -144,7 +150,6 @@ class DisplayPlugin(RunnablePlugin):
 
     def _on_display_event(self, event: EventMessage):
         """Handle display.* events and push to all connected browsers."""
-        logger.info(f"Display event received: {event.name}")
         if isinstance(event.content, dict):
             payload = {"view_type": event.name, **event.content}
         else:

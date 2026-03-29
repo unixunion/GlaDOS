@@ -16,8 +16,10 @@ A modular re-write of the upstream project with plugin support, function calling
 - Switchable TTS voice cores (Piper/ONNX or Kokoro ONNX) via config, with cooking abbreviation expansion (Tbsp → tablespoon, etc.)
 - MCP (Model Context Protocol) for standardized tool registration
 - Persistent vector memory via ChromaDB — explicit fact storage and optional auto-exchange storage
-- Knowledge base RAG via Qdrant — ingest ZIM files (Wikipedia, StackOverflow) for factual question answering
+- Knowledge base RAG via Qdrant — ingest ZIM files (Wikipedia, StackOverflow) for factual question answering, with configurable query modes (raw/context/rewrite)
 - Conversation RAG via Qdrant — stores exchanges and retrieves relevant prior conversations for context
+- Log ring buffer — bounded deque of structured logs (5000 entries) for runtime diagnostics and LLM-powered error analysis
+- Per-plugin NLP thresholds — individual tools can set their own confidence threshold for NLP fast-path routing
 - Response safeguards — max token limit, wall-clock timeout, LoopGuard repetition detection
 - GLaDOS personality system — SarcasmCore (LLM prompt) + PersonalityCore (contextual quip injection)
 
@@ -51,6 +53,27 @@ The web display (`http://<host>:5001`) uses a dashboard + full-screen view patte
 - **Mobile** — bottom nav bar (Home, List, Pantry, Chat) on phone viewports. Responsive card grid.
 - **PWA** — manifest + service worker for add-to-home-screen.
 - **Plugin UI actions** — plugins self-register SocketIO event handlers via `register_ui_action()`. The DisplayPlugin auto-creates handlers dynamically. No plugin-specific code in `display_server.py`.
+
+### LLM Backend Abstraction
+
+```
+LLMBackend (ABC)
+├── OpenAIBackend     — OpenAI-compatible (LM Studio, Ollama via OpenAI API)
+├── AnthropicBackend  — Claude API
+└── LangChainBackend  — LangChain/Ollama native
+```
+
+All backends yield normalized `StreamChunk` objects. `StreamHandler` and `ChatClient._consume_stream()` work identically regardless of backend. Adding a new provider = one file in `glados/llm/backends/`.
+
+### Unified Timer/Alarm Ringing
+
+Both timers and alarms route through a single ringing system managed by `CountdownTimer`:
+- Timer expires → `_start_ringing(description, "timer")`
+- Alarm expires → publishes `system.start_ring` event → CountdownTimer picks it up
+- One ring thread plays sound, supports multiple concurrent items
+- Dismiss (UI button, voice "stop", mute button) clears all ringing items
+- 3-minute auto-timeout
+- Both show as "DONE" cards with dismiss button in the floating overlay
 
 ### Shopping Sub-Contexts
 

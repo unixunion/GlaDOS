@@ -1,4 +1,5 @@
 import dataclasses
+import json
 import os
 import re
 import threading
@@ -62,6 +63,8 @@ class AlarmClock(RunnableMCPPlugin):
     def __init__(self):
         super().__init__()
         logger.info("Instantiating Alarm Clock System")
+        self._data_dir = os.path.join("plugin_data", "alarms")
+        os.makedirs(self._data_dir, exist_ok=True)
         self.alarms: List[Alarm] = []
         self._lock = threading.Lock()
 
@@ -89,6 +92,9 @@ class AlarmClock(RunnableMCPPlugin):
                 logger.info(f"Loaded alarm alert sound: {alert_path}")
             except Exception as e:
                 logger.warning(f"Could not load alarm sound: {e}")
+
+        # Load persisted alarms (removes expired ones)
+        self._load_alarms()
 
         # Register tools
         self.register_tool(
@@ -170,6 +176,44 @@ class AlarmClock(RunnableMCPPlugin):
             nlp_extract_fn=_cancel_alarm_nlp_extract,
         )
 
+    # -------------------------------------------------------------------
+    # Persistence
+    # -------------------------------------------------------------------
+
+    def _save_alarms(self):
+        """Persist active alarms to JSON."""
+        data = [
+            {"alarm_time": a.alarm_time.isoformat(), "description": a.description}
+            for a in self.alarms
+        ]
+        path = os.path.join(self._data_dir, "alarms.json")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to save alarms: {e}")
+
+    def _load_alarms(self):
+        """Load persisted alarms, discarding expired ones."""
+        path = os.path.join(self._data_dir, "alarms.json")
+        if not os.path.exists(path):
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            now = datetime.now()
+            loaded = 0
+            for entry in data:
+                alarm_time = datetime.fromisoformat(entry["alarm_time"])
+                if alarm_time > now:
+                    self.alarms.append(Alarm(alarm_time=alarm_time, description=entry["description"]))
+                    loaded += 1
+            if loaded:
+                logger.info(f"Restored {loaded} alarm(s) from disk")
+            self._save_alarms()
+        except Exception as e:
+            logger.warning(f"Failed to load alarms: {e}")
+
     def start(self):
         logger.info("Starting Alarm Clock System...")
         self.event_system.subscribe(
@@ -208,6 +252,7 @@ class AlarmClock(RunnableMCPPlugin):
                         return {"status": "error", "message": "An alarm is already set for this time."}
 
                 self.alarms.append(Alarm(alarm_time=alarm_time, description=description))
+                self._save_alarms()
                 # Push timer/alarm display so the new alarm appears immediately
                 try:
                     from plugins.basic.countdown_timer import CountdownTimer
@@ -250,6 +295,7 @@ class AlarmClock(RunnableMCPPlugin):
             for i, alarm in enumerate(self.alarms):
                 if query_lower in alarm.description.lower():
                     removed = self.alarms.pop(i)
+                    self._save_alarms()
                     self._refresh_timer_display()
                     return {"status": "success", "message": f"Cancelled alarm: {removed.description}"}
 
@@ -258,55 +304,31 @@ class AlarmClock(RunnableMCPPlugin):
                 for i, alarm in enumerate(self.alarms):
                     if alarm.alarm_time.hour == parsed_time.hour and alarm.alarm_time.minute == parsed_time.minute:
                         removed = self.alarms.pop(i)
+                        self._save_alarms()
                         self._refresh_timer_display()
                         return {"status": "success", "message": f"Cancelled alarm: {removed.description}"}
 
             return {"status": "error", "message": f"No alarm found matching '{query}'."}
 
-    def _ring_loop(self):
-        logger.info("Alarm ring loop started.")
-        while not self._ring_stop.is_set():
-            if self._alert_audio is not None:
-                try:
-                    stream = sd.OutputStream(
-                        samplerate=self._alert_rate,
-                        channels=self._alert_audio.shape[1] if self._alert_audio.ndim > 1 else 1,
-                        dtype="float32",
-                    )
-                    stream.start()
-                    stream.write(self._alert_audio)
-                    stream.stop()
-                    stream.close()
-                except Exception as e:
-                    logger.debug(f"Ring tone playback error: {e}")
-            self._ring_stop.wait(timeout=2.0)
-        logger.info("Alarm ring loop stopped.")
-
     def _start_ringing(self, alarm: Alarm):
+        """Start ringing — delegates to the unified ring system via event."""
         if self.ringing:
             return
         self.ringing = True
         self._ringing_alarm = alarm
-        self._ring_stop.clear()
 
         self.event_system.publish(EventMessage("system", "music_pause", {}))
+        # Publish ring event — CountdownTimer manages the unified ring loop
         self.event_system.publish(EventMessage(
-            role="display", name="timer",
-            content={"title": f"{alarm.description}", "content": "ALARM", "alert": True},
-            process_output=False
+            "system", "start_ring",
+            {"description": alarm.description, "type": "alarm"}
         ))
-
-        self._ring_thread = threading.Thread(target=self._ring_loop, daemon=True)
-        self._ring_thread.start()
         logger.info(f"Alarm ringing: {alarm.description}")
 
     def dismiss(self) -> bool:
+        """Dismiss the ringing alarm."""
         if not self.ringing:
             return False
-        self._ring_stop.set()
-        if self._ring_thread and self._ring_thread.is_alive():
-            self._ring_thread.join(timeout=3)
-        self._ring_thread = None
         dismissed = self._ringing_alarm
         self.ringing = False
         self._ringing_alarm = None
@@ -321,6 +343,8 @@ class AlarmClock(RunnableMCPPlugin):
         with self._lock:
             expired = [a for a in self.alarms if a.alarm_time <= now]
             self.alarms = [a for a in self.alarms if a.alarm_time > now]
+            if expired:
+                self._save_alarms()
 
         for alarm in expired:
             logger.info(f"Alarm expired: {alarm.description}")

@@ -98,7 +98,7 @@ class ChatClient:
             self.response_processor = ResponseProcessor(
                 tts_queue=self.tts_queue,
                 message_callback=self._store_message_in_history,
-                buffer_mode=getattr(config, 'tts_buffer_mode', 'clause'),
+                buffer_mode=getattr(config, 'tts_buffer_mode', 'sentence'),
                 word_buffer=getattr(config, 'tts_word_buffer', 5),
             )
             logger.success(f"ResponseProcessor created")
@@ -256,6 +256,7 @@ class ChatClient:
                 activity=self.message_manager.current_context,
                 session_id=self._session_id,
                 tts_queue=self.tts_queue,
+                message_manager=self.message_manager,
             )
             ChatHookRegistry().run_hooks(ChatPipelinePhase.PRE_LLM, ctx)
             if ctx.handled:
@@ -322,12 +323,14 @@ class ChatClient:
             self.response_processor.finalize_sentence()
 
             if not _recursive:
-                self.tts_queue.put("<EOS>")
                 self.response_processor.finalize_response()
+                # Run POST_RESPONSE hooks (e.g. personality quips) BEFORE EOS
+                # so quip audio plays in the same stream session — no pop/click
                 if hasattr(self, '_chat_ctx') and self._chat_ctx:
                     from glados.llm.chat_hooks import ChatHookRegistry, ChatPipelinePhase
                     ChatHookRegistry().run_hooks(ChatPipelinePhase.POST_RESPONSE, self._chat_ctx)
                     self._chat_ctx = None
+                self.tts_queue.put("<EOS>")
         except Exception as e:
             logger.exception(f"Chat error: {e}")
 

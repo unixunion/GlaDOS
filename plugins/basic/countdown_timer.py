@@ -1,4 +1,6 @@
 import dataclasses
+import json
+import os
 from datetime import datetime, timedelta
 from typing import Optional, List
 from loguru import logger
@@ -122,8 +124,19 @@ class CountdownTimer(RunnableMCPPlugin):
             return
         self._initialized = True
         super().__init__()
+        self._data_dir = os.path.join("plugin_data", "timers")
+        os.makedirs(self._data_dir, exist_ok=True)
         self.timers: List[Timer] = []
+        # Unified ringing state — manages both timers and alarms
+        import threading as _thr
+        self._ringing_items = []  # list of {"description": str, "type": "timer"|"alarm"}
+        self._ring_stop = _thr.Event()
+        self._ring_thread = None
+        self._ring_active = False
         logger.info("CountdownTimer system initializing.")
+
+        # Load persisted timers (removes expired ones)
+        self._load_timers()
 
         self.register_tool(
             handler=self.set_timer,
@@ -205,9 +218,49 @@ class CountdownTimer(RunnableMCPPlugin):
             nlp_response=_cancel_timer_nlp_response,
         )
 
+    # -------------------------------------------------------------------
+    # Persistence
+    # -------------------------------------------------------------------
+
+    def _save_timers(self):
+        """Persist active timers to JSON."""
+        data = [
+            {"alarm_time": t.alarm_time.isoformat(), "description": t.description}
+            for t in self.timers
+        ]
+        path = os.path.join(self._data_dir, "timers.json")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Failed to save timers: {e}")
+
+    def _load_timers(self):
+        """Load persisted timers, discarding expired ones."""
+        path = os.path.join(self._data_dir, "timers.json")
+        if not os.path.exists(path):
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            now = datetime.now()
+            loaded = 0
+            for entry in data:
+                alarm_time = datetime.fromisoformat(entry["alarm_time"])
+                if alarm_time > now:
+                    self.timers.append(Timer(alarm_time=alarm_time, description=entry["description"]))
+                    loaded += 1
+            if loaded:
+                logger.info(f"Restored {loaded} timer(s) from disk")
+            # Clean up expired entries from file
+            self._save_timers()
+        except Exception as e:
+            logger.warning(f"Failed to load timers: {e}")
+
     def add_timer(self, alarm_time: datetime, description: str):
         self.timers.append(Timer(alarm_time=alarm_time, description=description))
         logger.info(f"Added timer: {description}, expires at {format_time_for_tts(alarm_time)}.")
+        self._save_timers()
         # Push timer view to display immediately so user sees the countdown
         self._publish_timer_display()
 
@@ -215,6 +268,8 @@ class CountdownTimer(RunnableMCPPlugin):
         now = datetime.now()
         expired_timers = [timer for timer in self.timers if timer.alarm_time <= now]
         self.timers = [timer for timer in self.timers if timer.alarm_time > now]
+        if expired_timers:
+            self._save_timers()
         return expired_timers
 
     def set_timer(self,
@@ -272,6 +327,7 @@ class CountdownTimer(RunnableMCPPlugin):
             if query_lower in timer.description.lower():
                 removed = self.timers.pop(i)
                 logger.info(f"Cancelled timer: {removed.description}")
+                self._save_timers()
                 self._publish_timer_display()
                 return {"status": "success", "message": f"Cancelled timer: {removed.description}"}
 
@@ -279,6 +335,7 @@ class CountdownTimer(RunnableMCPPlugin):
         if len(self.timers) == 1:
             removed = self.timers.pop(0)
             logger.info(f"Cancelled only active timer: {removed.description}")
+            self._save_timers()
             self._publish_timer_display()
             return {"status": "success", "message": f"Cancelled timer: {removed.description}"}
 
@@ -298,6 +355,15 @@ class CountdownTimer(RunnableMCPPlugin):
             }
             for timer in self.timers
         ]
+
+        # Include ringing items (expired timers and alarms, not yet dismissed)
+        for item in self._ringing_items:
+            timers_info.append({
+                "description": item["description"],
+                "expires_in": "DONE",
+                "expires_at": "",
+                "type": item["type"] + "_done",  # "timer_done" or "alarm_done"
+            })
 
         # Gather active alarms from existing plugin instance (don't instantiate a new one)
         try:
@@ -354,8 +420,8 @@ class CountdownTimer(RunnableMCPPlugin):
         for timer in expired_timers:
             logger.info(f"Timer expired: '{timer.description}', firing event")
 
-            # Start persistent ringing (like alarm system)
-            self._start_timer_ring(timer)
+            # Start unified ringing
+            self._start_ringing(timer.description, "timer")
 
             self.event_system.publish(
                 EventMessage(
@@ -376,40 +442,40 @@ class CountdownTimer(RunnableMCPPlugin):
 
     _RING_TIMEOUT = 180  # 3 minutes max ringing
 
-    def _start_timer_ring(self, timer):
-        """Start persistent ringing for an expired timer."""
-        import os
-        import threading
+    def _on_start_ring(self, event: EventMessage):
+        """Handle ring events from both timer expiry and alarm expiry."""
+        data = event.content if isinstance(event.content, dict) else {}
+        description = data.get("description", "Alert")
+        ring_type = data.get("type", "timer")
+        self._start_ringing(description, ring_type)
 
-        self._ring_stop = getattr(self, '_ring_stop', threading.Event())
-        if getattr(self, '_ring_active', False):
-            return  # Already ringing
+    def _start_ringing(self, description: str, ring_type: str = "timer"):
+        """Start or add to the unified ring. Supports multiple concurrent items."""
+        import os
+
+        self._ringing_items.append({"description": description, "type": ring_type})
+        self._publish_timer_display()
+
+        # If ring thread is already running, just add to the list — it will keep playing
+        if self._ring_active:
+            logger.info(f"Added '{description}' ({ring_type}) to ringing items")
+            return
 
         self._ring_active = True
-        self._ringing_timer = timer
         self._ring_stop.clear()
 
-        # Flash display
-        self.event_system.publish(EventMessage(
-            role="display", name="timer",
-            content={"title": f"{timer.description} - Time's Up!", "content": "DONE", "alert": True},
-            process_output=False
-        ))
-
-        # Load alert sound
         alert_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sounds", "timer_alert.wav")
         if not os.path.exists(alert_path):
-            logger.warning(f"Timer alert sound not found: {alert_path}")
-            self._ring_active = False
+            logger.warning(f"Alert sound not found: {alert_path}")
             return
 
         def ring_loop():
             import subprocess
-            import time
-            start = time.monotonic()
-            while not self._ring_stop.is_set():
-                if time.monotonic() - start > self._RING_TIMEOUT:
-                    logger.info(f"Timer ring timeout after {self._RING_TIMEOUT}s")
+            import time as _time
+            start = _time.monotonic()
+            while not self._ring_stop.is_set() and self._ringing_items:
+                if _time.monotonic() - start > self._RING_TIMEOUT:
+                    logger.info(f"Ring timeout after {self._RING_TIMEOUT}s")
                     break
                 try:
                     proc = subprocess.Popen(["afplay", alert_path])
@@ -418,22 +484,42 @@ class CountdownTimer(RunnableMCPPlugin):
                     logger.debug(f"Ring playback error: {e}")
                 self._ring_stop.wait(timeout=2.0)
             self._ring_active = False
-            self._ringing_timer = None
-            logger.info("Timer ring loop stopped.")
-            self._publish_timer_display()
+            logger.info("Ring loop stopped.")
+            # Don't clear ringing_items here — dismiss_ring clears them
+            # (timeout auto-clears)
+            if not self._ringing_items:
+                return
+            if _time.monotonic() - start >= self._RING_TIMEOUT:
+                self._ringing_items.clear()
+                self._publish_timer_display()
 
+        import threading
         self._ring_thread = threading.Thread(target=ring_loop, daemon=True)
         self._ring_thread.start()
-        logger.info(f"Timer ringing: {timer.description}")
+        logger.info(f"Ringing started: {description} ({ring_type})")
 
-    def dismiss_timer_ring(self) -> bool:
-        """Stop the timer ring. Called by voice commands or UI."""
-        if not getattr(self, '_ring_active', False):
+    def dismiss_ring(self) -> bool:
+        """Stop ALL ringing (timers and alarms) and clear from display."""
+        if not self._ring_active and not self._ringing_items:
             return False
         self._ring_stop.set()
-        dismissed = getattr(self, '_ringing_timer', None)
-        if dismissed:
-            logger.info(f"Timer ring dismissed: {dismissed.description}")
+        items = list(self._ringing_items)
+        self._ringing_items.clear()
+        self._ring_active = False
+
+        # Also dismiss any ringing alarm in the AlarmClock plugin
+        try:
+            from glados.system.plugin import PluginSystem
+            alarm_entry = PluginSystem().plugins.get("alarmclock", {})
+            alarm_plugin = alarm_entry.get("function") if alarm_entry else None
+            if alarm_plugin and hasattr(alarm_plugin, "dismiss"):
+                alarm_plugin.dismiss()
+        except Exception as e:
+            logger.debug(f"Could not dismiss alarm: {e}")
+
+        for item in items:
+            logger.info(f"Dismissed: {item['description']} ({item['type']})")
+        self._publish_timer_display()
         return True
 
     def _on_timer_action(self, event):
@@ -462,7 +548,7 @@ class CountdownTimer(RunnableMCPPlugin):
             ))
 
         elif action == "dismiss_ring":
-            self.dismiss_timer_ring()
+            self.dismiss_ring()
 
     def start(self):
         logger.info("Starting CountdownTimer.")
@@ -475,10 +561,16 @@ class CountdownTimer(RunnableMCPPlugin):
             EventHook("timer_ui_handler", callback=self._on_timer_action, priority=5)
         )
 
-        # Listen for interrupt events to dismiss ringing timers
+        # Unified ring event — both timers and alarms route here
+        self.event_system.subscribe(
+            "system.start_ring",
+            EventHook("start_ring", callback=self._on_start_ring, priority=5)
+        )
+
+        # Listen for interrupt events to dismiss all ringing
         self.event_system.subscribe(
             "system.interrupt_tts",
-            EventHook("timer_dismiss_on_interrupt", callback=lambda e: self.dismiss_timer_ring(), priority=1)
+            EventHook("ring_dismiss_on_interrupt", callback=lambda e: self.dismiss_ring(), priority=1)
         )
 
     def stop(self):

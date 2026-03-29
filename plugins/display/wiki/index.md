@@ -15,6 +15,7 @@ A maniacal home assistant with pluggable architecture and function calling suppo
 - [Voice Commands](voice) — Wake word, mute/unmute, intercepted commands
 - [Functions](functions) — Timers, alarms, recipes, music, display, memory, vision, unit conversion, arithmetic
 - [Shopping List & Pantry](pantry) — Shopping list, pantry inventory, expiry tracking, recipe integration
-- [Knowledge Base](knowledge) — RAG with Qdrant, ZIM file ingestion, lookup_knowledge tool, conversation RAG
-- [Testing](testing) — Test suites: NLP, pantry, ingredient parser, Playwright UI tests
+- [Knowledge Base](knowledge) — RAG with Qdrant, ZIM file ingestion, query modes (raw/context/rewrite), conversation RAG
+- [Log Analyzer](log-analyzer) — Ring buffer log capture, error analysis, saved reports for debugging
+- [Testing](testing) — Test suites: NLP, pantry, ingredient parser, Playwright UI, knowledge RAG benchmarks
 - [Installation](installation) — Setup for Windows, macOS, Linux

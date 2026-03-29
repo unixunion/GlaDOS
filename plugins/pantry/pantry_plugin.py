@@ -372,6 +372,7 @@ class PantryPlugin(RunnableMCPPlugin):
 
         self._last_recurring_check = None
         self._expiry_warned_today = False
+        self._startup_time = datetime.now()
         self._shopping_mode = None  # None, "planning", or "post_shopping"
         self._last_added_item = None  # for "make that 3" / quantity update commands
         self._shopping_mode_last_activity = None  # timestamp of last handled command in mode
@@ -930,6 +931,7 @@ class PantryPlugin(RunnableMCPPlugin):
         # Use the recipe plugin's ingredient search
         try:
             from plugins.recipes.recipe_api import search_by_ingredients, safe_parse_list
+            import plugins.recipes.recipe_api as _recipe_mod
             matches = search_by_ingredients(query_items[:15])
             logger.info(f"[Pantry] Recipe suggestion: {len(matches)} matches from {len(query_items)} pantry items")
 
@@ -956,6 +958,9 @@ class PantryPlugin(RunnableMCPPlugin):
                 },
                 process_output=False,
             ))
+
+            # Populate shared search results for positional selection ("the first one")
+            _recipe_mod._last_search_results = [m["title"] for m in top]
 
             # Brief summary for LLM/TTS
             titles = [m["title"] for m in top[:5]]
@@ -1061,6 +1066,16 @@ class PantryPlugin(RunnableMCPPlugin):
         self.event_system.subscribe(
             "system.tick",
             EventHook("pantry_recurring", callback=self._on_tick, priority=1),
+        )
+        # Track TTS state so proactive warnings don't clip active speech
+        self._tts_active = False
+        self.event_system.subscribe(
+            "status.speaking",
+            EventHook("pantry_tts_speaking", callback=lambda e: setattr(self, '_tts_active', True), priority=1),
+        )
+        self.event_system.subscribe(
+            "status.idle",
+            EventHook("pantry_tts_idle", callback=lambda e: setattr(self, '_tts_active', False), priority=1),
         )
         logger.info("[Pantry] Started — subscribed to UI events, tick, and shopping context hook")
 
@@ -2015,10 +2030,14 @@ class PantryPlugin(RunnableMCPPlugin):
             self._last_recurring_check = now
             self._check_recurring()
 
-        # Proactive expiry warning once per day
+        # Proactive expiry warning once per day — only fire when system is idle
+        # (60s after startup, not while in shopping mode, not while speaking)
         today = date.today()
         if not self._expiry_warned_today or self._expiry_warned_today != today:
-            self._check_proactive_expiry(today)
+            startup_elapsed = (now - self._startup_time).total_seconds()
+            if (startup_elapsed > 60 and not self._shopping_mode
+                    and not self._tts_active):
+                self._check_proactive_expiry(today)
 
     def _check_recurring(self):
         """Re-add recurring items to shopping list when due."""

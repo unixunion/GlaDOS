@@ -23,6 +23,7 @@ def mcp_tool(
     nlp_extractors: Optional[Dict[str, list]] = None,
     nlp_response: Optional[Callable[[Any], str]] = None,
     nlp_extract_fn: Optional[Callable[[str], dict]] = None,
+    nlp_threshold: Optional[float] = None,
 ):
     """MCP-native tool registration decorator.
 
@@ -118,6 +119,16 @@ def mcp_tool(
         if system_prompt:
             plugin_system.register_system_prompt(system_prompt)
 
+        # Resolve nlp_threshold: YAML config > code default > None (global fallback)
+        effective_nlp_threshold = nlp_threshold
+        try:
+            from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
+            yaml_config = RunnableMCPPlugin.get_plugin_config(name)
+            if "nlp_threshold" in yaml_config:
+                effective_nlp_threshold = float(yaml_config["nlp_threshold"])
+        except Exception:
+            pass
+
         plugin_system.plugins[name] = {
             "function": func,
             "description": description,
@@ -125,6 +136,7 @@ def mcp_tool(
             "process_output": process_output,
             "callable": None,
             "activity": activity,
+            "nlp_threshold": effective_nlp_threshold,
         }
 
         # Register NLP handler if extractors, extract_fn, or response formatter provided

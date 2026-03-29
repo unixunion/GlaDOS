@@ -118,6 +118,41 @@ knowledge_collections:
   - stackoverflow
 ```
 
+## Query Modes
+
+The user's question needs to be turned into a good search query before hitting Qdrant. Direct questions ("what is photosynthesis") work well, but conversational follow-ups ("tell me more about that") don't — the embedding misses the topic context.
+
+GlaDOS supports three query modes:
+
+| Mode | How it works | Latency | Quality |
+|------|-------------|---------|---------|
+| `raw` | Use user text as-is | 0ms | Good for direct questions, poor for follow-ups |
+| `context` (default) | Prepend last user+assistant exchange to the query before embedding | ~0ms | Good balance — captures conversation topic |
+| `rewrite` | Call a (optionally separate) LLM to reformulate the query | 0.5-3s | Best retrieval, handles pronouns and context |
+
+### Example: `context` mode
+
+User said "what animal has the most teeth", assistant answered about mammals. Now the user says "I believe you forget the snail."
+
+- **`raw`**: embeds "I believe you forget the snail" → finds articles about specific snail species (irrelevant)
+- **`context`**: embeds "what animal has the most teeth | star-nosed mole... | I believe you forget the snail" → finds radula/snail teeth articles
+- **`rewrite`**: LLM converts to "snail teeth radula count" → best match
+
+### Rewrite mode
+
+When using `rewrite`, a lightweight local model reformulates the query. This can be a different (smaller/faster) model than the main chat model.
+
+Benchmark results with 10 test cases:
+
+| Model | Hit Rate | Avg Latency |
+|-------|----------|-------------|
+| `context` mode (no LLM) | 90% | 39ms |
+| `liquid/lfm2.5-1.2b` | 100% | 564ms |
+| `qwen2.5-1.5b-instruct@8bit` | 100% | 798ms |
+| `qwen/qwen3-4b-2507` | 100% | 827ms |
+
+Run the benchmark yourself: `python tests/benchmark_knowledge.py`
+
 ## Configuration
 
 Add to `glados_config.yml`:
@@ -130,6 +165,9 @@ Add to `glados_config.yml`:
   knowledge_top_k: 3              # passages to retrieve per query
   knowledge_threshold: 0.5        # minimum similarity score (0.0-1.0)
   knowledge_embed_model: "all-MiniLM-L6-v2"
+  knowledge_query_mode: "context"  # "raw", "context", or "rewrite"
+  # knowledge_rewrite_model: "liquid/lfm2.5-1.2b"  # model for rewrite mode
+  # knowledge_rewrite_url: null     # separate API endpoint (null = use main)
 ```
 
 ### Tuning
@@ -140,6 +178,9 @@ Add to `glados_config.yml`:
   - `0.7` — strict, only very relevant matches
 - **`knowledge_top_k`**: More passages = more context for the LLM but uses more tokens. 3 is a good default.
 - **`knowledge_embed_model`**: `all-MiniLM-L6-v2` is small and fast. For better quality, try `nomic-embed-text-v1.5` or `BAAI/bge-small-en-v1.5`.
+- **`knowledge_query_mode`**: `context` is recommended for most setups. Use `rewrite` if you have a fast local model available and want maximum retrieval quality.
+- **`knowledge_rewrite_model`**: Only used in `rewrite` mode. Set to a small, fast model. If null, uses the main model (slower).
+- **`knowledge_rewrite_url`**: Separate API endpoint for the rewrite model. If null, uses the main `completion_url`. Useful if running multiple models in LM Studio.
 
 ## How context injection works
 

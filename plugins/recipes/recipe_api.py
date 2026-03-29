@@ -415,7 +415,15 @@ def search_recipes(query: str) -> dict:
         "choose that recipe",
         "lets make pecan pralines",
         "make the cookies recipe",
+        "the first one",
+        "the second one",
+        "the third one",
+        "the last one",
+        "number one",
+        "number two",
+        "that one",
     ],
+    nlp_threshold=0.5,
     process_output=False,
     activity=[Activity.COOKING, Activity.GENERAL]
 )

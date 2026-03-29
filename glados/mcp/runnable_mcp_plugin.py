@@ -134,6 +134,7 @@ class RunnableMCPPlugin(RunnablePlugin):
         nlp_extractors: Optional[Dict[str, list]] = None,
         nlp_response: Optional[Callable[[Any], str]] = None,
         nlp_extract_fn: Optional[Callable[[str], dict]] = None,
+        nlp_threshold: Optional[float] = None,
     ):
         """Register a tool with MCP server and all GlaDOS systems.
 
@@ -205,6 +206,12 @@ class RunnableMCPPlugin(RunnablePlugin):
             ),
         )
 
+        # Resolve nlp_threshold: YAML config > code default > None (global fallback)
+        effective_nlp_threshold = nlp_threshold
+        yaml_threshold = self.plugin_config.get("nlp_threshold")
+        if yaml_threshold is not None:
+            effective_nlp_threshold = float(yaml_threshold)
+
         self._plugin_system.plugins[tool_name] = {
             "function": handler,
             "description": description,
@@ -212,6 +219,7 @@ class RunnableMCPPlugin(RunnablePlugin):
             "process_output": process_output,
             "callable": None,
             "activity": activity,
+            "nlp_threshold": effective_nlp_threshold,
         }
 
         # Register NLP handler if extractors, extract_fn, or response formatter provided

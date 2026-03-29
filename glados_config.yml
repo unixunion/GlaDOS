@@ -2,27 +2,16 @@ Glados:
 #  completion_url: "http://192.168.0.14:11434/v1" # openai client uses different url format for ollama model server
 #  completion_url: "http://192.168.0.14:11434/" # langchain client uses different url format for ollama model server
   completion_url: "http://localhost:1234/v1" # LM Studio OpenAI-compatible endpoint
-#  model: "qwen2.5-32b-instruct" # BEst but not fastest.
-#  model: "qwen/qwen3-coder-30b" # next best FAST
   model: "qwen2.5-7b-instruct-uncensored"
-#  model: "mlx-community/DeepSeek-R1-Distill-Qwen-14B-4bit"
-#  model: "qwen_qwen3.5-9b" # thinkgs out loud!
-#  model: "qwen/qwen3-30b-a3b-2507" # thinking last good
-#  model: "qwen/qwen3.5-35b-a3b" # throws error, doesnt work.
-#  model: "lmstudio-community/Mistral-Nemo-Instruct-2407-GGUF" # doesnt look good, slow. not calling functions well
-#  model: "openai/gpt-oss-20b" # Testing
-#  model: "qwen/qwen3-30b-a3b-2507s"
-#  model: "lmstudio-community/Qwen2.5-14B-Instruct-MLX-4bit"
-#  model: "qwen/qwen3-coder-next" # TOO BIG!
-  # nezt to text, mistral-nemo-instruct-2407, Qwen 3 8B (the dense model, not MoE) , Llama 3.1 8B Instruct  ,Gemma 3 12B
-#  model: "llama3.2"
   client_type: OPENAI
+#  client_type: ANTHROPIC
+#  model: "claude-sonnet-4-20250514"
+  api_key: ""  # Set via ANTHROPIC_API_KEY env var, or paste here (not recommended for commits)
 #  client_type: LANGCHAIN
 #  client_type: MISTRAL
 #  vision_completion_url: "http://192.168.0.28:11434/v1" # openai client uses different url
   vision_completion_url: "http://localhost:1234/v1" # openai client uses different url
   vision_model: " qwen/qwen3-vl-8b"
-  api_key: "lm-studio"
   announcement: "system initialized, ohh,, it's you again, how have you been?"
   tts_buffer_mode: "sentence"
   voice_core: "glados"  # "glados" (Piper/ONNX) or "kokoro" (Kokoro ONNX)
@@ -34,6 +23,7 @@ Glados:
     threshold: 0.5
     models:
       - models/glados_wakeword.onnx  # responds to "GlaDOS" and "Hey GlaDOS"
+      - models/Ok_GLaDOS.onnx # responds to okay glados and hey glados
 #  porcupine:  # deprecated - picovoice no longer available
 #    access_key: "foo"
 #    wake_words:
@@ -198,7 +188,10 @@ Glados:
   knowledge_collections:
     - wikipedia
   knowledge_top_k: 3          # passages to retrieve per query
-  knowledge_threshold: 0.65    # minimum similarity score
+  knowledge_threshold: 0.50    # minimum similarity score
+  knowledge_query_mode: "rewrite"  # "raw", "context", or "rewrite"
+  knowledge_rewrite_model: "liquid/lfm2.5-1.2b"   # model for rewrite mode (null = use main model)
+  # knowledge_rewrite_url: null     # separate API endpoint for rewrite (null = use main)
   memory_enabled: true
   memory_db_path: "data/memory_db"
   memory_top_k: 5
@@ -216,13 +209,6 @@ Glados:
     - name: sarcasm_core
       config:
         enabled: true
-#        themes:
-#          - passive_aggressive
-#          - dark_humor
-#          - science
-#          - fake_empathy
-#          - food_cake
-#          - time_waiting
     - name: three_laws_core
       config:
         enabled: true
@@ -234,3 +220,16 @@ Glados:
         enabled: true
         quip_chance: 0.15        # probability per response
         cooldown_seconds: 120    # minimum gap between quips
+        themes:
+          - passive_aggressive
+          - dark_humor
+          - science
+          - fake_empathy
+          - food_cake
+          - time_waiting
+    - name: log_analyzer
+      config:
+        buffer_size: 5000
+    - name: get_current_time
+      config:
+        nlp_threshold: 0.5

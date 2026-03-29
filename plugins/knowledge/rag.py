@@ -30,6 +30,10 @@ class KnowledgeRAG(RunnableMCPPlugin):
         self.top_k = getattr(config, "knowledge_top_k", 3)
         self.threshold = getattr(config, "knowledge_threshold", 0.5)
         self.embed_model_name = getattr(config, "knowledge_embed_model", "all-MiniLM-L6-v2")
+        self.query_mode = getattr(config, "knowledge_query_mode", "context")
+        self._rewrite_model = getattr(config, "knowledge_rewrite_model", None) or getattr(config, "model", "")
+        self._rewrite_url = getattr(config, "knowledge_rewrite_url", None) or getattr(config, "completion_url", "")
+        self._rewrite_backend = None
 
         self._qdrant = None
         self._embed_model = None
@@ -40,14 +44,14 @@ class KnowledgeRAG(RunnableMCPPlugin):
             collections_str = ", ".join(self.collections)
             self.register_system_prompt(
                 f"KNOWLEDGE BASE: You have access to a knowledge base containing information from: {collections_str}. "
-                "When your response includes passages tagged with <knowledge>, these are retrieved facts from "
-                "your knowledge base — treat them as reliable reference material.\n"
-                "When answering questions using knowledge base passages:\n"
-                "- Use the information naturally, as if you know it yourself\n"
-                "- Mention the source briefly when relevant (e.g. 'According to Wikipedia...')\n"
-                "- If the passage doesn't fully answer the question, say what you found and note the gap\n"
-                "- If no knowledge passages are provided, answer from your own training or say you don't know\n"
-                "- Do NOT say 'based on the provided context' or 'the passage states' — speak naturally"
+                "Passages tagged with <knowledge> are retrieved by semantic search and may or may not be relevant.\n"
+                "When answering questions with knowledge passages:\n"
+                "- Check the relevance score — passages below 60% may be noise. IGNORE irrelevant passages.\n"
+                "- Only use a passage if it actually answers the question. Do NOT force-fit unrelated articles.\n"
+                "- If the passages don't answer the question, answer from your own knowledge or say you're not sure.\n"
+                "- Use information naturally — do NOT say 'according to the knowledge base' or 'the passage states'.\n"
+                "- If you use a fact from a passage, you can briefly mention the source (e.g. 'According to Wikipedia').\n"
+                "- NEVER fabricate information by mixing unrelated passages together."
             )
 
     def _init_clients(self) -> bool:
@@ -75,6 +79,14 @@ class KnowledgeRAG(RunnableMCPPlugin):
                 logger.warning(f"[KnowledgeRAG] Cannot load embedding model: {e}")
                 self._qdrant = None
                 return False
+
+            # Log collection stats for observability
+            for coll in self.collections:
+                try:
+                    info = self._qdrant.get_collection(coll)
+                    logger.info(f"[KnowledgeRAG] Collection '{coll}': {info.points_count} points")
+                except Exception:
+                    logger.warning(f"[KnowledgeRAG] Collection '{coll}' not found in Qdrant")
 
             self._ready = True
             return True
@@ -135,7 +147,7 @@ class KnowledgeRAG(RunnableMCPPlugin):
             activity=[Activity.GENERAL],
         )
 
-        logger.success(f"[KnowledgeRAG] Active — searching {self.collections}, top_k={self.top_k}, threshold={self.threshold}")
+        logger.success(f"[KnowledgeRAG] Active — searching {self.collections}, top_k={self.top_k}, threshold={self.threshold}, query_mode={self.query_mode}")
 
 
     def stop(self):
@@ -209,6 +221,85 @@ class KnowledgeRAG(RunnableMCPPlugin):
         }
 
     # ---------------------------------------------------------------------------
+    # Query enhancement
+    # ---------------------------------------------------------------------------
+
+    def _get_search_query(self, ctx: ChatContext) -> str:
+        """Build the search query based on configured query_mode."""
+        if self.query_mode == "context":
+            return self._build_context_query(ctx)
+        elif self.query_mode == "rewrite":
+            return self._rewrite_query(ctx)
+        return ctx.user_text  # "raw" mode
+
+    def _build_context_query(self, ctx: ChatContext) -> str:
+        """Augment query with recent conversation for better embedding."""
+        if not ctx.message_manager:
+            return ctx.user_text
+        messages = ctx.message_manager.get_messages()
+        recent = []
+        for msg in reversed(messages):
+            if isinstance(msg, dict) and msg.get("role") in ("user", "assistant") and msg.get("content"):
+                recent.append(str(msg["content"])[:100])
+                if len(recent) >= 2:
+                    break
+        if recent:
+            context = " | ".join(reversed(recent))
+            return f"{context} | {ctx.user_text}"
+        return ctx.user_text
+
+    def _rewrite_query(self, ctx: ChatContext) -> str:
+        """Use LLM to reformulate conversational text into a search query."""
+        if not self._rewrite_backend:
+            try:
+                from glados.llm.backends.openai_backend import OpenAIBackend
+                from types import SimpleNamespace
+                rewrite_config = SimpleNamespace(
+                    completion_url=self._rewrite_url,
+                    api_key="not-needed",
+                    thinking_enabled=False,
+                    max_response_tokens=50,
+                )
+                self._rewrite_backend = OpenAIBackend(rewrite_config)
+                logger.info(f"[KnowledgeRAG] Rewrite backend created (model={self._rewrite_model}, url={self._rewrite_url})")
+            except Exception as e:
+                logger.warning(f"[KnowledgeRAG] Failed to create rewrite backend: {e}, falling back to context mode")
+                return self._build_context_query(ctx)
+
+        # Build conversation context for the rewrite prompt
+        recent_context = ""
+        if ctx.message_manager:
+            messages = ctx.message_manager.get_messages()
+            parts = []
+            for msg in reversed(messages):
+                if isinstance(msg, dict) and msg.get("role") in ("user", "assistant") and msg.get("content"):
+                    parts.insert(0, f"{msg['role']}: {str(msg['content'])[:150]}")
+                    if len("\n".join(parts)) > 400:
+                        break
+            recent_context = "\n".join(parts)
+
+        prompt = [
+            {"role": "system", "content": (
+                "Rewrite the user's message into a concise Wikipedia search query. "
+                "Consider the conversation context. Output ONLY the search query, nothing else."
+            )},
+            {"role": "user", "content": f"Conversation:\n{recent_context}\nCurrent message: {ctx.user_text}"},
+        ]
+        try:
+            response = self._rewrite_backend.stream(
+                messages=prompt, tools=None, model=self._rewrite_model, max_tokens=50,
+            )
+            query = "".join(chunk.content for chunk in response if chunk.content)
+            query = query.strip()
+            if query:
+                logger.info(f"[KnowledgeRAG] Rewritten query: '{query}'")
+                return query
+        except Exception as e:
+            logger.warning(f"[KnowledgeRAG] Query rewrite failed: {e}, falling back to context mode")
+
+        return self._build_context_query(ctx)
+
+    # ---------------------------------------------------------------------------
     # Hook: passive knowledge injection (automatic, every request)
     # ---------------------------------------------------------------------------
 
@@ -227,12 +318,13 @@ class KnowledgeRAG(RunnableMCPPlugin):
             logger.debug("[KnowledgeRAG] Not ready yet (background init in progress), skipping")
             return
 
-        logger.info(f"[KnowledgeRAG] Searching for: '{ctx.user_text[:80]}'")
+        search_query = self._get_search_query(ctx)
+        logger.info(f"[KnowledgeRAG] Searching for: '{search_query[:80]}' (mode={self.query_mode})")
         t_start = time.perf_counter()
 
         try:
             with _embed_lock:
-                query_vector = self._embed_model.encode(ctx.user_text).tolist()
+                query_vector = self._embed_model.encode(search_query).tolist()
         except Exception as e:
             logger.warning(f"[KnowledgeRAG] Embedding failed: {e}")
             return

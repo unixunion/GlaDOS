@@ -342,6 +342,7 @@ class MyPlugin(RunnableMCPPlugin):
 | **CookingContext** | NLP-only | `plugins/recipes/cooking_context.py` | Step navigation (next/previous/repeat/ingredients) |
 | **PantryPlugin** | Tool + Display | `plugins/pantry/pantry_plugin.py` | Shopping list, pantry inventory, expiry tracking, recipe integration (12 tools) |
 | **LoggingPlugin** | Tool | `plugins/system/logging.py` | get_logs diagnostic tool |
+| **LogAnalyzer** | Tool + Ring buffer | `plugins/system/log_analyzer.py` | Ring buffer log capture, `analyze_logs`, `save_log_report` — error analysis and JSON reports |
 | **Observe** | Tool | `plugins/vision/observe.py` | get_camera_feed (POC) |
 
 ## Plugin Discovery

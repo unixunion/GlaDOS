@@ -27,6 +27,7 @@ class ChatContext:
     activity: Activity
     session_id: str
     tts_queue: Any  # queue.Queue
+    message_manager: Any = None  # MessageManager instance for conversation history
     memory_context: str | None = None
     handled: bool = False
     extra: dict = field(default_factory=dict)

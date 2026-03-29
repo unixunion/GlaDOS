@@ -15,7 +15,30 @@ from glados.llm.speech_detection_cores.whisper_detection_module import WhisperVo
 
 # need to configure the logger before importing all the modules
 logger.remove()
-logger.add(sys.stderr, level="INFO")
+
+def _log_colorizer(record):
+    """Colorize log messages by subsystem based on module path."""
+    name = record["name"]
+    if "plugin" in name or "cores" in name:
+        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | <blue>{level:<8}</blue> | <cyan>{name}:{function}:{line}</cyan> - {message}\n{exception}"
+    elif "llm" in name or "chat_client" in name or "stream" in name or "response" in name:
+        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | <yellow>{level:<8}</yellow> | <yellow>{name}:{function}:{line}</yellow> - {message}\n{exception}"
+    elif "nlp" in name or "dispatcher" in name or "intent" in name:
+        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | <magenta>{level:<8}</magenta> | <magenta>{name}:{function}:{line}</magenta> - {message}\n{exception}"
+    elif "speech" in name or "whisper" in name or "wakeword" in name or "voice" in name:
+        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | <green>{level:<8}</green> | <green>{name}:{function}:{line}</green> - {message}\n{exception}"
+    elif "display" in name or "event" in name:
+        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | <white>{level:<8}</white> | <white>{name}:{function}:{line}</white> - {message}\n{exception}"
+    else:
+        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | {level:<8} | {name}:{function}:{line} - {message}\n{exception}"
+
+logger.add(sys.stderr, level="INFO", format=_log_colorizer)
+
+# Ring buffer sink — captures all logs for the LogAnalyzer plugin
+from plugins.system.log_analyzer import LogRingBuffer, set_shared_buffer
+_log_buffer = LogRingBuffer(maxlen=5000)
+logger.add(_log_buffer.sink, level="DEBUG")
+set_shared_buffer(_log_buffer)
 
 # Suppress noisy warnings from HuggingFace/sentence-transformers/ChromaDB embedding model
 logging.getLogger("sentence_transformers").setLevel(logging.WARNING)

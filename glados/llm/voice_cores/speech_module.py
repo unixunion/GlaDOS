@@ -30,6 +30,7 @@ class SpeechModule(ABC):
         self.config = config
         self._output_stream = None
         self._interrupted = threading.Event()
+        self._tts_muted = False
 
     @abstractmethod
     def _synthesize(self, text: str) -> np.ndarray:
@@ -47,6 +48,15 @@ class SpeechModule(ABC):
         self.event_system.subscribe(
             "system.interrupt_tts",
             EventHook("tts_interrupt", callback=self._on_interrupt, priority=10)
+        )
+        # UI mute/unmute TTS
+        self.event_system.subscribe(
+            "system.mute_tts",
+            EventHook("mute_tts", callback=lambda e: self._set_tts_muted(True), priority=1)
+        )
+        self.event_system.subscribe(
+            "system.unmute_tts",
+            EventHook("unmute_tts", callback=lambda e: self._set_tts_muted(False), priority=1)
         )
         logger.info("TTS interruption enabled")
 
@@ -116,6 +126,10 @@ class SpeechModule(ABC):
 
                 if generated_text == "<EOS>":
                     logger.info("Received end-of-stream signal. Clearing speaking lock.")
+                    # Brief pause to let the audio DAC drain before the next utterance
+                    # (prevents pops at sentence boundaries, especially between response + quip)
+                    import time as _time
+                    _time.sleep(0.15)
                     self._speaking_lock.clear()
                     self.event_system.publish(EventMessage("status", "idle", {"message": "Ready"}))
                     self.event_system.publish(EventMessage("system", "listen_for_response", {}))
@@ -183,8 +197,15 @@ class SpeechModule(ABC):
             self._output_stream.start()
         return self._output_stream
 
+    def _set_tts_muted(self, muted: bool):
+        """Mute/unmute TTS from UI control."""
+        self._tts_muted = muted
+        logger.info(f"TTS {'muted' if muted else 'unmuted'} via UI")
+        if muted:
+            self._on_interrupt(None)  # Stop any current speech
+
     def _play_audio(self, audio):
-        if self._interrupted.is_set():
+        if self._interrupted.is_set() or self._tts_muted:
             return
 
         try:
@@ -193,6 +214,11 @@ class SpeechModule(ABC):
             audio = np.asarray(audio, dtype=np.float32)
             if audio.ndim == 1:
                 audio = audio.reshape(-1, 1)
+            # Apply short fade-in (5ms) to prevent clicks/pops at chunk boundaries
+            fade_samples = min(int(self._get_sample_rate() * 0.005), len(audio))
+            if fade_samples > 0:
+                fade = np.linspace(0, 1, fade_samples, dtype=np.float32).reshape(-1, 1)
+                audio[:fade_samples] *= fade
             stream.write(audio)
         except Exception as e:
             if self._interrupted.is_set():

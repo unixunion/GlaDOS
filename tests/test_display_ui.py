@@ -19,6 +19,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+pytestmark = pytest.mark.browser
+
 
 @pytest.fixture(scope="module")
 def display_server():

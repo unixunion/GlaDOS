@@ -2,14 +2,23 @@
 
 GlaDOS has several test suites covering NLP intent classification, pantry/shopping operations, ingredient parsing, and display UI end-to-end testing.
 
-## Running All Tests
+## Running Tests
 
 ```bash
-# Run everything
-pytest tests/ -v
+make test                     # Fast unit tests (no external services needed)
+make test-all                 # Unit + browser tests
+make test-ui                  # Playwright browser tests only
+make test-knowledge           # Knowledge RAG benchmark (requires Qdrant)
+make test-knowledge-rewrite   # Knowledge benchmark + LLM rewrite mode (requires LM Studio)
+make test-models              # LLM tool-calling benchmark (requires LM Studio)
+```
 
-# Run everything except UI tests (faster, no browser needed)
-pytest tests/ -v --ignore=tests/test_display_ui.py
+Or directly with pytest:
+
+```bash
+pytest tests/ -v              # Unit tests only (default, skips browser/benchmark)
+pytest tests/ -v -m browser   # Browser tests only
+pytest tests/ -v -m "not benchmark"  # Everything except benchmarks
 ```
 
 ## Test Suites
@@ -98,9 +107,28 @@ python -m playwright install chromium
 
 **Note:** Spins up a test Flask/SocketIO server on port 5099 with temporary data. Does not interfere with the running GlaDOS instance.
 
+### Knowledge RAG Benchmark (`tests/benchmark_knowledge.py`)
+
+Measures retrieval quality across different query modes (raw, context, rewrite) and LLM models.
+
+```bash
+# Test raw + context modes (no LLM needed, just Qdrant)
+python tests/benchmark_knowledge.py --modes raw,context
+
+# Test all modes with specific rewrite models
+python tests/benchmark_knowledge.py --models liquid/lfm2.5-1.2b qwen2.5-1.5b-instruct@8bit
+
+# Test all loaded LM Studio models
+python tests/benchmark_knowledge.py --all-models
+```
+
+**Requires:** Running Qdrant with populated wikipedia collection. For rewrite mode, a running LM Studio server.
+
+10 test cases covering direct questions, conversational follow-ups, pronoun references, and topic continuations. Reports hit rate and latency per mode/model. Results saved to `tests/benchmark_results/`.
+
 ### Model Benchmarks (`tests/benchmark_models.py`)
 
-Not a test suite — a benchmarking tool for comparing LLM models on tool-calling tasks.
+Benchmarking tool for comparing LLM models on tool-calling tasks.
 
 ```bash
 python tests/benchmark_models.py

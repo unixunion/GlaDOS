@@ -87,10 +87,14 @@ class NLPDispatcher:
         if not predicted or confidence < threshold:
             predicted, confidence = self._classifier.predict_intent(text)
 
-        if not predicted or confidence < threshold or predicted.startswith("_memory"):
+        # Per-tool threshold overrides global threshold
+        effective_threshold = self._plugin_system.get_nlp_threshold(predicted, default=threshold)
+
+        if not predicted or confidence < effective_threshold or predicted.startswith("_memory"):
             return HybridResult()
 
-        logger.info(f"[Hybrid] NLP fast-path: '{predicted}' confidence {confidence:.2f} >= {threshold}")
+        logger.info(f"[Hybrid] NLP fast-path: '{predicted}' confidence {confidence:.2f} >= {effective_threshold:.2f}"
+                     f"{' (per-tool)' if effective_threshold != threshold else ''}")
 
         has_nlp_handler = self._registry.has_handler(predicted)
         needs_llm = self._plugin_system.should_process_plugin_output(predicted)
