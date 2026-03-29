@@ -63,7 +63,7 @@ class AlarmClock(RunnableMCPPlugin):
     def __init__(self):
         super().__init__()
         logger.info("Instantiating Alarm Clock System")
-        self._data_dir = os.path.join("plugin_data", "alarms")
+        self._data_dir = os.environ.get("ALARM_DATA_DIR") or os.path.join("plugin_data", "alarms")
         os.makedirs(self._data_dir, exist_ok=True)
         self.alarms: List[Alarm] = []
         self._lock = threading.Lock()
@@ -174,6 +174,7 @@ class AlarmClock(RunnableMCPPlugin):
             process_output=True,
             activity=[Activity.UTILITIES, Activity.GENERAL, Activity.COOKING],
             nlp_extract_fn=_cancel_alarm_nlp_extract,
+            nlp_response=lambda r: r.get("message", "Done."),
         )
 
     # -------------------------------------------------------------------
@@ -216,6 +217,10 @@ class AlarmClock(RunnableMCPPlugin):
 
     def start(self):
         logger.info("Starting Alarm Clock System...")
+        # Refresh timer display so restored alarms appear
+        if self.alarms:
+            logger.info(f"Restored {len(self.alarms)} alarm(s) — refreshing display")
+            self._refresh_timer_display()
         self.event_system.subscribe(
             "system.tick",
             EventHook("alarm_check", callback=self._check_alarms, priority=5)
@@ -231,11 +236,20 @@ class AlarmClock(RunnableMCPPlugin):
     def _format_time_for_speech(dt: datetime) -> str:
         return dt.strftime("%I:%M %p on %A").lstrip("0")
 
+    @staticmethod
+    def _normalize_time_input(time_str: str) -> str:
+        """Preprocess time string for dateparser compatibility."""
+        t = time_str.strip().rstrip(".")
+        # "8 o'clock" / "8 o clock" → "8:00"
+        t = re.sub(r"(\d{1,2})\s*o[' ]?clock", r"\1:00", t, flags=re.IGNORECASE)
+        return t
+
     def set_fixed_time_alarm(self, time: str, description: Optional[str] = None):
         try:
             if not time:
                 return {"status": "error", "message": "The 'time' field is required for setting an alarm."}
 
+            time = self._normalize_time_input(time)
             alarm_time = dateparser.parse(time, settings={"PREFER_DATES_FROM": "future"})
             if not alarm_time:
                 return {"status": "error", "message": f"Could not parse the time: '{time}'."}

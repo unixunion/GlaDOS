@@ -54,6 +54,39 @@ def _categorize_item(name: str) -> str:
     return "other"
 
 
+# Ready meal keywords — items matching these are classified as complete dishes
+READY_MEAL_KEYWORDS = [
+    "lasagna", "lasagne", "pizza", "pie", "soup", "stew", "curry", "casserole",
+    "quiche", "pasta bake", "mac and cheese", "shepherd's pie", "cottage pie",
+    "ready meal", "tv dinner", "microwave meal", "frozen dinner", "frozen meal",
+    "leftover", "leftovers", "cooked", "prepared", "meal prep",
+    "burrito", "wrap", "sandwich", "salad", "risotto", "paella",
+    "chili", "chilli", "bolognese", "moussaka", "enchilada", "frittata",
+    "tikka", "korma", "biryani", "stir fry", "stir-fry", "fried rice",
+    "roast", "gratin", "ratatouille", "goulash", "tagine",
+    "dumplings", "gyoza", "samosa", "empanada", "spring rolls",
+    "fish cake", "fishcake", "fish fingers", "nuggets", "schnitzel",
+    "meatballs", "meatloaf", "pot pie", "calzone", "focaccia",
+]
+
+
+def _classify_item_type(name: str) -> str:
+    """Classify a pantry item as 'ready_meal' or 'ingredient'.
+
+    Uses substring matching only (no fuzzy) to avoid false positives
+    like 'rice' matching 'risotto'. Multi-word keywords use token overlap.
+    """
+    name_lower = name.lower()
+    for keyword in READY_MEAL_KEYWORDS:
+        if keyword in name_lower:
+            return "ready_meal"
+        # For multi-word items, check if all keyword words appear in the name
+        kw_words = keyword.split()
+        if len(kw_words) > 1 and all(w in name_lower for w in kw_words):
+            return "ready_meal"
+    return "ingredient"
+
+
 # ---------------------------------------------------------------------------
 # Date parsing helpers
 # ---------------------------------------------------------------------------
@@ -220,10 +253,14 @@ def _complete_shopping_nlp_response(result: dict) -> str:
 
 
 def _store_item_nlp_extract(text: str) -> dict:
-    """Extract item and location from 'I put X in Y'."""
+    """Extract item and location from 'I put X in Y'. Supports 'as a meal' type override."""
+    # Check for explicit type: "as a meal" / "as a ready meal" / "as an ingredient"
+    type_match = re.search(r"\s+as\s+(?:an?\s+)?(ready\s+meal|meal|ingredient)", text, re.IGNORECASE)
+    cleaned_text = re.sub(r"\s+as\s+(?:an?\s+)?(?:ready\s+meal|meal|ingredient)", "", text, flags=re.IGNORECASE)
+
     m = re.search(
         r"(?:put|stored|placed|the)\s+(?:the\s+)?(.+?)\s+(?:in|into|on)\s+(?:the\s+)?(.+)",
-        text.lower().strip()
+        cleaned_text.lower().strip()
     )
     if m:
         item = m.group(1).strip()
@@ -234,6 +271,9 @@ def _store_item_nlp_extract(text: str) -> dict:
         if expiry_m:
             params["location"] = location[:expiry_m.start()].strip()
             params["expires"] = expiry_m.group(1).strip()
+        # Apply type override
+        if type_match:
+            params["item_type"] = "ready_meal" if "meal" in type_match.group(1).lower() else "ingredient"
         return params
     return {}
 
@@ -334,6 +374,64 @@ def _show_pantry_nlp_response(result: dict) -> str:
     if location:
         return f"{count} item{'s' if count != 1 else ''} in {location}. I've put it on the screen."
     return f"{count} item{'s' if count != 1 else ''} in the pantry. I've put it on the screen."
+
+
+def _suggest_meals_nlp_response(result: dict) -> str:
+    if result.get("status") != "success":
+        return result.get("message", "Couldn't find any recipe suggestions.")
+    return result.get("message", "I've put some suggestions on the screen.")
+
+
+def _add_recipe_ingredients_nlp_extract(text: str) -> dict:
+    # "add the ingredients for X to the shopping list" or just use last selected recipe
+    m = re.search(r"(?:ingredients?\s+(?:for|from)\s+)(.+?)(?:\s+to\s+(?:the\s+)?(?:shopping|list))?$",
+                  text, re.IGNORECASE)
+    return {"recipe_name": m.group(1).strip() if m else ""}
+
+
+def _add_recipe_ingredients_nlp_response(result: dict) -> str:
+    if result.get("status") != "success":
+        return result.get("message", "Couldn't add recipe ingredients.")
+    added = result.get("added", 0)
+    skipped = result.get("skipped", 0)
+    parts = []
+    if added:
+        parts.append(f"Added {added} ingredient{'s' if added != 1 else ''} to the shopping list")
+    if skipped:
+        parts.append(f"skipped {skipped} we already have")
+    return ". ".join(parts) + "." if parts else "Done."
+
+
+def _check_recipe_ingredients_nlp_response(result: dict) -> str:
+    if result.get("status") != "success":
+        return result.get("message", "Couldn't check ingredients.")
+    have = result.get("have", [])
+    missing = result.get("missing", [])
+    if not missing:
+        return f"You have everything you need. All {len(have)} ingredients are in the pantry."
+    return f"You're missing {len(missing)} ingredient{'s' if len(missing) != 1 else ''}: {', '.join(missing[:5])}."
+
+
+def _manage_locations_nlp_extract(text: str) -> dict:
+    text_lower = text.lower()
+    if "rename" in text_lower:
+        m = re.search(r"rename\s+(?:the\s+)?(.+?)\s+to\s+(.+?)\.?$", text, re.IGNORECASE)
+        if m:
+            return {"action": "rename", "name": m.group(1).strip(), "new_name": m.group(2).strip()}
+    elif "remove" in text_lower or "delete" in text_lower:
+        m = re.search(r"(?:remove|delete)\s+(?:the\s+)?(?:location\s+)?(?:called\s+)?(.+?)\.?$",
+                      text, re.IGNORECASE)
+        if m:
+            return {"action": "remove", "name": m.group(1).strip()}
+    elif "add" in text_lower:
+        m = re.search(r"add\s+(?:a\s+)?(?:location\s+)?(?:called\s+)?(.+?)\.?$", text, re.IGNORECASE)
+        if m:
+            return {"action": "add", "name": m.group(1).strip()}
+    return {}
+
+
+def _manage_locations_nlp_response(result: dict) -> str:
+    return result.get("message", "Done.")
 
 
 # ---------------------------------------------------------------------------
@@ -617,6 +715,8 @@ class PantryPlugin(RunnableMCPPlugin):
                 "location": {"type": "string", "description": "Where it's being stored, e.g. 'freezer drawer 2'"},
                 "notes": {"type": "string", "description": "Additional notes like quantity"},
                 "expires": {"type": "string", "description": "Expiry date, e.g. 'March 24th', 'the 15th', '2026-04-01'"},
+                "item_type": {"type": "string", "enum": ["ingredient", "ready_meal"],
+                              "description": "Is this a raw ingredient or a complete ready-to-eat meal/dish?"},
             },
             required=["item", "location"],
             intents=[
@@ -752,6 +852,52 @@ class PantryPlugin(RunnableMCPPlugin):
             ],
             process_output=False,
             activity=[Activity.GENERAL],
+            nlp_extract_fn=_manage_locations_nlp_extract,
+            nlp_response=_manage_locations_nlp_response,
+        )
+
+        self.register_tool(
+            handler=self.set_item_type,
+            description="Reclassify a pantry item as a ready meal or ingredient.",
+            parameters={
+                "item": {"type": "string", "description": "The pantry item name"},
+                "item_type": {
+                    "type": "string",
+                    "enum": ["ingredient", "ready_meal"],
+                    "description": "Classify as ingredient or ready_meal",
+                },
+            },
+            required=["item", "item_type"],
+            intents=[
+                "mark the lasagna as a ready meal",
+                "the chicken is a ready meal",
+                "that's an ingredient not a meal",
+                "mark that as a meal",
+                "that's a ready meal",
+                "classify the pizza as a meal",
+            ],
+            process_output=False,
+            activity=[Activity.GENERAL, Activity.COOKING],
+            nlp_extract_fn=lambda text: {
+                "item": re.sub(r"(?:mark|classify|set)\s+(?:the\s+)?(.+?)\s+as\s+.+", r"\1", text, flags=re.IGNORECASE).strip(),
+                "item_type": "ready_meal" if "meal" in text.lower() else "ingredient",
+            },
+            nlp_response=lambda r: r.get("message", "Done."),
+        )
+
+        self.register_tool(
+            handler=self.reclassify_pantry,
+            description="Reclassify all pantry items as ingredients or ready meals.",
+            intents=[
+                "reclassify the pantry",
+                "reclassify pantry items",
+                "update pantry categories",
+                "recategorize the pantry",
+                "label everything in the pantry",
+            ],
+            process_output=True,
+            activity=[Activity.GENERAL, Activity.COOKING],
+            nlp_response=lambda r: r.get("message", "Done."),
         )
 
     def _register_recipe_integration_tools(self):
@@ -786,6 +932,7 @@ class PantryPlugin(RunnableMCPPlugin):
             ],
             process_output=True,
             activity=[Activity.GENERAL, Activity.COOKING],
+            nlp_response=_suggest_meals_nlp_response,
         )
 
         self.register_tool(
@@ -809,6 +956,8 @@ class PantryPlugin(RunnableMCPPlugin):
             ],
             process_output=True,
             activity=[Activity.COOKING],
+            nlp_extract_fn=_add_recipe_ingredients_nlp_extract,
+            nlp_response=_add_recipe_ingredients_nlp_response,
         )
 
         self.register_tool(
@@ -836,6 +985,7 @@ class PantryPlugin(RunnableMCPPlugin):
             ],
             process_output=True,
             activity=[Activity.COOKING, Activity.GENERAL],
+            nlp_response=_check_recipe_ingredients_nlp_response,
         )
 
     # -----------------------------------------------------------------------
@@ -904,16 +1054,29 @@ class PantryPlugin(RunnableMCPPlugin):
 
     def suggest_meals_from_pantry(self, use_expiring_first: bool = True) -> dict:
         """Suggest recipes based on pantry contents, prioritizing expiring items."""
-        pantry_items = [i["name"] for i in self._pantry["items"]]
-        if not pantry_items:
+        if not self._pantry["items"]:
             return {"status": "empty", "message": "The pantry is empty. Nothing to suggest."}
 
-        # Prioritize expiring items
+        # Separate ready meals from ingredients
+        ready_meals = []
+        ingredient_items = []
+        for item in self._pantry["items"]:
+            if item.get("item_type") == "ready_meal":
+                loc = next((l for l in self._pantry["locations"] if l["id"] == item.get("location_id")), None)
+                ready_meals.append({
+                    "name": item["name"],
+                    "location": loc["name"] if loc else "unknown",
+                    "expires": item.get("expires"),
+                })
+            else:
+                ingredient_items.append(item)
+
+        # Prioritize expiring ingredients
         expiring = []
         if use_expiring_first:
             today = date.today()
             others = []
-            for item in self._pantry["items"]:
+            for item in ingredient_items:
                 if item.get("expires"):
                     try:
                         exp = date.fromisoformat(item["expires"])
@@ -923,20 +1086,16 @@ class PantryPlugin(RunnableMCPPlugin):
                     except ValueError:
                         pass
                 others.append(item["name"])
-            # Put expiring items first in the query
             query_items = expiring + others
         else:
-            query_items = pantry_items
+            query_items = [i["name"] for i in ingredient_items]
 
         # Use the recipe plugin's ingredient search
         try:
             from plugins.recipes.recipe_api import search_by_ingredients, safe_parse_list
             import plugins.recipes.recipe_api as _recipe_mod
-            matches = search_by_ingredients(query_items[:15])
-            logger.info(f"[Pantry] Recipe suggestion: {len(matches)} matches from {len(query_items)} pantry items")
-
-            if not matches:
-                return {"status": "no_results", "message": "No recipes found matching your pantry items."}
+            matches = search_by_ingredients(query_items[:15]) if query_items else []
+            logger.info(f"[Pantry] Recipe suggestion: {len(matches)} matches from {len(query_items)} ingredients, {len(ready_meals)} ready meals")
 
             top = matches[:10]
 
@@ -955,6 +1114,7 @@ class PantryPlugin(RunnableMCPPlugin):
                     "title": "Recipes from Pantry",
                     "query": "pantry ingredients",
                     "results": display_results,
+                    "ready_meals": ready_meals,
                 },
                 process_output=False,
             ))
@@ -962,18 +1122,27 @@ class PantryPlugin(RunnableMCPPlugin):
             # Populate shared search results for positional selection ("the first one")
             _recipe_mod._last_search_results = [m["title"] for m in top]
 
-            # Brief summary for LLM/TTS
-            titles = [m["title"] for m in top[:5]]
-            listing = ", ".join(titles)
+            # Build message with ready meals first, then recipe suggestions
+            parts = []
+            if ready_meals:
+                meal_names = ", ".join(m["name"] for m in ready_meals[:5])
+                parts.append(f"Ready to eat: {meal_names}")
+            if top:
+                titles = [m["title"] for m in top[:5]]
+                parts.append(f"Recipes you can make: {', '.join(titles)}")
+            if not parts:
+                return {"status": "no_results", "message": "No ready meals or recipe suggestions found."}
+
+            message = ". ".join(parts) + ". I've put them on the screen."
+            if top:
+                message += " Say the first one, the second one, or the recipe name to select."
+
             return {
                 "status": "success",
                 "count": len(top),
-                "top_recipes": titles,
-                "message": (
-                    f"Found {len(matches)} recipes you can make. I've put them on the screen. "
-                    f"The top matches are {listing}. "
-                    f"Say the first one, the second one, or the recipe name to select."
-                ),
+                "ready_meals": ready_meals,
+                "top_recipes": [m["title"] for m in top[:5]],
+                "message": message,
             }
         except ImportError:
             return {"status": "error", "message": "Recipe plugin is not available."}
@@ -1210,7 +1379,8 @@ class PantryPlugin(RunnableMCPPlugin):
     # Pantry tools
     # -----------------------------------------------------------------------
 
-    def store_item(self, item: str, location: str, notes: str = None, expires: str = None) -> dict:
+    def store_item(self, item: str, location: str, notes: str = None, expires: str = None,
+                   item_type: str = None) -> dict:
         """Record where an item is stored in the pantry."""
         loc = self._find_location(location)
         if not loc:
@@ -1219,6 +1389,9 @@ class PantryPlugin(RunnableMCPPlugin):
         expires_date = None
         if expires:
             expires_date = _parse_expiry_date(expires)
+
+        # Classify item type: explicit > keyword auto-detect
+        effective_type = item_type or _classify_item_type(item)
 
         # Check if item already exists in this location — update instead of duplicate
         existing = None
@@ -1233,6 +1406,7 @@ class PantryPlugin(RunnableMCPPlugin):
             if expires_date:
                 existing["expires"] = expires_date
             existing["stored"] = datetime.now().isoformat(timespec="seconds")
+            existing["item_type"] = item_type or existing.get("item_type") or effective_type
         else:
             self._pantry["items"].append({
                 "id": uuid.uuid4().hex[:8],
@@ -1241,7 +1415,12 @@ class PantryPlugin(RunnableMCPPlugin):
                 "stored": datetime.now().isoformat(timespec="seconds"),
                 "expires": expires_date,
                 "notes": notes,
+                "item_type": effective_type,
             })
+
+        # Background LLM classification if available (fire-and-forget)
+        if not item_type:
+            self._bg_classify_item(item, loc["id"])
 
         # Remove from shopping list if present
         shopping_match = self._find_shopping_item(item)
@@ -1250,8 +1429,112 @@ class PantryPlugin(RunnableMCPPlugin):
             self._save_shopping_list()
 
         self._save_pantry()
-        logger.info(f"[Pantry] Stored '{item}' in {loc['name']}")
-        return {"status": "success", "item": item, "location": loc["name"]}
+        logger.info(f"[Pantry] Stored '{item}' in {loc['name']} (type={effective_type})")
+        return {"status": "success", "item": item, "location": loc["name"], "item_type": effective_type}
+
+    def _get_llm_classifier(self):
+        """Get the fast LLM client + model for item classification. Returns (client, model) or (None, None)."""
+        try:
+            from glados.config import GladosConfig
+            config = GladosConfig.from_yaml("glados_config.yml")
+            model = getattr(config, "knowledge_rewrite_model", None)
+            url = getattr(config, "knowledge_rewrite_url", None) or getattr(config, "completion_url", "")
+            if not model:
+                return None, None
+            from openai import OpenAI
+            return OpenAI(base_url=url, api_key="not-needed", timeout=5.0), model
+        except Exception:
+            return None, None
+
+    def _llm_classify_item(self, client, model, item_name: str) -> str | None:
+        """Classify a single item via the fast LLM. Returns 'ingredient' or 'ready_meal' or None."""
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": (
+                        'Classify this food item as either "ingredient" or "ready_meal".\n'
+                        'An ingredient is a raw/component item (chicken, flour, eggs, butter, milk).\n'
+                        'A ready_meal is a complete dish ready to eat/heat (lasagna, frozen pizza, '
+                        'leftover soup, chicken tikka, shepherd\'s pie).\n'
+                        'Reply with ONLY "ingredient" or "ready_meal".'
+                    )},
+                    {"role": "user", "content": item_name},
+                ],
+                max_tokens=10,
+                temperature=0.0,
+            )
+            result = response.choices[0].message.content.strip().lower()
+            return result if result in ("ingredient", "ready_meal") else None
+        except Exception as e:
+            logger.debug(f"[Pantry] LLM classify failed for '{item_name}': {e}")
+            return None
+
+    def _bg_classify_item(self, item_name: str, location_id: str):
+        """Background LLM classification for a single item (fire-and-forget)."""
+        import threading
+
+        def _classify():
+            client, model = self._get_llm_classifier()
+            if not client:
+                return
+            result = self._llm_classify_item(client, model, item_name)
+            if result:
+                for pi in self._pantry["items"]:
+                    if pi["name"].lower() == item_name.lower() and pi["location_id"] == location_id:
+                        if pi.get("item_type") != result:
+                            pi["item_type"] = result
+                            self._save_pantry()
+                            logger.info(f"[Pantry] LLM reclassified '{item_name}' as {result}")
+                        break
+
+        threading.Thread(target=_classify, daemon=True).start()
+
+    def reclassify_pantry(self) -> dict:
+        """Reclassify all pantry items. Uses LLM if available, otherwise keyword matching."""
+        client, model = self._get_llm_classifier()
+        use_llm = client is not None
+
+        updated = 0
+        for item in self._pantry["items"]:
+            old_type = item.get("item_type")
+            if use_llm:
+                new_type = self._llm_classify_item(client, model, item["name"])
+            else:
+                new_type = _classify_item_type(item["name"])
+            if new_type and new_type != old_type:
+                item["item_type"] = new_type
+                updated += 1
+                logger.info(f"[Pantry] Reclassified '{item['name']}': {old_type} -> {new_type}")
+
+        if updated:
+            self._save_pantry()
+            self._publish_pantry_display()
+
+        method = "LLM" if use_llm else "keyword"
+        total = len(self._pantry["items"])
+        logger.info(f"[Pantry] Reclassification complete: {updated}/{total} changed ({method})")
+        return {
+            "status": "success",
+            "total": total,
+            "updated": updated,
+            "method": method,
+            "message": f"Reclassified {total} items ({updated} changed) using {method}.",
+        }
+
+    def set_item_type(self, item: str, item_type: str) -> dict:
+        """Reclassify a pantry item as ingredient or ready meal."""
+        if item_type not in ("ingredient", "ready_meal"):
+            return {"status": "error", "message": "Type must be 'ingredient' or 'ready_meal'."}
+        matches = self._find_pantry_items(item)
+        if not matches:
+            return {"status": "not_found", "message": f"'{item}' is not in the pantry."}
+        matches[0]["item_type"] = item_type
+        self._save_pantry()
+        label = "a ready meal" if item_type == "ready_meal" else "an ingredient"
+        logger.info(f"[Pantry] Reclassified '{matches[0]['name']}' as {item_type}")
+        return {"status": "success", "item": matches[0]["name"], "item_type": item_type,
+                "message": f"Marked {matches[0]['name']} as {label}."}
 
     def set_expiry(self, item: str, expires: str) -> dict:
         """Set or update the expiry date of a pantry item."""
@@ -1470,6 +1753,8 @@ class PantryPlugin(RunnableMCPPlugin):
                         "notes": i.get("notes"),
                         "expires": i.get("expires"),
                         "stored": i.get("stored", "")[:10],
+                        "item_type": i.get("item_type"),
+                        "category": _categorize_item(i["name"]),
                     }
                     for i in loc_items
                 ],
@@ -1488,6 +1773,8 @@ class PantryPlugin(RunnableMCPPlugin):
                         "notes": i.get("notes"),
                         "expires": i.get("expires"),
                         "stored": i.get("stored", "")[:10],
+                        "item_type": i.get("item_type"),
+                        "category": _categorize_item(i["name"]),
                     }
                     for i in unassigned
                 ],
@@ -1987,6 +2274,13 @@ class PantryPlugin(RunnableMCPPlugin):
                     break
             self._save_pantry()
             self._publish_pantry_display()
+
+        elif action == "reclassify":
+            import threading
+            def _do_reclassify():
+                result = self.reclassify_pantry()
+                logger.info(f"[Pantry] UI reclassify: {result.get('message')}")
+            threading.Thread(target=_do_reclassify, daemon=True).start()
 
         elif action == "check_recipe":
             recipe_name = data.get("recipe_name", "")

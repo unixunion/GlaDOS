@@ -16,18 +16,23 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 @pytest.fixture(scope="module", autouse=True)
 def _use_temp_data_dir():
-    """Point PantryPlugin at a temp directory for all tests in this module."""
-    with tempfile.TemporaryDirectory(prefix="glados_pantry_test_") as tmpdir:
+    """Point all plugins at temp directories so tests never affect real data."""
+    with tempfile.TemporaryDirectory(prefix="glados_test_") as tmpdir:
         os.environ["PANTRY_DATA_DIR"] = tmpdir
+        os.environ["TIMER_DATA_DIR"] = os.path.join(tmpdir, "timers")
+        os.environ["ALARM_DATA_DIR"] = os.path.join(tmpdir, "alarms")
+        os.makedirs(os.path.join(tmpdir, "timers"), exist_ok=True)
+        os.makedirs(os.path.join(tmpdir, "alarms"), exist_ok=True)
         # Reset singleton so it re-inits with the new data dir
         from plugins.pantry.pantry_plugin import PantryPlugin
         PantryPlugin._instance = None
         PantryPlugin._initialized = False
         yield tmpdir
-        # Clean up singleton
+        # Clean up singletons
         PantryPlugin._instance = None
         PantryPlugin._initialized = False
-        del os.environ["PANTRY_DATA_DIR"]
+        for key in ("PANTRY_DATA_DIR", "TIMER_DATA_DIR", "ALARM_DATA_DIR"):
+            os.environ.pop(key, None)
 
 
 @pytest.fixture(scope="module")
@@ -293,3 +298,142 @@ class TestDateParsing:
         result = _parse_expiry_date("the 24th")
         assert result is not None
         assert "-24" in result
+
+
+# ---------------------------------------------------------------------------
+# Item type classification
+# ---------------------------------------------------------------------------
+
+class TestItemTypeClassification:
+    def test_ready_meal_keyword_match(self):
+        from plugins.pantry.pantry_plugin import _classify_item_type
+        assert _classify_item_type("lasagna") == "ready_meal"
+        assert _classify_item_type("frozen pizza") == "ready_meal"
+        assert _classify_item_type("leftover soup") == "ready_meal"
+        assert _classify_item_type("chicken tikka") == "ready_meal"
+        assert _classify_item_type("shepherd's pie") == "ready_meal"
+        assert _classify_item_type("mac and cheese") == "ready_meal"
+
+    def test_ingredient_classification(self):
+        from plugins.pantry.pantry_plugin import _classify_item_type
+        assert _classify_item_type("chicken") == "ingredient"
+        assert _classify_item_type("flour") == "ingredient"
+        assert _classify_item_type("eggs") == "ingredient"
+        assert _classify_item_type("butter") == "ingredient"
+        assert _classify_item_type("rice") == "ingredient"
+        assert _classify_item_type("onion") == "ingredient"
+
+    def test_ready_meal_fuzzy_match(self):
+        from plugins.pantry.pantry_plugin import _classify_item_type
+        assert _classify_item_type("beef lasagne") == "ready_meal"
+        assert _classify_item_type("chicken curry") == "ready_meal"
+        assert _classify_item_type("vegetable stew") == "ready_meal"
+
+    def test_store_item_nlp_extract_with_type(self):
+        from plugins.pantry.pantry_plugin import _store_item_nlp_extract
+        result = _store_item_nlp_extract("put the lasagna as a meal in the freezer")
+        assert result.get("item_type") == "ready_meal"
+        assert result.get("item") == "lasagna"
+
+    def test_store_item_nlp_extract_as_ingredient(self):
+        from plugins.pantry.pantry_plugin import _store_item_nlp_extract
+        result = _store_item_nlp_extract("store the chicken as an ingredient in the fridge")
+        assert result.get("item_type") == "ingredient"
+
+    def test_store_item_nlp_extract_no_type(self):
+        from plugins.pantry.pantry_plugin import _store_item_nlp_extract
+        result = _store_item_nlp_extract("put the milk in the fridge")
+        assert "item_type" not in result
+        assert result.get("item") == "milk"
+
+
+class TestSuggestMealsSeparation:
+    """Test that suggest_meals separates ready meals from ingredients."""
+
+    @pytest.fixture
+    def plugin(self, tmp_path):
+        os.environ["PANTRY_DATA_DIR"] = str(tmp_path)
+        from plugins.pantry.pantry_plugin import PantryPlugin
+        PantryPlugin._instance = None
+        pp = PantryPlugin()
+        # Add a mix of items
+        pp.store_item("lasagna", "fridge", item_type="ready_meal")
+        pp.store_item("frozen pizza", "freezer-1", item_type="ready_meal")
+        pp.store_item("chicken", "fridge", item_type="ingredient")
+        pp.store_item("eggs", "fridge", item_type="ingredient")
+        pp.store_item("flour", "dry-goods", item_type="ingredient")
+        return pp
+
+    def test_ready_meals_separated(self, plugin):
+        result = plugin.suggest_meals_from_pantry()
+        ready = result.get("ready_meals", [])
+        ready_names = [m["name"] for m in ready]
+        assert "lasagna" in ready_names
+        assert "frozen pizza" in ready_names
+        assert "chicken" not in ready_names
+
+    def test_message_includes_ready_meals(self, plugin):
+        result = plugin.suggest_meals_from_pantry()
+        msg = result.get("message", "")
+        assert "Ready to eat" in msg
+
+
+class TestSetItemType:
+    """Test reclassifying pantry items."""
+
+    @pytest.fixture
+    def plugin(self, tmp_path):
+        os.environ["PANTRY_DATA_DIR"] = str(tmp_path)
+        from plugins.pantry.pantry_plugin import PantryPlugin
+        PantryPlugin._instance = None
+        pp = PantryPlugin()
+        pp.store_item("chicken", "fridge")
+        return pp
+
+    def test_reclassify_to_ready_meal(self, plugin):
+        result = plugin.set_item_type("chicken", "ready_meal")
+        assert result["status"] == "success"
+        assert result["item_type"] == "ready_meal"
+        item = plugin._find_pantry_items("chicken")[0]
+        assert item["item_type"] == "ready_meal"
+
+    def test_reclassify_to_ingredient(self, plugin):
+        plugin.set_item_type("chicken", "ready_meal")
+        result = plugin.set_item_type("chicken", "ingredient")
+        assert result["status"] == "success"
+        assert result["item_type"] == "ingredient"
+
+    def test_invalid_type(self, plugin):
+        result = plugin.set_item_type("chicken", "snack")
+        assert result["status"] == "error"
+
+    def test_item_not_found(self, plugin):
+        result = plugin.set_item_type("unicorn", "ready_meal")
+        assert result["status"] == "not_found"
+
+
+class TestStoreItemWithType:
+    """Test store_item with explicit item_type parameter."""
+
+    @pytest.fixture
+    def plugin(self, tmp_path):
+        os.environ["PANTRY_DATA_DIR"] = str(tmp_path)
+        from plugins.pantry.pantry_plugin import PantryPlugin
+        PantryPlugin._instance = None
+        return PantryPlugin()
+
+    def test_explicit_ready_meal(self, plugin):
+        result = plugin.store_item("chicken tikka", "fridge", item_type="ready_meal")
+        assert result["item_type"] == "ready_meal"
+
+    def test_explicit_ingredient(self, plugin):
+        result = plugin.store_item("lasagna sheets", "dry-goods", item_type="ingredient")
+        assert result["item_type"] == "ingredient"
+
+    def test_auto_classify_ready_meal(self, plugin):
+        result = plugin.store_item("frozen pizza", "freezer-1")
+        assert result["item_type"] == "ready_meal"
+
+    def test_auto_classify_ingredient(self, plugin):
+        result = plugin.store_item("butter", "fridge")
+        assert result["item_type"] == "ingredient"

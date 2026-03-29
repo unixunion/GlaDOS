@@ -228,6 +228,26 @@ class DisplayPlugin(RunnablePlugin):
             activity=[Activity.COOKING, Activity.GENERAL, Activity.UTILITIES, Activity.CHORES, Activity.SYSTEM, Activity.ENTERTAINMENT]
         )(self.show_on_display)
 
+        # NLP handler for display commands (works without LLM)
+        import re as _re
+        from glados.nlp.handler import NLPHandler, NLPHandlerRegistry
+
+        def _display_extract(text: str) -> dict:
+            text_lower = text.lower()
+            if any(w in text_lower for w in ["clear", "reset", "blank"]):
+                return {"view_type": "clear"}
+            if any(w in text_lower for w in ["recipe", "ingredient", "cooking"]):
+                return {"view_type": "recipe"}
+            if any(w in text_lower for w in ["timer", "countdown", "alarm"]):
+                return {"view_type": "timer"}
+            return {"view_type": "info", "content": text}
+
+        NLPHandlerRegistry().register(NLPHandler(
+            tool_name="show_on_display",
+            extract_fn=_display_extract,
+            response_fn=lambda r: r.get("message", "Done.") if isinstance(r, dict) else "Done.",
+        ))
+
     def show_on_display(self, view_type: str, title: str = "", content: str = ""):
         """LLM-callable tool to push content to the display."""
         if view_type == "clear":

@@ -135,18 +135,50 @@ Default locations: Fridge, Freezer Drawer 1-3, Dry Goods Cupboard.
 
 Locations can also be added via the display UI.
 
+## Ready Meals vs Ingredients
+
+Pantry items are automatically classified as **ready meals** (complete dishes) or **ingredients** (raw components). This affects how meal suggestions work.
+
+### Auto-Classification
+
+When an item is stored, it's classified by keyword matching:
+- **Ready meals**: lasagna, pizza, curry, stew, soup, leftover, casserole, burrito, tikka, etc.
+- **Ingredients**: everything else (chicken, flour, eggs, butter, rice, etc.)
+
+### Voice Override
+
+| Say this | What happens |
+|----------|-------------|
+| "store the lasagna as a meal in the freezer" | Stored as ready_meal |
+| "put the chicken tikka as a meal in the fridge" | Explicit ready_meal |
+| "mark the chicken as a ready meal" | Reclassify existing item |
+| "that's an ingredient not a meal" | Reclassify |
+
+### LLM Classification
+
+In hybrid/LLM mode, a fast lightweight model (same one used for knowledge query rewriting) runs a background classification after each store. This catches ambiguous items like "chicken tikka" that keyword matching might miss.
+
+### How It Affects Suggestions
+
+"What can we make?" now returns two sections:
+1. **Ready to eat** — dishes already in the pantry (lasagna, frozen pizza)
+2. **Recipes you can make** — recipe suggestions from ingredients
+
 ## Recipe Integration
 
 | Say this | What happens |
 |----------|-------------|
-| "what can I make with what's in the pantry" | Searches recipes matching pantry contents |
+| "what can I make with what's in the pantry" | Ready meals + recipe suggestions from ingredients |
 | "what can I make before things expire" | Prioritizes expiring ingredients |
 | "suggest a meal" | General meal suggestion from pantry |
 | "add the ingredients for that to the shopping list" | Adds missing recipe ingredients |
+| "do we have the ingredients" | Checks pantry against active recipe |
+| "what ingredients are we missing" | Lists what to buy |
 
-- `suggest_meals_from_pantry` cross-references pantry items with the recipe database
+- `suggest_meals_from_pantry` separates ready meals from ingredients, shows both sections
 - Expiring items are prioritized in recipe suggestions
 - `add_recipe_ingredients_to_list` checks what you already have and only adds missing ingredients
+- `check_recipe_ingredients` compares the active recipe against pantry contents
 
 ## Shopping Modes (Sub-Contexts)
 

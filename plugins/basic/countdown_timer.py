@@ -124,7 +124,7 @@ class CountdownTimer(RunnableMCPPlugin):
             return
         self._initialized = True
         super().__init__()
-        self._data_dir = os.path.join("plugin_data", "timers")
+        self._data_dir = os.environ.get("TIMER_DATA_DIR") or os.path.join("plugin_data", "timers")
         os.makedirs(self._data_dir, exist_ok=True)
         self.timers: List[Timer] = []
         # Unified ringing state — manages both timers and alarms
@@ -523,32 +523,62 @@ class CountdownTimer(RunnableMCPPlugin):
         return True
 
     def _on_timer_action(self, event):
-        """Handle direct timer UI actions (no LLM round-trip)."""
+        """Handle direct timer/alarm UI actions (no LLM round-trip).
+
+        UI clicks don't speak confirmation — the user can see the result on screen.
+        """
         data = event.content if isinstance(event.content, dict) else {}
         action = data.get("action")
 
         if action == "create":
             minutes = int(data.get("minutes", 0))
             if minutes > 0:
-                result = self.set_timer(minutes=minutes)
-                self.event_system.publish(EventMessage(
-                    "tts", "speak", result.get("message", "Timer set.")
-                ))
+                self.set_timer(minutes=minutes)
 
         elif action == "cancel":
             description = data.get("description", "")
-            if description:
-                result = self.cancel_timer(description)
-            elif len(self.timers) == 1:
-                result = self.cancel_timer("")
-            else:
-                result = {"message": "No timer specified."}
-            self.event_system.publish(EventMessage(
-                "tts", "speak", result.get("message", "Done.")
-            ))
+            item_type = data.get("type", "")
+
+            # Try alarm cancel first if type says alarm, OR if no timer matches
+            cancelled = False
+
+            if item_type != "alarm" and description:
+                # Try timer cancel — exact match only (no single-timer fallback from UI)
+                for i, timer in enumerate(self.timers):
+                    if description.lower() in timer.description.lower():
+                        self.timers.pop(i)
+                        self._save_timers()
+                        logger.info(f"UI cancelled timer: {timer.description}")
+                        cancelled = True
+                        break
+
+            if not cancelled:
+                # Try alarm cancel
+                try:
+                    alarm_plugin = self._get_alarm_plugin()
+                    if alarm_plugin:
+                        result = alarm_plugin.cancel_alarm(description)
+                        if result.get("status") == "success":
+                            cancelled = True
+                            logger.info(f"UI cancelled alarm: {description}")
+                except Exception as e:
+                    logger.warning(f"Failed to cancel alarm: {e}")
+
+            self._publish_timer_display()
 
         elif action == "dismiss_ring":
             self.dismiss_ring()
+
+    def _get_alarm_plugin(self):
+        """Get the existing AlarmClock plugin instance from the plugin registry."""
+        try:
+            from glados.system.plugin import PluginSystem
+            for name, pd in PluginSystem().plugins.items():
+                if "alarm" in name.lower() and hasattr(pd.get("function"), "cancel_alarm"):
+                    return pd["function"]
+        except Exception:
+            pass
+        return None
 
     def start(self):
         logger.info("Starting CountdownTimer.")
@@ -572,6 +602,11 @@ class CountdownTimer(RunnableMCPPlugin):
             "system.interrupt_tts",
             EventHook("ring_dismiss_on_interrupt", callback=lambda e: self.dismiss_ring(), priority=1)
         )
+
+        # Publish display on startup so restored timers/alarms are visible
+        if self.timers:
+            logger.info(f"Restored {len(self.timers)} timer(s) — publishing to display")
+            self._publish_timer_display()
 
     def stop(self):
         logger.info("Stopping CountdownTimer.")

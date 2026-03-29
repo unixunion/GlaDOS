@@ -88,6 +88,7 @@ class TTSConfig:
     speaker_id: Optional[str | int] = None
     buffer_mode: str = "clause"  # "sentence" (wait for .!?), "clause" (split on ,;:— too), "word" (every N words)
     word_buffer: int = 5  # words per flush in "word" mode
+    fade_ms: float = 10  # fade-in/out duration (ms) at audio chunk boundaries
 
 
 @dataclass
@@ -125,6 +126,7 @@ _FLAT_TO_NESTED = {
     "speaker_id": ("tts", "speaker_id"),
     "tts_buffer_mode": ("tts", "buffer_mode"),
     "tts_word_buffer": ("tts", "word_buffer"),
+    "tts_fade_ms": ("tts", "fade_ms"),
     "nlp_mode": ("nlp", "mode"),
     "nlp_confidence_threshold": ("nlp", "confidence_threshold"),
     "hybrid_nlp_threshold": ("nlp", "hybrid_threshold"),
@@ -276,6 +278,10 @@ class GladosConfig:
     @property
     def tts_word_buffer(self) -> int:
         return self.tts.word_buffer
+
+    @property
+    def tts_fade_ms(self) -> float:
+        return self.tts.fade_ms
 
     @property
     def nlp_mode(self) -> bool:

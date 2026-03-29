@@ -231,6 +231,14 @@
         .btn-primary:disabled { opacity: 0.4; }
 
         /* ── Pantry view ───────────────────────────────── */
+        .pantry-toolbar {
+            display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 14px;
+        }
+        .pantry-toolbar button {
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            color: #aaa; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 0.8rem;
+        }
+        .pantry-toolbar button:hover { border-color: #ff6600; color: #ff6600; }
         .pantry-expiry-banner { background: rgba(255,80,0,0.12); border: 1px solid rgba(255,80,0,0.25); border-radius: 10px; padding: 10px 16px; margin-bottom: 16px; font-size: 0.85rem; }
         .pantry-expiry-banner-title { color: #ff6600; font-weight: 600; margin-bottom: 4px; }
         .pantry-location { margin-bottom: 12px; background: rgba(255,255,255,0.02); border-radius: 10px; overflow: hidden; }
@@ -244,6 +252,24 @@
         .pantry-item:last-child { border-bottom: none; }
         .pi-name { flex: 1; }
         .pi-notes { font-size: 0.75rem; color: #888; }
+        .pi-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+        .pi-tag {
+            font-size: 0.6rem; padding: 1px 6px; border-radius: 5px;
+            text-transform: uppercase; letter-spacing: 0.03em; font-weight: 500; white-space: nowrap;
+        }
+        .pi-tag.tag-ready-meal { color: #ff8c00; background: rgba(255,140,0,0.15); }
+        .pi-tag.tag-ingredient { color: #64b5f6; background: rgba(100,181,246,0.10); }
+        .pi-tag.tag-dairy { color: #ffd54f; background: rgba(255,213,79,0.12); }
+        .pi-tag.tag-produce { color: #81c784; background: rgba(129,199,132,0.12); }
+        .pi-tag.tag-meat { color: #e57373; background: rgba(229,115,115,0.12); }
+        .pi-tag.tag-seafood { color: #4dd0e1; background: rgba(77,208,225,0.12); }
+        .pi-tag.tag-frozen { color: #90caf9; background: rgba(144,202,249,0.12); }
+        .pi-tag.tag-bakery { color: #ffab91; background: rgba(255,171,145,0.12); }
+        .pi-tag.tag-dry-goods { color: #bcaaa4; background: rgba(188,170,164,0.12); }
+        .pi-tag.tag-beverages { color: #80deea; background: rgba(128,222,234,0.12); }
+        .pi-tag.tag-condiments { color: #ce93d8; background: rgba(206,147,216,0.12); }
+        .pi-tag.tag-snacks { color: #fff176; background: rgba(255,241,118,0.12); }
+        .pi-tag.tag-other { color: #888; background: rgba(255,255,255,0.06); }
         .pi-expiry { font-size: 0.75rem; padding: 2px 8px; border-radius: 8px; }
         .pi-expiry.expired { color: #ff4444; background: rgba(255,68,68,0.12); }
         .pi-expiry.expiring-soon { color: #ff8800; background: rgba(255,136,0,0.12); }
@@ -394,6 +420,26 @@
         /* ── Info view ─────────────────────────────────── */
         .info-content { font-size: 1rem; color: #ccc; white-space: pre-wrap; line-height: 1.6; }
 
+        /* ── GlaDOS avatar ────────────────────────────── */
+        #glados-avatar {
+            position: fixed;
+            bottom: 16px;
+            left: 16px;
+            z-index: 5;
+            opacity: 0.25;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        #glados-avatar img {
+            height: 420px;
+            filter: drop-shadow(0 0 12px rgba(255,102,0,0.3));
+        }
+        #glados-avatar.speaking { opacity: 0.6; }
+        @media (max-width: 768px) {
+            #glados-avatar { bottom: 70px; }
+            #glados-avatar img { height: 240px; }
+        }
+
         /* ── Utility ───────────────────────────────────── */
         @keyframes flash { 0%, 100% { background: #1a1a2e; } 50% { background: #4a1a1a; } }
         .flash-alert { animation: flash 0.5s ease-in-out 6; }
@@ -425,6 +471,9 @@
 
     <!-- Timer overlay -->
     <div id="timer-overlay"></div>
+
+    <!-- GlaDOS avatar -->
+    <div id="glados-avatar"><img src="/images/glados.gif" alt=""></div>
 
     <!-- Status toast -->
     <div id="status-toast"><span class="status-text"></span></div>
@@ -812,7 +861,7 @@
         function renderPantry(data) {
             const locations = data.locations || [];
             const expiring = data.expiring_soon || [];
-            let html = '';
+            let html = '<div class="pantry-toolbar"><button onclick="socket.emit(\'pantry_action\',{action:\'reclassify\'})">&#x1F3F7; Reclassify All</button></div>';
             if (expiring.length) {
                 html += `<div class="pantry-expiry-banner"><div class="pantry-expiry-banner-title">&#9888; Expiring Soon</div>${expiring.map(i => {
                     const l = i.days_left<0?'expired':i.days_left===0?'today':i.days_left===1?'tomorrow':`in ${i.days_left} days`;
@@ -839,7 +888,17 @@
                         } else {
                             expHtml = `<span><input type="date" class="pantry-expiry-picker empty" onchange="socket.emit('pantry_action',{action:'set_expiry',item_id:'${item.id}',expires:this.value})" onclick="event.stopPropagation()" title="Set expiry"></span>`;
                         }
-                        itemsHtml += `<div class="pantry-item"><span class="pi-name">${esc(item.name)}</span>${notes}${expHtml}<button class="si-edit" onclick="paEditItem('${item.id}','${esc(item.name).replace(/'/g,"\\'")}','${esc(item.notes||'').replace(/'/g,"\\'")}')" title="Edit">&#9998;</button><button class="pi-remove" onclick="socket.emit('pantry_action',{action:'remove_item',item_id:'${item.id}'})" title="Remove">&#10005;</button></div>`;
+                        let tagsHtml = '<span class="pi-tags">';
+                        if (item.item_type) {
+                            const tl = item.item_type === 'ready_meal' ? 'meal' : item.item_type;
+                            tagsHtml += `<span class="pi-tag tag-${item.item_type}">${esc(tl)}</span>`;
+                        }
+                        if (item.category && item.category !== 'other') {
+                            const cl = item.category.replace(/_/g, ' ');
+                            tagsHtml += `<span class="pi-tag tag-${item.category}">${esc(cl)}</span>`;
+                        }
+                        tagsHtml += '</span>';
+                        itemsHtml += `<div class="pantry-item"><span class="pi-name">${esc(item.name)}</span>${notes}${tagsHtml}${expHtml}<button class="si-edit" onclick="paEditItem('${item.id}','${esc(item.name).replace(/'/g,"\\'")}','${esc(item.notes||'').replace(/'/g,"\\'")}')" title="Edit">&#9998;</button><button class="pi-remove" onclick="socket.emit('pantry_action',{action:'remove_item',item_id:'${item.id}'})" title="Remove">&#10005;</button></div>`;
                     });
                 }
                 const addHtml = `<div class="pantry-add-item">
@@ -878,7 +937,7 @@
                     const doneClass = isDone ? ' timer-done' : '';
                     const btn = isDone
                         ? `<button class="tf-dismiss tf-dismiss-done" onclick="socket.emit('timer_action',{action:'dismiss_ring'})">Dismiss</button>`
-                        : `<button class="tf-dismiss" onclick="socket.emit('timer_action',{action:'cancel',description:'${desc.replace(/'/g,"\\'")}'})">Cancel</button>`;
+                        : `<button class="tf-dismiss" onclick="socket.emit('timer_action',{action:'cancel',description:'${desc.replace(/'/g,"\\'")}',type:'${t.type}'})">Cancel</button>`;
                     return `<div class="timer-float${doneClass}">
                         <div class="tf-icon">${icon}</div>
                         <div class="tf-name">${desc}</div>
@@ -976,9 +1035,11 @@
                 else { banner.classList.remove('visible'); }
                 return;
             }
-            // Status dot
+            // Status dot + avatar glow
             statusDot.className = '';
             if (['listening','thinking','speaking','tool_call'].includes(data.status)) statusDot.classList.add(data.status);
+            const avatar = document.getElementById('glados-avatar');
+            if (avatar) avatar.classList.toggle('speaking', data.status === 'speaking');
             // Toast
             const status = data.status || 'idle', message = data.message || status;
             if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }

@@ -4,6 +4,7 @@ Connects to a Qdrant vector store populated by the ingestion script (tools/inges
 Registers a PRE_LLM chat hook that searches for relevant knowledge passages and injects
 them into the LLM context alongside memory.
 """
+import re
 import threading
 import time
 
@@ -145,6 +146,16 @@ class KnowledgeRAG(RunnableMCPPlugin):
             ],
             process_output=True,
             activity=[Activity.GENERAL],
+            nlp_extract_fn=lambda text: {"query": re.sub(
+                r"^(?:please\s+)?(?:look\s+up|search\s+(?:for|the\s+knowledge\s+base)|"
+                r"tell\s+me\s+more\s+about|find\s+(?:more\s+)?(?:information\s+)?(?:about|on)|"
+                r"get\s+(?:more\s+)?details\s+(?:on|about)|what\s+does\s+the\s+encyclopedia\s+say\s+about)\s*",
+                "", text, flags=re.IGNORECASE
+            ).strip() or text},
+            nlp_response=lambda r: (
+                r.get("passages", "")[:300] + "..." if r.get("status") == "success"
+                else r.get("message", "No information found.")
+            ),
         )
 
         logger.success(f"[KnowledgeRAG] Active — searching {self.collections}, top_k={self.top_k}, threshold={self.threshold}, query_mode={self.query_mode}")

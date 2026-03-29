@@ -53,6 +53,74 @@ NLP mode lets GlaDOS run without an external LLM server. Instead of sending user
 
 This makes GlaDOS usable on low-power devices (Raspberry Pi, old laptops) where running or connecting to an LLM isn't practical.
 
+### NLP Coverage by Plugin
+
+31 out of 33 tools work fully in NLP mode. The table below shows what works without an LLM:
+
+| Plugin | Tool | Intents | Extract | Response | NLP Status |
+|--------|------|---------|---------|----------|------------|
+| Clock | `get_current_time` | 16 | — | format time | **Works** |
+| Timer | `set_timer` | 12 | duration + desc | timer set msg | **Works** |
+| Timer | `list_timers` | 10 | — | active timers | **Works** |
+| Timer | `cancel_timer` | 13 | description match | cancelled msg | **Works** |
+| Alarm | `set_fixed_time_alarm` | 12 | time string | alarm set msg | **Works** |
+| Alarm | `get_alarms` | 8 | — | alarm list | **Works** |
+| Alarm | `cancel_alarm` | 10 | description/time | cancelled msg | **Works** |
+| Unit Converter | `convert_units` | 15 | value + units | conversion result | **Works** |
+| Recipes | `search_recipes` | 14 | query string | result list | **Works** |
+| Recipes | `select_recipe` | 26 | name or positional | selected msg | **Works** |
+| Cooking | 7 NLP-only handlers | 30+ | — | step text | **Works** |
+| Pantry | `add_to_shopping_list` | 12 | item + recurring | added msg | **Works** |
+| Pantry | `remove_from_shopping_list` | 8 | item name | removed msg | **Works** |
+| Pantry | `show_shopping_list` | 8 | — | item count | **Works** |
+| Pantry | `complete_shopping` | 10 | except items | moved count | **Works** |
+| Pantry | `store_item` | 8 | item + location | stored msg | **Works** |
+| Pantry | `set_expiry` | 10 | item + date | expiry set | **Works** |
+| Pantry | `find_item` | 6 | item name | location | **Works** |
+| Pantry | `check_expiring` | 6 | days (optional) | expiring items | **Works** |
+| Pantry | `show_pantry` | 8 | location filter | item count | **Works** |
+| Pantry | `suggest_meals_from_pantry` | 14 | — | recipe suggestions | **Works** |
+| Pantry | `add_recipe_ingredients_to_list` | 4 | recipe name | added count | **Works** |
+| Pantry | `check_recipe_ingredients` | 7 | — | missing items | **Works** |
+| Pantry | `manage_pantry_locations` | 3 | action + name | done msg | **Works** |
+| Pantry | `set_item_type` | 6 | item + type | reclassified msg | **Works** |
+| Music | `play_music` | 10+ | action + query | now playing | **Works** |
+| Music | `now_playing` | 6 | — | track info | **Works** |
+| Music | `list_devices` | 4 | — | device list | **Works** |
+| Vacuum | `start_vacuuming` | 7 | — | started | **Works** |
+| Vacuum | `stop_vacuuming` | 6 | — | stopped | **Works** |
+| Knowledge | `lookup_knowledge` | 7 | query string | passage text | **Works** |
+| Log Analyzer | `analyze_logs` | 10 | level filter | error summary | **Works** |
+| Log Analyzer | `save_log_report` | 5 | description | saved path | **Works** |
+| Display | `show_on_display` | 9 | view type | done | **Works** |
+| System | `get_logs` | 10 | — | log summary | **Works** |
+| System | `list_plugins` | 6 | — | plugin list | **Works** |
+| Arithmetic | `calculate` | 6 | expression | result | **Works** |
+| Weather | `handle_weather` | 17 | location | forecast | **Partial** (needs API) |
+| Vision | `get_camera_feed` | 13 | — | — | **Needs LLM** |
+
+**Partial** = tool executes but the response needs external data (weather API).
+**Needs LLM** = tool inherently requires LLM processing (vision model describes images).
+
+### Per-Plugin NLP Threshold
+
+Individual tools can set a lower confidence threshold so they take the NLP fast-path even when the global threshold is high. This prevents confidence dilution as more plugins are added.
+
+Set in code:
+```python
+@mcp_tool(..., nlp_threshold=0.6)
+```
+
+Override in config:
+```yaml
+plugins:
+  - name: get_current_time
+    config:
+      nlp_threshold: 0.5
+```
+
+Resolution: **YAML config > code default > global `hybrid_nlp_threshold`**.
+
 ### Enabling NLP Mode
 
 In `glados_config.yml`:

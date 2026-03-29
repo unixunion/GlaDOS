@@ -24,15 +24,18 @@ All commands can be spoken via voice (wake word + phrase) or typed in the displa
 - **Dismiss**: tap the Dismiss button on the card, say "stop"/"cancel", or use the mute button
 - Sound auto-stops after 3 minutes if not dismissed
 - Multiple timers supported — all show as separate cards
+- **Durable** — timers survive restarts. On boot, unexpired timers are restored from `plugin_data/timers/timers.json`
 
 ## Alarms
+
+Alarms are for fixed times (use **timers** for durations like "5 minutes"). Best results with AM/PM format.
 
 | Say this | What happens |
 |----------|-------------|
 | "set an alarm for 5pm tomorrow" | Natural language time parsing |
 | "set an alarm for 8:30 am on Sunday" | Specific day + time |
-| "wake me up at 7 in the morning" | Casual phrasing |
-| "alarm at 9 o'clock" | Short form |
+| "wake me up at 7am" | AM/PM format (recommended) |
+| "alarm at 9 o'clock" | Short form (converted to 9:00) |
 | "set a morning alarm for 7:30" | Named alarm |
 | "list my alarms" / "what alarms do I have set" | Shows all pending alarms |
 | "cancel the alarm" | Cancel by description match |
@@ -45,6 +48,7 @@ All commands can be spoken via voice (wake word + phrase) or typed in the displa
 - Pauses any playing music during alarm, resumes after dismissal
 - **Dismiss**: tap the Dismiss button, say wake word + "stop"/"cancel"/"silence", or mute button
 - Active alarms show alongside timers in the floating overlay
+- **Durable** — alarms survive restarts. On boot, future alarms are restored from `plugin_data/alarms/alarms.json`
 
 ## Display Controls
 

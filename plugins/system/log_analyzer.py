@@ -69,6 +69,21 @@ def set_shared_buffer(buf: LogRingBuffer):
 # NLP response formatters
 # ---------------------------------------------------------------------------
 
+def _analyze_nlp_extract(text: str) -> dict:
+    text_lower = text.lower()
+    if "warning" in text_lower:
+        return {"level": "warning"}
+    if "all" in text_lower or "everything" in text_lower:
+        return {"level": "all"}
+    return {"level": "error"}
+
+
+def _save_report_nlp_extract(text: str) -> dict:
+    import re
+    m = re.search(r"(?:about|for|regarding|describing)\s+(.+?)\.?$", text, re.IGNORECASE)
+    return {"description": m.group(1).strip() if m else ""}
+
+
 def _analyze_nlp_response(result: dict) -> str:
     if result.get("status") == "clean":
         return "All clear. No errors or warnings in the recent logs."
@@ -139,6 +154,7 @@ class LogAnalyzer(RunnableMCPPlugin):
             ],
             process_output=True,
             activity=[Activity.SYSTEM, Activity.GENERAL],
+            nlp_extract_fn=_analyze_nlp_extract,
             nlp_response=_analyze_nlp_response,
         )
 
@@ -163,6 +179,7 @@ class LogAnalyzer(RunnableMCPPlugin):
             ],
             process_output=True,
             activity=[Activity.SYSTEM, Activity.GENERAL],
+            nlp_extract_fn=_save_report_nlp_extract,
             nlp_response=_save_report_nlp_response,
         )
 

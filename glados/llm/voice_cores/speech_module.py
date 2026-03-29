@@ -30,6 +30,8 @@ class SpeechModule(ABC):
         self.config = config
         self._output_stream = None
         self._interrupted = threading.Event()
+        # Configurable fade duration (ms) for cross-fade between audio chunks
+        self._fade_ms = float(getattr(config, 'tts_fade_ms', 10) or 10)
         self._tts_muted = False
 
     @abstractmethod
@@ -214,11 +216,13 @@ class SpeechModule(ABC):
             audio = np.asarray(audio, dtype=np.float32)
             if audio.ndim == 1:
                 audio = audio.reshape(-1, 1)
-            # Apply short fade-in (5ms) to prevent clicks/pops at chunk boundaries
-            fade_samples = min(int(self._get_sample_rate() * 0.005), len(audio))
+            # Apply configurable fade-in/out to prevent clicks/pops at chunk boundaries
+            fade_samples = min(int(self._get_sample_rate() * self._fade_ms / 1000.0), len(audio) // 2)
             if fade_samples > 0:
-                fade = np.linspace(0, 1, fade_samples, dtype=np.float32).reshape(-1, 1)
-                audio[:fade_samples] *= fade
+                fade_in = np.linspace(0, 1, fade_samples, dtype=np.float32).reshape(-1, 1)
+                audio[:fade_samples] *= fade_in
+                fade_out = np.linspace(1, 0, fade_samples, dtype=np.float32).reshape(-1, 1)
+                audio[-fade_samples:] *= fade_out
             stream.write(audio)
         except Exception as e:
             if self._interrupted.is_set():

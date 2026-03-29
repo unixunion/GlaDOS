@@ -18,6 +18,7 @@ Glados:
 #  voice_core: "kokoro"
 #  voice_model: "kokoro-82m-onnx"  # directory containing kokoro-v0_19.onnx and voices.json
 #  speaker_id: "bf_isabella"
+  tts_fade_ms: 10
   wake_word_sensitivity: 0.5
   openwakeword:
     threshold: 0.5
