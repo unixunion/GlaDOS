@@ -4,8 +4,12 @@
 # Uses NLP mode (nlp_mode: true) for intent classification + direct tool execution.
 # Includes voice (Whisper STT + Piper TTS) and display UI.
 #
-# Install: pip install -r requirements_rpi.txt
-# Run:     python main.py   (with nlp_mode: true in glados_config.yml)
+# Install (3 steps — order matters to avoid NVIDIA bloat):
+#   1. pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   2. pip install openai-whisper==20240930
+#   3. pip install -r requirements_rpi.txt
+#
+# Run: python main.py   (with nlp_mode: true in glados_config.yml)
 
 # ── Core ──────────────────────────────────────────
 loguru>=0.7.3                  # Logging
@@ -17,8 +21,13 @@ scikit-learn>=1.6.1            # Intent classifier (Naive Bayes)
 sounddevice>=0.5.1             # Audio I/O (mic + speaker)
 onnxruntime>=1.19.2            # Piper TTS engine (CPU-only on RPi)
 num2words>=0.5.14              # Number-to-word conversion for TTS
-openai-whisper==20240930       # Speech-to-text (uses smallest model on RPi)
 openwakeword>=0.6.0            # Wake word detection
+
+# Whisper STT — install torch CPU-only FIRST to avoid 2GB+ NVIDIA downloads:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install openai-whisper==20240930
+# Do NOT put openai-whisper here — it pulls torch with CUDA by default.
+# See install instructions below.
 
 # ── Display UI ────────────────────────────────────
 flask>=3.1.0                   # Web server

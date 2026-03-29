@@ -4,8 +4,12 @@
 # No local model needed — connects to Anthropic Claude, OpenAI, or any
 # OpenAI-compatible API (e.g. remote LM Studio on another machine).
 #
-# Install: pip install -r requirements_rpi_llm.txt
-# Run:     python main.py
+# Install (order matters — avoid NVIDIA bloat):
+#   1. pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   2. pip install openai-whisper==20240930
+#   3. pip install -r requirements_rpi_llm.txt
+#
+# Run: python main.py
 #
 # Config example (Anthropic Claude):
 #   client_type: ANTHROPIC

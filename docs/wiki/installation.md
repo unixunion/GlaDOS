@@ -62,7 +62,11 @@ git clone https://github.com/unixunion/glados.git
 cd glados
 python3 -m venv .venv && source .venv/bin/activate
 
-# Use lightweight requirements (skips torch, langchain, chromadb, etc.)
+# Install torch CPU-only FIRST (avoids 2GB+ NVIDIA wheel downloads)
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install openai-whisper==20240930
+
+# Install remaining dependencies
 pip install -r requirements_rpi.txt
 
 # Enable NLP mode in config
@@ -73,7 +77,11 @@ pip install -r requirements_rpi.txt
 python main.py
 ```
 
-The `requirements_rpi.txt` is ~2GB smaller than the full requirements — it excludes PyTorch, LangChain, ChromaDB, sentence-transformers, and other LLM-dependent packages. All NLP-capable tools (31 out of 33) work without an LLM. See [NLP Mode](nlp-mode.md) for the coverage table.
+**Important:** Install `torch` from the CPU index *before* `openai-whisper`. If you `pip install openai-whisper` first, it pulls the default PyTorch which includes ~2GB of NVIDIA CUDA libraries that an RPi can't use.
+
+For RPi with a cloud LLM (Anthropic Claude, remote LM Studio), use `requirements_rpi_llm.txt` instead — it adds the OpenAI/Anthropic clients and ChromaDB memory.
+
+All NLP-capable tools (31 out of 33) work without an LLM. See [NLP Mode](nlp-mode.md) for the coverage table.
 
 ## Changing the Model
 
