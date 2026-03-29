@@ -7,7 +7,7 @@ GlaDOS supports switchable TTS backends. Set `voice_core` in `glados_config.yml`
 - **`glados`** (default) — Piper/ONNX TTS. Uses `glados.onnx` model. The classic GlaDOS voice.
 - **`kokoro`** — Kokoro ONNX TTS. Multiple voices (American/British, male/female), requires `pip install kokoro-onnx` and downloading model files (~340MB: `cd models/kokoro-82m-onnx && python get.py`). Set `speaker_id` to choose a voice (e.g. `"bf_isabella"` for British female Isabella).
 
-Both cores share the same queue processing, text preprocessing, interrupt handling, and audio playback — only the synthesis engine differs. See [Configuration](configuration) for setup details.
+Both cores share the same queue processing, text preprocessing, interrupt handling, and audio playback — only the synthesis engine differs. See [Configuration](configuration.md) for setup details.
 
 ## TTS Buffer Mode
 

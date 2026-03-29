@@ -4,7 +4,7 @@
 
 Install a local LLM server:
 1. Download [LM Studio](https://lmstudio.ai) or [Ollama](https://github.com/ollama/ollama)
-2. Download a model (see [LLM Models](models) for recommendations)
+2. Download a model (see [LLM Models](models.md) for recommendations)
 3. Start the server
 
 ## CUDA (NVIDIA only)

@@ -73,9 +73,11 @@ class DisplayPlugin(RunnablePlugin):
         @self._flask_app.route("/wiki/")
         @self._flask_app.route("/wiki/<page>")
         def wiki(page="index"):
-            wiki_dir = os.path.join(os.path.dirname(__file__), "wiki")
-            # Sanitize page name
+            wiki_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "docs", "wiki")
+            # Sanitize page name and strip .md extension (allows both /wiki/arch and /wiki/arch.md)
             page = page.replace("..", "").replace("/", "").replace("\\", "")
+            if page.endswith(".md"):
+                page = page[:-3]
             md_path = os.path.join(wiki_dir, f"{page}.md")
 
             if not os.path.exists(md_path):
@@ -105,7 +107,10 @@ class DisplayPlugin(RunnablePlugin):
                             import re
                             m = re.match(r"- \[(.+?)\]\((.+?)\)", line)
                             if m:
-                                sidebar_pages.append({"title": m.group(1), "slug": m.group(2)})
+                                slug = m.group(2)
+                                if slug.endswith(".md"):
+                                    slug = slug[:-3]
+                                sidebar_pages.append({"title": m.group(1), "slug": slug})
 
             return render_template("wiki.html",
                                    title=title,

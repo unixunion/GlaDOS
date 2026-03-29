@@ -73,7 +73,7 @@ Recipe dataset with ~13,500 recipes and images at `data/recipes/dataset.csv`. Im
 
 - Selected recipes are automatically displayed on screen with image, ingredients, and steps
 - Ingredient search uses fuzzy matching — "chicken" matches "chicken breast", "whole chicken", etc.
-- Integrates with the [pantry system](pantry) — suggest meals from pantry contents, add recipe ingredients to shopping list
+- Integrates with the [pantry system](pantry.md) — suggest meals from pantry contents, add recipe ingredients to shopping list
 - After selecting, use cooking step commands (see below)
 
 ### Cooking Steps (after selecting a recipe)
@@ -138,7 +138,7 @@ music_dir: ~/Music
 
 - Interactive display with checkboxes, category grouping, and "Done Shopping" button
 - Mobile shopping list at `/shopping` — add to home screen on phone, works offline
-- See [Shopping List & Pantry](pantry) for full details
+- See [Shopping List & Pantry](pantry.md) for full details
 
 ## Pantry
 
@@ -155,7 +155,7 @@ music_dir: ~/Music
 
 - Expiry colour coding on display: red (expired), orange (1-3 days), yellow (4-7 days)
 - Proactive TTS warnings for items expiring within 2 days
-- See [Shopping List & Pantry](pantry) for full details
+- See [Shopping List & Pantry](pantry.md) for full details
 
 ## Display
 

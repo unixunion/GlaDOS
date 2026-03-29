@@ -1,582 +1,218 @@
-# GlaDOS, a maniacal home assistant
+# GlaDOS — Voice-First Home Assistant
 
-This fork introduces a pluggable architecture, with function calling support to for GLaDOS.
-WARNING! GLaDOS is maniacal, and ultimately evil, so be careful in connecting her to any real world stuff.
-you have been warned! Although you should be ok as long as you use a "safe" llm, and a copy of the laws of robotics.
+A voice-first home assistant with a pluggable architecture, LLM tool calling, knowledge retrieval, and a GLaDOS personality. Supports local LLMs (LM Studio, Ollama), Anthropic Claude, and any OpenAI-compatible API.
 
-This is under development right now, and lots of stuff is in a state of flux.
+> WARNING! GLaDOS is maniacal and ultimately evil. Be careful connecting her to real-world systems. You have been warned — although the Three Laws of Robotics plugin should keep you safe. Probably.
 
-# models to test
+## Features
 
-- https://huggingface.co/lmstudio-community/Qwen2.5-32B-Instruct-GGUF   
+- **Voice interface** — Whisper STT, switchable TTS (Piper/ONNX GlaDOS voice or Kokoro multi-voice), OpenWakeWord wake word detection
+- **Plugin system** — 25+ tools auto-discovered from `plugins/`, registered via `@mcp_tool` decorator or `RunnableMCPPlugin` classes
+- **Hybrid NLP+LLM** — high-confidence commands execute instantly via NLP (~5ms), ambiguous requests fall through to the LLM
+- **Per-plugin NLP thresholds** — individual tools can set their own confidence threshold for fast-path routing
+- **Multiple LLM backends** — OpenAI-compatible (LM Studio, Ollama), Anthropic Claude, LangChain
+- **Knowledge base (RAG)** — Qdrant vector store with Wikipedia/ZIM ingestion, configurable query modes (raw, context-augmented, LLM rewrite)
+- **Persistent memory** — ChromaDB-backed fact storage and conversation recall across sessions
+- **Conversation RAG** — Qdrant-backed semantic retrieval of prior exchanges
+- **Activity contexts** — separate message histories per activity (Cooking, Utilities, System, etc.) with per-activity tool filtering
+- **Shopping list & pantry** — voice-managed shopping list, pantry inventory with expiry tracking, recipe integration
+- **Recipe system** — 13.5K recipe dataset with images, fuzzy search, ingredient matching, positional selection ("the first one")
+- **Timers & alarms** — durable (survive restarts), unified ringing with display overlay and dismiss buttons
+- **Display UI** — responsive web dashboard (iPad/browser) with cards, full-screen views, chat drawer with pin, recipe images
+- **Log analyzer** — ring buffer captures all logs, ask GlaDOS to analyze errors and save structured reports
+- **GLaDOS personality** — SarcasmCore system prompt + PersonalityCore contextual quips
+- **Vision** (POC) — camera feed to vision model with automatic tool triggering
 
-## LLM Model Guide
+## Quick Start
 
-GlaDOS uses tool/function calling to interact with plugins (15-30+ tools). This puts specific demands on the LLM:
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-- **Tool calling support** — the model must reliably generate structured function calls, not just chat
-- **Low latency** — voice assistant needs fast responses, so smaller quantized models on local hardware win over cloud
-- **Brief responses** — models that ramble waste TTS time; instruction-following models that respect "be concise" prompts work best
-- **Context window** — each tool definition is ~100-200 tokens of JSON schema, so 20 tools eat ~2,000-4,000 tokens before any conversation
+# Run with voice (full mode)
+python main.py
 
-### What to look for
+# Run in text mode (no microphone/speaker needed, fast iteration)
+python main.py --no-speech
 
-- Models fine-tuned for **function/tool calling** (not just chat)
-- Good **instruction following** — respects system prompt constraints like brevity
-- Adequate **context window** (8K minimum, 32K+ preferred with many tools)
-- Quantization: Q4_K_M is the sweet spot for quality vs. speed on consumer hardware
+# Open the display UI
+open http://localhost:5001
+```
 
-### Recommended Models by Hardware Tier
+Requires a running LLM server. See [LLM Backends](#llm-backends) below.
 
-| VRAM / Unified Memory | Recommended Models | Notes |
-|----------------------|-------------------|-------|
-| **8GB** | Qwen 2.5 3B, Llama 3.2 3B | Minimal tool calling ability, fine for basic testing |
-| **16GB** | Qwen 2.5 7B, Qwen 3 8B, Llama 3.1 8B | Workable with <15 tools, struggles with more |
-| **32GB** | Qwen 2.5 32B (Q4), Mistral Small 24B (Q4) | Good tool calling, handles 20+ tools well |
-| **64GB+** | Qwen 2.5 72B (Q4), Llama 3.1 70B (Q4) | Excellent tool calling, 50+ tools reliable |
-| **NVIDIA 24GB** (RTX 4090) | Qwen 2.5 32B (Q4) | Fits in single GPU |
-| **NVIDIA 48GB** (2x 3090, A6000) | Qwen 2.5 72B (Q4), Llama 3.1 70B (Q4) | Best open-source tool calling |
+## LLM Backends
 
-### Models Known to Work
+GlaDOS works with any OpenAI-compatible API, Anthropic Claude, or LangChain:
 
-Benchmarked with `tests/benchmark_models.py` — tool selection + reasoning + multi-turn conversation chain tests:
+```yaml
+# Local model via LM Studio / Ollama
+client_type: OPENAI
+completion_url: "http://localhost:1234/v1"
+model: "qwen/qwen3-30b-a3b-2507"
+api_key: "lm-studio"
 
-| Model | Accuracy | Avg TTFT | Notes |
-|-------|----------|----------|-------|
-| Qwen 2.5 7B Instruct Uncensored | 93.8% | 0.7s | Best overall — fast + accurate |
-| Qwen 2.5 32B Instruct | 90.0% | 2.5s | High accuracy, slower |
-| Qwen 2.5 7B Instruct 1M | 88.8% | 0.5s | Fastest, 1M context window |
-| Mistral Magistral Small | 89.9% | 1.4s | Strong all-rounder |
-| Qwen 3 30B-A3B (MoE) | 88.4% | 0.5s | Fast MoE, ~3B active params |
-| Qwen 3 Coder 30B (MoE) | 86.2% | 0.6s | Good for code-heavy tasks |
+# Anthropic Claude (API key via env var ANTHROPIC_API_KEY)
+client_type: ANTHROPIC
+model: "claude-sonnet-4-20250514"
+```
 
-Run your own benchmarks: `python tests/benchmark_models.py --all` (cycles through all installed models), `python tests/benchmark_models.py --match qwen2.5` (pattern match), or `python tests/benchmark_models.py --report` to view saved results.
+### Recommended Models
 
-### Known Issues
+| Memory | Model | Notes |
+|--------|-------|-------|
+| **16GB** | Qwen 2.5 7B, Qwen 3 8B | Workable with <15 tools |
+| **32GB** | Qwen 2.5 32B (Q4), Qwen 3 30B-A3B (MoE) | Good tool calling, 20+ tools |
+| **64GB+** | Qwen 2.5 72B (Q4) | Excellent tool calling |
 
-- **Small models (<7B)** often output tool calls as raw text instead of structured JSON, causing TTS to read out function definitions
-- **Qwen 3.x thinking models** may narrate their reasoning process out loud — the response processor strips common patterns but some leak through
-- **Models not trained for function calling** will ignore tool definitions entirely and just chat
-
-### Servers
-
-GlaDOS works with any OpenAI-compatible API server:
-- **LM Studio** — easy GUI, OpenAI-compatible endpoint at `http://localhost:1234/v1`
-- **Ollama** — CLI-based, endpoint at `http://localhost:11434/v1`
-- **Any cloud API** — set `completion_url` and `api_key` in `glados_config.yml`
+Run `python tests/benchmark_models.py --all` to benchmark models on your hardware.
 
 ## Architecture
 
-This is pretty much a total re-write of the upstream project, using a more modular approach. Features:
-
-* Pre-prompted with the 3 laws of robotics
-* Plugin support, and long-running processes instantiation of classes base: `RunnablePlugin`
-* Functions, GladOS can now interact with stuff ( using llama 3.1 functions (read more)[https://docs.together.ai/docs/function-calling] )
-  The functions can take arguments, enums and then do whatever you integrate them with. WARNING! Remember the bitch is evil!
-  These functions register as a either standalone or as a part of plugin instances.
-* Intents, to help guide the AI to select a function/tool, the plugins have "intent" strings that are used to help select the relevant tool.
-* Event system, plugins, functions and parts of the architecture all use events now to talk each other and the LLM.
-* Vision support, yes, its probably a bad idea, but GlaDOS can see! well its very basic POC, images can be base64 encoded and passed to a
-  vision model, which in turn responds to the chat model. And GlaDOS can trigger functions automatically then, like
-  start vacuuming if there is a floor spill, or start fire supression if there is a fire, or she may just watch you burn.
-  I'm using a separate host to run the vision model, and calling it over the network. A camera system needs to be implemented
-  to get images from CCTV or similar.
-* Migrated to Whisper for speech to text
-
-## Persistent Memory
-
-GlaDOS has persistent vector memory powered by ChromaDB. Past conversations are stored as embedded documents and semantically retrieved before each LLM call, so GlaDOS can recall relevant context from prior sessions.
-
-- **Automatic storage** — each user+assistant exchange is stored after every LLM response
-- **Automatic retrieval** — top-k most relevant past exchanges (+ explicit facts) are injected as context before each LLM call
-- **Pre-LLM interception** — "remember that..." and "do you remember..." are detected by the IntentClassifier (same Naive Bayes classifier used for tool routing) and handled deterministically by the application layer before the LLM runs. This works reliably with any model size — no tool-calling capability required.
-- **Persistent** — memory survives restarts, stored in `data/memory_db/` via ChromaDB's file-based PersistentClient
-- **Semantic search** — uses `all-MiniLM-L6-v2` embeddings (~90MB, downloads on first use) with cosine similarity
-- **Dual retrieval** — queries merge activity-filtered conversation history with explicit facts, so stored preferences are always retrievable regardless of activity context
-
-Configure in `glados_config.yml`:
-```yaml
-memory_enabled: true       # false to disable entirely
-memory_db_path: "data/memory_db"
-memory_top_k: 5            # number of past exchanges to retrieve
+```
+Voice Input → Whisper STT → Wake Word Gate
+    ↓
+NLP Intent Classifier (fast-path, ~5ms)
+    ↓ (high confidence)          ↓ (low confidence)
+Direct tool execution           LLM with tool schemas
+    ↓                               ↓
+TTS Queue → Piper/Kokoro → Speaker
+    ↓
+Display UI (SocketIO) → iPad/Browser
 ```
 
-## Knowledge Base (RAG with Qdrant)
-
-GlaDOS can optionally retrieve factual knowledge from a Qdrant vector store to answer questions beyond its training data. This uses RAG (Retrieval Augmented Generation) — relevant passages are fetched and injected into the LLM context before each response.
-
-**Use cases:**
-- Offline Wikipedia (via Kiwix ZIM files)
-- Product manuals and documentation
-- FAQ databases
-- Any text corpus you want GlaDOS to know about
-
-### Setup
-
-1. **Install dependencies:**
-   ```bash
-   pip install qdrant-client libzim sentence-transformers beautifulsoup4
-   ```
-
-2. **Start Qdrant** (Docker):
-   ```bash
-   docker run -d -p 6333:6333 -v $(pwd)/data/qdrant_storage:/qdrant/storage qdrant/qdrant
-   ```
-
-3. **Ingest content** (e.g., Simple English Wikipedia ~1GB ZIM from [Kiwix](https://download.kiwix.org/zim/wikipedia/)):
-   ```bash
-   python tools/ingest_zim.py --zim ~/data/wikipedia_en_simple.zim --collection wikipedia
-   # Test with a small subset first:
-   python tools/ingest_zim.py --zim ~/data/wikipedia_en_simple.zim --collection wikipedia --limit 100
-   ```
-
-4. **Enable in config:**
-   ```yaml
-   knowledge_enabled: true
-   qdrant_url: "http://localhost:6333"
-   knowledge_collections:
-     - wikipedia
-   knowledge_top_k: 3          # passages to retrieve per query
-   knowledge_threshold: 0.5    # minimum similarity score
-   ```
-
-5. **Ask a question:** "What is the capital of France?" — GlaDOS retrieves the relevant Wikipedia passage and answers from it.
-
-The knowledge system runs as a PRE_LLM chat pipeline hook — it doesn't interfere with tool commands like timers or recipes. Runs alongside ChromaDB memory (separate concerns).
-
-## Hybrid NLP+LLM Mode
-
-By default, GlaDOS uses a hybrid approach for faster responses. The IntentClassifier runs a fast pre-check (~5ms) on every user input:
-
-- **High confidence** (>= 0.8): Tool is executed immediately via NLP — no LLM call needed. If the tool needs a natural spoken summary (`process_output=True`), only the summarization goes through the LLM.
-- **Medium confidence** (>= 0.5): LLM runs with `tool_choice='required'`, forcing it to call the predicted tool.
-- **Low confidence**: LLM runs normally with `tool_choice='auto'`.
-
-This means clear commands like "set a timer for 5 minutes" or "what time is it" execute instantly, while ambiguous requests still get full LLM reasoning.
-
-Configure in `glados_config.yml`:
-```yaml
-hybrid_nlp_threshold: 0.8   # NLP fast-path threshold (set to 1.0 to disable)
-plugin_intent_threshold: 0.5 # LLM forced tool-call threshold
-```
-
-## Activity System
-
-The activity system provides separate message contexts per activity (COOKING, CHORES, UTILITIES, SYSTEM, ENTERTAINMENT, GENERAL) with tool filtering so the LLM only sees relevant tools for the current context.
-
-**Flow:** User Input → IntentClassifier predicts tool → tool's activity → switch_context → filter tools → LLM call
-
-Available activities and typical tools:
-
-| Activity | Tools |
-|----------|-------|
-| GENERAL | weather, time, recipes, display, alarms, memory tools |
-| COOKING | recipes, timers, alarms, display, time |
-| UTILITIES | weather, timers, alarms, display, time |
-| CHORES | vacuum, display |
-| SYSTEM | time, logs, list_plugins, memory tools |
-| ENTERTAINMENT | music player |
-
-The system prompt is shared across all activity contexts. The display UI shows the current activity as a pill icon in the top-left corner.
-
-## Wake Word
-
-Using OpenWakeWord for wake word detection. The default model responds to "GlaDOS" and "Hey GlaDOS".
-
-Configure in `glados_config.yml`:
-```yaml
-openwakeword:
-  threshold: 0.5
-  models:
-    - models/glados_wakeword.onnx  # responds to "GlaDOS" and "Hey GlaDOS"
-```
-
-A confirmation beep plays when the system starts listening after a wake word, so you know when to speak. The beep also plays when the system auto-listens for a follow-up response after TTS finishes.
-
-### Mute / Unmute
-
-Say wake word + one of these to mute:
-- "stop listening", "go to sleep", "mute yourself", "be quiet"
-
-Say wake word + one of these to unmute:
-- "start listening", "resume listening", "wake up", "unmute"
-
-When muted, the wake word still fires but only listens briefly for an unmute command. All other input is dropped.
-
-## Functions
-
-### Timers
-
-- `"set a timer for 5 minutes"` — starts a countdown timer, fires an event + audio alert when done
-- `"list timers"` — shows active timers and time remaining
-- Timer alerts flash the display screen and play a sound
-
-### Alarms
-
-- `"set an alarm for 5pm tomorrow"` — sets an alarm using natural language time (powered by `dateparser`)
-- `"list my alarms"` — shows all pending alarms
-- `"cancel the morning alarm"` — cancels by description or time
-- When an alarm fires, it plays a repeating audio alert (2s gap between cycles) until dismissed
-- Alarm pauses any playing music and resumes it after dismissal
-- Dismiss by saying wake word + "stop", "cancel", "silence", "dismiss", etc.
-- Uses `PREFER_DATES_FROM: future` so "5pm" rolls to tomorrow if already past
-
-### Recipes
-
-Get a recipe csv [recipes dataset](https://www.kaggle.com/datasets/wilmerarltstrmberg/recipe-dataset-over-2m) and place it in `plugin_data/recipes/dataset.csv`,
-then you can use it e.g: `select a recipe for x` - selects a recipe to make or `search for a recipe for y` to get a list
-of options after which you will use the _select recipe x_ statement to make it.
-
-When a recipe is selected, it is automatically pushed to the display screen (see Display below).
-
-### Music Player
-
-The music player scans a configurable directory for audio files (mp3, m4a, flac, wav, ogg, aac) and uses fuzzy matching to find songs.
-
-Configure the music directory in `glados_config.yml`:
-```yaml
-music_dir: ~/Music
-```
-Or set the `GLADOS_MUSIC_DIR` environment variable.
-
-Voice commands:
-- `"play ben howard"` — fuzzy matches and plays the best match
-- `"stop the music"` / `"pause"` / `"resume"` — playback controls
-- `"what song is playing"` — shows current track
-
-Playback runs in a background thread and doesn't block the LLM. Music is automatically paused when an alarm fires and resumed after dismissal. Saying "stop" while music is playing (and no alarm is ringing) stops the music directly without going through the LLM.
-
-### Display
-
-The display plugin serves a web-based display intended for a kitchen iPad or any browser. It runs a Flask+SocketIO server on port 5001.
-
-- Open `http://<host>:5001` on an iPad or browser to see the display
-- Shows an idle clock view by default with the GlaDOS avatar in the top-right
-- **Activity indicator** — shows the current activity context (cooking, utilities, chores, system) as an icon pill in the top-left
-- **Status toast** — bottom-center toast shows system state: listening (green), thinking (orange), speaking (orange-red), tool call (blue), idle (grey)
-- Voice commands push content to the screen via the `show_on_display` LLM tool:
-  - `"show me the recipe"` — displays the current recipe with ingredients and steps
-  - `"display the timer"` — shows a live countdown of active timers
-  - `"clear the screen"` — returns to the idle clock view
-  - `"show that on the iPad"` — general display command for any content
-- Recipes are automatically displayed when selected (no separate voice command needed)
-- When a timer or alarm fires, the display flashes an alert
-
-### Voice Commands (intercepted before LLM)
-
-These commands are handled directly by the speech system without going through the LLM:
-
-| Command | Action |
-|---------|--------|
-| "stop" / "cancel" / "silence" / "dismiss" | Dismiss ringing alarm, or stop music |
-| "stop listening" / "go to sleep" | Mute — ignore all input until unmuted |
-| "start listening" / "wake up" | Unmute — resume normal operation |
-
-Priority order for stop commands: ringing alarm > playing music > pass to LLM.
-
-## Configuration
-
-Key settings in `glados_config.yml`:
-
-```yaml
-Glados:
-  completion_url: "http://localhost:1234/v1"   # LLM server endpoint
-  model: "qwen_qwen3.5-9b"                     # model name
-  client_type: OPENAI                           # OPENAI, LANGCHAIN, or MISTRAL
-  api_key: "lm-studio"
-  voice_core: "glados"                          # "glados" (Piper/ONNX) or "kokoro" (Kokoro ONNX)
-  voice_model: "glados.onnx"                    # model file or directory (in models/ dir)
-  speaker_id: null                              # speaker ID (int for Piper, string for Kokoro)
-  music_dir: ~/Music                            # music player directory
-  speech_buffer_ms: 1200                        # ms of silence before finalizing speech
-  tts_buffer_mode: "sentence"                     # "sentence", "clause" (faster), or "word" (fastest)
-  max_context_messages: 20                      # max messages per activity context
-  plugin_intent_threshold: 0.7                  # confidence threshold for intent classifier
-  hybrid_nlp_threshold: 0.8                     # NLP fast-path (1.0 to disable)
-  max_response_tokens: 500                      # max LLM text tokens (prevents rambling)
-  max_response_time: 15                         # max seconds before aborting LLM stream
-  memory_enabled: true                          # persistent vector memory (ChromaDB)
-  memory_db_path: "data/memory_db"              # memory database location
-  memory_top_k: 5                               # past exchanges to retrieve per query
-  openwakeword:
-    threshold: 0.5
-    models:
-      - models/glados_wakeword.onnx
-  mcp_servers:                                   # optional external MCP servers
-    - name: filesystem
-      command: npx
-      args: ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
-```
-
-### Voice Cores
-
-GlaDOS supports switchable TTS backends:
-
-| Voice Core | Engine | Default Model | Setup |
-|------------|--------|---------------|-------|
-| `glados` | Piper/ONNX | `glados.onnx` | Works out of the box |
-| `kokoro` | Kokoro ONNX | `kokoro-82m-onnx/` | `pip install kokoro-onnx` + download models |
-
-To use Kokoro:
-1. `pip install kokoro-onnx`
-2. Download model files (~340MB): `cd models/kokoro-82m-onnx && python get.py`
-3. Set in config:
-   ```yaml
-   voice_core: "kokoro"
-   voice_model: "kokoro-82m-onnx"
-   speaker_id: "bf_isabella"   # see wiki for all voices
-   ```
-
-Voice names use `{accent}{gender}_{name}` — e.g. `bf_isabella` = British female Isabella, `am_adam` = American male Adam. Available: `af`, `af_bella`, `af_nicole`, `af_sarah`, `af_sky`, `am_adam`, `am_michael`, `bf_emma`, `bf_isabella`, `bm_george`, `bm_lewis`.
-
-## Cuda Torch, you need to install the cuda version of torch, e.g:
-
-   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-   pip install safetensors
+Key components:
+- **Chat pipeline hooks** — plugins register PRE_LLM and POST_RESPONSE hooks (memory, knowledge RAG, personality)
+- **Event system** — pub/sub for inter-component communication (`system.tick`, `status.*`, `display.*`, etc.)
+- **Activity system** — separate message contexts per activity with tool filtering
+- **Streaming** — LLM responses streamed chunk-by-chunk, sentences sent to TTS as they complete
 
 ## Plugins
 
-Plugins use the MCP (Model Context Protocol) layer for tool registration. There are two patterns:
-
-### Simple function plugin (`@mcp_tool` decorator)
+Plugins are auto-discovered from `plugins/` on startup. Two patterns:
 
 ```python
-from glados.context.activity import Activity
-from glados.mcp.decorators import mcp_tool
-
+# Simple function plugin
 @mcp_tool(
-    description="Get current weather for a location.",
-    parameters={"location": {"type": "string", "description": "City name"}},
-    required=["location"],
+    description="Get current weather",
+    parameters={"location": {"type": "string", "description": "City"}},
     intents=["what is the weather", "is it cold today"],
     process_output=True,
-    activity=[Activity.GENERAL, Activity.UTILITIES],
-    system_prompt="When reporting weather, include temperature and conditions.",
+    nlp_threshold=0.6,  # per-tool NLP confidence override
 )
-def handle_weather(location: str) -> str:
-    return f"Sunny, 25C in {location}"
-```
+def get_weather(location: str) -> str:
+    return "Sunny, 25C"
 
-### Stateful plugin (`RunnableMCPPlugin` class)
-
-For plugins that need background processes, event subscriptions, or lifecycle management:
-
-```python
-from glados.context.activity import Activity
-from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
-from glados.system.event_system import EventHook, EventMessage
-
+# Stateful plugin with background processes
 class MyPlugin(RunnableMCPPlugin):
     def __init__(self):
         super().__init__()
-
-        # Plugin config is auto-loaded from glados_config.yml
-        self.greeting = self.plugin_config.get("greeting", "hello")
-
-        # Add guidance to the system prompt
-        self.register_system_prompt("When greeting, always use the user's name.")
-
-        self.register_tool(
-            handler=self.hello_world,
-            description="Greets someone by name",
-            parameters={"name": {"type": "string", "description": "Name to greet"}},
-            required=["name"],
-            intents=["hello world", "greet someone"],
-            process_output=True,
-            activity=[Activity.GENERAL],
-        )
-
+        self.register_tool(handler=self.do_thing, ...)
     def start(self):
-        self.event_system.subscribe(
-            "system.tick",
-            EventHook("my_tick", callback=self._on_tick, priority=1)
-        )
-
-    def stop(self):
-        self.event_system.unsubscribe("system.tick", "my_tick")
-
-    def hello_world(self, name: str):
-        return {"status": "success", "content": f"{self.greeting} {name}"}
-
-    def _on_tick(self, event: EventMessage):
-        pass  # periodic background work
+        self.event_system.subscribe("system.tick", ...)
 ```
 
-### Plugin Configuration
+### Included Plugins
 
-Plugins can load config from `glados_config.yml` under the `plugins` key. The `name` field is matched
-against the **class name** (case-insensitive, underscores ignored):
+| Plugin | Description |
+|--------|-------------|
+| **CountdownTimer** | Durable timers with display overlay, unified ringing |
+| **AlarmClock** | Fixed-time alarms with natural language parsing |
+| **RecipeAPI** | 13.5K recipes, fuzzy search, images, positional selection |
+| **PantryPlugin** | Shopping list, pantry inventory, expiry tracking, 12 tools |
+| **MusicPlayer** | Spotify playback with fuzzy matching |
+| **KnowledgeRAG** | Qdrant-backed Wikipedia/reference retrieval |
+| **LogAnalyzer** | Ring buffer log capture, error analysis, saved reports |
+| **PersonalityCore** | Contextual GLaDOS quips after responses |
+| **SarcasmCore** | GLaDOS personality via system prompt |
+| **LoopGuard** | Detects TTS repetition loops |
 
-```yaml
-plugins:
-  - name: music_player      # matches class MusicPlayer
-    config:
-      default_volume: 50
-  - name: sarcasm_core       # matches class SarcasmCore
-    config:
-      enabled: true
-  - name: three_laws         # matches class ThreeLaws
-    config:
-      enabled: true
+## Knowledge Base (RAG)
+
+Retrieve factual knowledge from Qdrant (Wikipedia, manuals, any text corpus):
+
+```bash
+# Start Qdrant
+docker run -d -p 6333:6333 -v $(pwd)/data/qdrant_storage:/qdrant/storage qdrant/qdrant
+
+# Ingest Wikipedia
+python tools/ingest_zim.py --zim ~/data/wikipedia_en_simple.zim --collection wikipedia
 ```
 
-- **RunnableMCPPlugin**: config is auto-loaded into `self.plugin_config` dict
-- **Function plugins**: use `RunnableMCPPlugin.get_plugin_config("name")` (matches same way)
+Three query modes for optimal retrieval:
 
-### System Prompt Additions
+| Mode | How | Latency | Best for |
+|------|-----|---------|----------|
+| `raw` | Direct embedding | 0ms | Simple questions |
+| `context` (default) | Prepend conversation history | ~0ms | Follow-up questions |
+| `rewrite` | LLM reformulates query | 0.5-3s | Complex/ambiguous questions |
 
-Plugins can append text to the system prompt to guide LLM behavior:
+Benchmark: `python tests/benchmark_knowledge.py`
 
-- **`@mcp_tool(system_prompt="...")`** — decorator param for function plugins
-- **`self.register_system_prompt("...")`** — method on `RunnableMCPPlugin` for class plugins
+## Display UI
 
-These are appended as system messages to all activity contexts after the personality preprompt.
+Web dashboard at `http://localhost:5001` designed for iPad:
 
-### Legacy decorator (still supported)
+- **Dashboard** with cards: Shopping List, Pantry, Recipes ("What can I make?"), Timers
+- **Full-screen views** for each section with back navigation
+- **Chat drawer** with pin to keep it open, collapsible knowledge/tool bubbles
+- **Timer overlay** — floating countdown with dismiss buttons
+- **Mute buttons** — silence TTS and/or microphone from the header
+- **Mobile PWA** — installable shopping list at `/shopping`
 
-The old `@plugin_manager.register(FunctionRequest(...))` pattern still works and automatically
-registers tools with the MCP server. See `glados/mcp/README.md` for full MCP integration details.
+## Testing
 
-## MCP (Model Context Protocol)
-
-GlaDOS uses MCP for standardized tool registration and execution. All plugin tools (both `@mcp_tool` and legacy)
-are registered with an in-process `GladosMCPServer` that provides:
-
-- MCP-standard tool schemas (`mcp.types.Tool`)
-- Direct in-process tool execution (no transport overhead)
-- OpenAI format conversion for passing to the LLM
-- Activity-based tool filtering via `ToolMetadataRegistry`
-
-External MCP servers can be connected via `glados_config.yml`:
-
-```yaml
-mcp_servers:
-  - name: filesystem
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
+```bash
+make test                     # Fast unit tests
+make test-all                 # Unit + browser tests
+make test-knowledge           # Knowledge RAG benchmark (needs Qdrant)
+make test-knowledge-rewrite   # + LLM rewrite mode (needs LM Studio)
+make test-models              # LLM tool-calling benchmark
 ```
 
-See `glados/mcp/README.md` for detailed API documentation and examples.
+## Configuration
 
-## Event System
+All settings in `glados_config.yml`. Key sections:
 
-The EventSystem can be hooked into based on topics, e.g "role.name" = topic, eg:
+| Section | Settings |
+|---------|----------|
+| **LLM** | `completion_url`, `model`, `client_type`, `api_key` |
+| **Voice** | `voice_core`, `voice_model`, `speaker_id`, `speech_buffer_ms` |
+| **NLP** | `hybrid_nlp_threshold`, `plugin_intent_threshold`, `nlp_mode` |
+| **Knowledge** | `knowledge_enabled`, `knowledge_query_mode`, `knowledge_threshold` |
+| **Memory** | `memory_enabled`, `memory_auto_store`, `memory_top_k` |
+| **Plugins** | Per-plugin config blocks under `plugins:` |
 
-| Topic | Description |
-|-------|-------------|
-| `system.tick` | 1Hz heartbeat |
-| `system.wake_word_detected` | Wake word fired |
-| `system.listen_for_response` | TTS finished, auto-listen enabled |
-| `system.music_pause` / `system.music_resume` | Alarm pauses/resumes music |
-| `tool.*` | Tool execution results |
-| `display.*` | Content updates to the display screen |
-| `status.*` | UI status toasts (listening, thinking, speaking, tool_call, idle, activity) |
-| `vision.*` | Vision model requests and responses |
-| `log.*` | Error and diagnostic logs |
+See the [wiki](http://localhost:5001/wiki/) for full documentation.
 
-### Subscribing to events
-```python
-event_system = EventSystem()
-event_system.subscribe(
-   "system.listen_for_response",
-   EventHook(name="listen_for_response", callback=self.listen_for_response, priority=1)
-)
+## Installation
 
-def listen_for_response(self, event: EventMessage):
-  pass
+### Requirements
+
+- Python 3.11+
+- PortAudio (`brew install portaudio` / `apt install libportaudio2`)
+- An LLM server (LM Studio recommended for local, or Anthropic API key)
+
+### Setup
+
+```bash
+git clone https://github.com/unixunion/glados.git
+cd glados
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# Optional: CUDA PyTorch
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Optional: Qdrant for knowledge base
+docker run -d -p 6333:6333 qdrant/qdrant
+
+# Optional: Playwright for UI tests
+pip install playwright pytest-playwright && python -m playwright install chromium
 ```
 
-### Publishing events
-```python
-event_system.publish(
-   EventMessage(
-       role="tool",
-       name="hello_world",
-       content={
-           "message": "Hello from a plugin! this is a self-test of the plug-in system."
-       },
-       process_output=True  # tells the LLM to parse this payload immediately
-   )
-)
-```
+### Platform Notes
 
-# Installation Instruction
-Try this simplified process, but be aware it's still in the experimental stage!  For all operating systems, you'll first
-need to install Ollama to run the LLM.
-
-## Models
-
-The assistant uses the OpenAI python client, which I use with ollama hosted models locally, you can probably use online
-OpenAI client compatible services, but I have not tested it.
-
-### The Chat Model
-
-The main chat model I use is a 8B chat model, e.g: `ollama pull llama3.1`
-
-### The Vision Model
-
-Testing the vision model can be done by running the model on a separate host, but be aware, this is just a POC that can
-look at a directory of images and describe them, and feed that back to the chat model.
-
-`ollama pull hf.co/second-state/Llava-v1.5-7B-GGUF:latest`
-
-You need to set `OLLAMA_HOST` environment variable on the vision model host to the IP of the host, NOT `0.0.0.0`, e.g:
-`OLLAMA_HOST=10.0.0.2`
-
-## Install Drivers if necessary
-If you are an Nvidia system with CUDA, make sure you install the necessary drivers and CUDA, info here:
-https://onnxruntime.ai/docs/install/
-
-If you are using another accelerator (ROCm, DirectML etc.), after following the instructions below for your platform,
-follow up with installing the  [best onnxruntime version](https://onnxruntime.ai/docs/install/) for your system.
-
-## Set up a local LLM server:
-1. Download and install [Ollama](https://github.com/ollama/ollama) for your operating system.
-2. Once installed, download a small 2B model for testing, at a terminal or command prompt use: `ollama pull llama3.2`
-3. The vision model used on a separate host is `ollama pull hf.co/second-state/Llava-v1.5-7B-GGUF:latest`
-
-Note: You can use any OpenAI or Ollama compatible server, local or cloud based. Just edit the glados_config.yaml and
-update the completion_url, model and the api_key if necessary. LM Studio also works well with the OpenAI-compatible endpoint.
-
-## Windows Installation Process
-1. Open the Microsoft Store, search for `python` and install Python 3.12
-2. Download this repository, either:
-   1. Download and unzip this repository somewhere in your home folder, or
-   2. If you have Git set up, `git clone` this repository using `git clone github.com/unixunion/glados.git`
-3. In the repository folder, run the `install_windows.bat`, and wait until the installation in complete.
-4. Double click `start_windows.bat` to start GLaDOS!
-
-## macOS Installation Process
-Untested
-
-## Linux Installation Process
-Untested
-
-1. Install the PortAudio library, if you don't yet have it installed:
-
-         sudo apt update
-         sudo apt install libportaudio2
-
-2. Download this repository, either:
-   1. Download and unzip this repository somewhere in your home folder, or
-   2. In a terminal, `git clone` this repository using `git clone github.com/dnhkng/glados.git`
-3. In a terminal, go to the repository folder and run these commands:
-
-         chmod +x install_ubuntu.sh
-         chmod +x start_ubuntu.sh
-
-4. In the a terminal in the GLaDOS folder, run `./install_ubuntu.sh`, and wait until the installation in complete.
-5. Run  `./start_ubuntu.sh` to start GLaDOS!
-
-## Changing the LLM Model
-
-To use other models, use the command:
-```ollama pull {modelname}```
-and then add {modelname} to glados_config.yaml as the model. You can find [more models here!](https://ollama.com/library)
-
-## Common Issues
-New architecture, no idea what gremlins there are.
-
-if you see lots of TTS like this instead of calling functions, it is related to too many plugins in the context or the system
-preprompt is doing something funky with the json internals.
-`Generating TTS for: {"type" "function","name" "get camera feed","parameters{"query" "","room" ""}}`
+- **macOS** — works out of the box with Homebrew PortAudio
+- **Linux** — `sudo apt install libportaudio2` for audio support
+- **Windows** — run `install_windows.bat` for automated setup

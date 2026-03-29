@@ -110,7 +110,7 @@ These are injected as system messages into all activity contexts.
 | `nlp_response` | callable | NLP mode: formats tool result as spoken text |
 | `nlp_extract_fn` | callable | NLP mode: custom function to extract params from text |
 
-The `nlp_*` parameters enable [NLP mode](nlp-mode) support, allowing the tool to work without an LLM. See the [NLP Mode](nlp-mode) page for details.
+The `nlp_*` parameters enable [NLP mode](nlp-mode.md) support, allowing the tool to work without an LLM. See the [NLP Mode](nlp-mode.md) page for details.
 
 ## Adding NLP Support
 

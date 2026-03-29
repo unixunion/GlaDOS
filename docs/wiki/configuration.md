@@ -210,9 +210,9 @@ When enabled, the KnowledgeRAG plugin registers a PRE_LLM hook that:
 3. Injects the top matching passages into the LLM context
 4. Skips short commands (<10 chars) to avoid noise on tool invocations
 
-See [Knowledge Base](knowledge) for details on query modes and benchmarks.
+See [Knowledge Base](knowledge.md) for details on query modes and benchmarks.
 
-See [Knowledge Base](knowledge) wiki page for setup and ingestion instructions.
+See [Knowledge Base](knowledge.md) wiki page for setup and ingestion instructions.
 
 ## Plugins
 
