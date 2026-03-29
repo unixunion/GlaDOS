@@ -12,9 +12,8 @@ class VAD:
     _initial_c = np.zeros((2, 1, 64)).astype("float32")
 
     def __init__(self, model_path, window_size_samples: int = int(SAMPLE_RATE / 10)):
-        providers = ort.get_available_providers()
-        if "TensorrtExecutionProvider" in providers:
-            providers.remove("TensorrtExecutionProvider")
+        # Use CPU only — CoreMLExecutionProvider is unstable on macOS
+        providers = ["CPUExecutionProvider"]
 
         self.ort_sess = ort.InferenceSession(
             model_path,

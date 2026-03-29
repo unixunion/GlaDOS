@@ -102,9 +102,9 @@ class Synthesizer:
     """
 
     def __init__(self, model_path: str, speaker_id: Optional[int] = None):
-        providers = ort.get_available_providers()
-        if "TensorrtExecutionProvider" in providers:
-            providers.remove("TensorrtExecutionProvider")
+        # Use CPU only — CoreMLExecutionProvider is unstable on macOS and causes
+        # intermittent ONNX inference failures with this VITS model
+        providers = ["CPUExecutionProvider"]
 
         self.session = ort.InferenceSession(
             model_path,

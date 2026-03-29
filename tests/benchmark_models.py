@@ -1,0 +1,1127 @@
+"""
+Model benchmark tool — measures LLM tool-calling accuracy and speed.
+
+Sends golden test cases (from test_nlp.py) to the LLM with real tool schemas
+and measures whether the model picks the correct tool and how fast it responds.
+
+Run:
+    python tests/benchmark_models.py                        # test currently loaded model
+    python tests/benchmark_models.py --model qwen2.5-14b    # load, test, unload one model
+    python tests/benchmark_models.py --all                  # cycle through ALL available models
+    python tests/benchmark_models.py --models m1 m2 m3      # cycle through specific models
+"""
+import argparse
+import dataclasses
+import json
+import os
+import subprocess
+import sys
+import time
+from collections import defaultdict
+from datetime import datetime
+
+import requests
+from loguru import logger
+from openai import OpenAI
+
+# ---------------------------------------------------------------------------
+# Project imports
+# ---------------------------------------------------------------------------
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from glados.config import GladosConfig
+from glados.context.activity import Activity
+from glados.system.plugin import PluginSystem, load_plugins
+
+# Golden test cases: (text, expected_tool, min_confidence)
+from tests.test_nlp import INTENT_TEST_CASES
+
+
+
+# ---------------------------------------------------------------------------
+# Data structures
+# ---------------------------------------------------------------------------
+
+@dataclasses.dataclass
+class TestCase:
+    text: str
+    expected_tool: str
+
+
+@dataclasses.dataclass
+class TestResult:
+    test_case: TestCase
+    called_tool: str | None = None
+    called_params: dict | None = None
+    tool_correct: bool = False
+    ttft_ms: float = 0.0
+    total_time_ms: float = 0.0
+    response_text: str = ""
+    error: str | None = None
+    chain_name: str | None = None  # set if this result is part of a conversation chain
+
+
+@dataclasses.dataclass
+class ChainStep:
+    text: str               # user utterance
+    expected_tool: str      # expected tool call
+    mock_result: str        # fake tool result to inject into context
+
+
+@dataclasses.dataclass
+class ConversationChain:
+    name: str
+    steps: list[ChainStep]
+
+
+# ---------------------------------------------------------------------------
+# Conversation chains — multi-turn scenarios
+# ---------------------------------------------------------------------------
+
+CONVERSATION_CHAINS = [
+    ConversationChain(name="cooking_flow", steps=[
+        ChainStep(
+            "find me a recipe for apple pie",
+            "search_recipes",
+            '{"status": "success", "results": [{"title": "Classic Apple Pie", "id": 1}, {"title": "Dutch Apple Pie", "id": 2}]}',
+        ),
+        ChainStep(
+            "lets make the first one",
+            "select_recipe",
+            '{"status": "success", "title": "Classic Apple Pie", "ingredients": "6 apples, 1 cup sugar, 1 tsp cinnamon, pie crust", "directions": "Preheat oven to 375F.\\nPeel and slice apples.\\nMix with sugar and cinnamon."}',
+        ),
+        ChainStep(
+            "show the recipe on the display",
+            "show_on_display",
+            '{"status": "success", "message": "Recipe displayed"}',
+        ),
+    ]),
+    ConversationChain(name="alarm_flow", steps=[
+        ChainStep(
+            "set an alarm for 7am tomorrow",
+            "set_fixed_time_alarm",
+            '{"status": "success", "message": "Alarm set for 7:00 AM tomorrow"}',
+        ),
+        ChainStep(
+            "actually cancel that",
+            "cancel_alarm",
+            '{"status": "success", "message": "Alarm cancelled"}',
+        ),
+    ]),
+    ConversationChain(name="music_flow", steps=[
+        ChainStep(
+            "play some jazz",
+            "play_music",
+            '{"status": "success", "track": "Take Five", "artist": "Dave Brubeck"}',
+        ),
+        ChainStep(
+            "what song is this",
+            "now_playing",
+            '{"track": "Take Five", "artist": "Dave Brubeck", "album": "Time Out"}',
+        ),
+        ChainStep(
+            "skip to the next one",
+            "play_music",
+            '{"status": "success", "action": "SKIP", "track": "So What", "artist": "Miles Davis"}',
+        ),
+    ]),
+    ConversationChain(name="timer_while_cooking", steps=[
+        ChainStep(
+            "search recipes for pasta",
+            "search_recipes",
+            '{"status": "success", "results": [{"title": "Spaghetti Bolognese"}, {"title": "Pasta Carbonara"}]}',
+        ),
+        ChainStep(
+            "select spaghetti bolognese",
+            "select_recipe",
+            '{"status": "success", "title": "Spaghetti Bolognese", "ingredients": "500g spaghetti, 400g ground beef, tomato sauce", "directions": "Boil pasta for 10 minutes.\\nBrown the beef.\\nAdd sauce and simmer."}',
+        ),
+        ChainStep(
+            "set a timer for 10 minutes for the pasta",
+            "set_timer",
+            '{"status": "success", "message": "Timer set for 10 minutes: the pasta"}',
+        ),
+    ]),
+]
+
+
+# ---------------------------------------------------------------------------
+# Reasoning tests — require inference beyond keyword matching
+# ---------------------------------------------------------------------------
+# These test the LLM's ability to figure out the right tool when the request
+# is indirect, requires common sense, or involves multi-step reasoning.
+# Format: (text, expected_tool, description_of_reasoning_required)
+
+REASONING_TEST_CASES = [
+    # Indirect tool references (no tool name or keyword in the request)
+    ("I need to leave at 3pm and the chicken takes 2 hours, when should I start?",
+     "get_current_time", "needs current time to calculate start time"),
+    ("wake me up before sunrise",
+     "set_fixed_time_alarm", "must infer this is an alarm request"),
+    ("remind me when the pasta is done",
+     "set_timer", "must infer a timer is needed, not an alarm"),
+    ("what should I wear today",
+     "handle_weather", "must infer weather check needed for clothing advice"),
+    ("is it going to be cold this weekend",
+     "handle_weather", "indirect weather request with future time reference"),
+
+    # Implicit display requests
+    ("put that up so I can read it",
+     "show_on_display", "vague reference to display without naming it"),
+
+    # Math reasoning through tool selection
+    ("I have 3 pounds of flour, how many grams is that",
+     "convert_units", "must identify this as a unit conversion, not arithmetic"),
+    ("double the recipe, what's 3 times 250",
+     "calculate", "must identify arithmetic despite recipe context"),
+
+    # Contextual tool selection (harder)
+    ("how long until dinner",
+     "list_timers", "could be time or timers — timers more relevant if cooking"),
+    ("stop everything",
+     "play_music", "ambiguous — could be music, vacuum, or timer. Music most likely for 'stop everything'"),
+
+    # Negation / unusual phrasing
+    ("I don't want to forget to buy milk",
+     "_memory_remember", "negation that actually means 'remember'"),
+    ("never mind the alarm",
+     "cancel_alarm", "casual cancellation phrasing"),
+
+    # Multi-concept (must pick the RIGHT tool, not just any related one)
+    ("the kitchen floor is dirty",
+     "start_vacuuming", "must infer cleaning is needed from context"),
+    ("something smells good, what recipe did we pick",
+     "select_recipe", "must infer current recipe query, not search"),
+
+    # Polite/conversational wrapping
+    ("hey could you maybe check if there are any timers going",
+     "list_timers", "heavily wrapped in politeness, core intent is list timers"),
+    ("I was wondering what the temperature is outside",
+     "handle_weather", "indirect, conversational weather request"),
+]
+
+
+# ---------------------------------------------------------------------------
+# LM Studio model management (via lms CLI)
+# ---------------------------------------------------------------------------
+
+def lms_list_models() -> list[str]:
+    """List all LLM models available on disk via lms CLI."""
+    try:
+        result = subprocess.run(
+            ["lms", "ls", "--llm", "--json"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            logger.error(f"lms ls failed: {result.stderr}")
+            return []
+        models = json.loads(result.stdout)
+        return [m.get("modelKey", "") for m in models if m.get("modelKey")]
+    except FileNotFoundError:
+        logger.error("lms CLI not found. Install LM Studio and ensure 'lms' is on your PATH.")
+        return []
+    except Exception as e:
+        logger.error(f"Error listing models: {e}")
+        return []
+
+
+def lms_get_loaded() -> list[str]:
+    """Get currently loaded model(s) via lms CLI."""
+    try:
+        result = subprocess.run(
+            ["lms", "ps", "--json"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return []
+        models = json.loads(result.stdout)
+        return [m.get("modelKey") or m.get("identifier", "") for m in models]
+    except Exception:
+        return []
+
+
+def lms_load_model(model_key: str, timeout: int = 120) -> bool:
+    """Load a model in LM Studio. Returns True on success."""
+    print(f"\n  Loading {model_key}...")
+    try:
+        result = subprocess.run(
+            ["lms", "load", model_key],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if result.returncode != 0:
+            logger.error(f"Failed to load {model_key}: {result.stderr.strip()}")
+            return False
+        # Give LM Studio a moment to make the model available via API
+        time.sleep(2)
+        print(f"  Loaded {model_key}")
+        return True
+    except subprocess.TimeoutExpired:
+        logger.error(f"Timeout loading {model_key} (>{timeout}s)")
+        return False
+    except Exception as e:
+        logger.error(f"Error loading {model_key}: {e}")
+        return False
+
+
+def lms_unload_model(model_key: str = None) -> bool:
+    """Unload a model (or all models if no key given)."""
+    try:
+        cmd = ["lms", "unload"]
+        if model_key:
+            cmd.append(model_key)
+        else:
+            cmd.append("--all")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            logger.warning(f"Unload warning: {result.stderr.strip()}")
+        time.sleep(1)
+        return True
+    except Exception as e:
+        logger.error(f"Error unloading: {e}")
+        return False
+
+
+def discover_loaded_model_id(completion_url: str) -> str | None:
+    """Query the OpenAI-compatible /models endpoint to get the loaded model ID."""
+    try:
+        url = completion_url.rstrip("/")
+        if not url.endswith("/models"):
+            url = f"{url}/models"
+        resp = requests.get(url, timeout=5)
+        resp.raise_for_status()
+        models = resp.json().get("data", [])
+        if models:
+            return models[0].get("id")
+    except Exception:
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Bootstrap
+# ---------------------------------------------------------------------------
+
+def bootstrap(config_path: str):
+    """Load plugins and config. Returns (client, config, tools, system_messages)."""
+    load_plugins("plugins")
+
+    config = GladosConfig.from_yaml(config_path)
+    client = OpenAI(base_url=config.completion_url, api_key=config.api_key or "lm-studio")
+
+    # Get GENERAL activity tools (largest set)
+    plugin_system = PluginSystem()
+    tools = plugin_system.get_available_tools(activity=Activity.GENERAL)
+    logger.info(f"Loaded {len(tools)} GENERAL-activity tools")
+
+    # Build system messages from config
+    system_messages = []
+    if config.personality_preprompt:
+        for entry in config.personality_preprompt:
+            for role, content in entry.items():
+                system_messages.append({"role": role, "content": content.strip()})
+
+    return client, config, tools, system_messages
+
+
+# ---------------------------------------------------------------------------
+# Test suite
+# ---------------------------------------------------------------------------
+
+def build_test_suite(tools: list[dict]) -> list[TestCase]:
+    """Filter INTENT_TEST_CASES + REASONING_TEST_CASES to only tools the LLM will see."""
+    available = set()
+    for t in tools:
+        if isinstance(t, dict) and "function" in t:
+            available.add(t["function"]["name"])
+
+    suite = []
+    skipped = []
+
+    # Standard intent tests
+    for text, expected_tool, _confidence in INTENT_TEST_CASES:
+        if expected_tool.startswith("_nlp_"):
+            skipped.append(expected_tool)
+            continue
+        if expected_tool not in available:
+            skipped.append(expected_tool)
+            continue
+        suite.append(TestCase(text=text, expected_tool=expected_tool))
+
+    # Reasoning tests (require inference, not just keyword matching)
+    reasoning_count = 0
+    for text, expected_tool, _description in REASONING_TEST_CASES:
+        if expected_tool.startswith("_") and expected_tool not in available:
+            skipped.append(expected_tool)
+            continue
+        if expected_tool not in available and not expected_tool.startswith("_"):
+            skipped.append(expected_tool)
+            continue
+        suite.append(TestCase(text=text, expected_tool=expected_tool))
+        reasoning_count += 1
+
+    if skipped:
+        logger.info(f"Skipped {len(skipped)} test cases (NLP-only or not in GENERAL activity)")
+    logger.info(f"Benchmark suite: {len(suite)} test cases ({reasoning_count} reasoning)")
+    return suite
+
+
+# ---------------------------------------------------------------------------
+# Single test execution
+# ---------------------------------------------------------------------------
+
+def run_single_test(
+    client: OpenAI,
+    model_id: str,
+    system_messages: list[dict],
+    tools: list[dict],
+    test_case: TestCase,
+) -> TestResult:
+    """Send one utterance to the LLM and measure tool selection + timing."""
+    messages = list(system_messages) + [{"role": "user", "content": test_case.text}]
+
+    result = TestResult(test_case=test_case)
+    t_start = time.perf_counter()
+
+    try:
+        stream = client.chat.completions.create(
+            model=model_id,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            stream=True,
+            temperature=0.0,
+            timeout=30.0,
+        )
+
+        first_chunk = True
+        pending_tool_calls: dict[int, dict] = {}
+        text_parts: list[str] = []
+
+        for chunk in stream:
+            if first_chunk:
+                result.ttft_ms = (time.perf_counter() - t_start) * 1000
+                first_chunk = False
+
+            choice = chunk.choices[0] if chunk.choices else None
+            if not choice:
+                continue
+
+            delta = choice.delta
+
+            # Accumulate text
+            if delta.content:
+                text_parts.append(delta.content)
+
+            # Accumulate tool calls
+            if delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in pending_tool_calls:
+                        pending_tool_calls[idx] = {"name": None, "arguments": ""}
+                    if tc_delta.function and tc_delta.function.name:
+                        pending_tool_calls[idx]["name"] = tc_delta.function.name
+                    if tc_delta.function and tc_delta.function.arguments:
+                        pending_tool_calls[idx]["arguments"] += tc_delta.function.arguments
+
+        result.total_time_ms = (time.perf_counter() - t_start) * 1000
+        result.response_text = "".join(text_parts)
+
+        # Parse first tool call
+        if pending_tool_calls:
+            first_tc = pending_tool_calls[min(pending_tool_calls.keys())]
+            result.called_tool = first_tc["name"]
+            try:
+                result.called_params = json.loads(first_tc["arguments"]) if first_tc["arguments"] else {}
+            except json.JSONDecodeError:
+                result.called_params = None
+
+        result.tool_correct = result.called_tool == test_case.expected_tool
+
+    except Exception as e:
+        result.total_time_ms = (time.perf_counter() - t_start) * 1000
+        result.error = str(e)
+        logger.error(f"Error on '{test_case.text}': {e}")
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Conversation chain execution
+# ---------------------------------------------------------------------------
+
+def _generate_tool_call_id() -> str:
+    """Generate a 9-char alphanumeric tool call ID (matches LM Studio format)."""
+    import random
+    import string
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=9))
+
+
+def run_chain_test(
+    client: OpenAI,
+    model_id: str,
+    system_messages: list[dict],
+    tools: list[dict],
+    chain: ConversationChain,
+) -> list[TestResult]:
+    """Run a multi-turn conversation chain, building context between steps."""
+    messages = list(system_messages)
+    results = []
+
+    for step in chain.steps:
+        tc = TestCase(text=step.text, expected_tool=step.expected_tool)
+        result = TestResult(test_case=tc, chain_name=chain.name)
+
+        messages.append({"role": "user", "content": step.text})
+
+        t_start = time.perf_counter()
+        try:
+            stream = client.chat.completions.create(
+                model=model_id,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                stream=True,
+                temperature=0.0,
+                timeout=30.0,
+            )
+
+            first_chunk = True
+            pending_tool_calls: dict[int, dict] = {}
+            text_parts: list[str] = []
+
+            for chunk in stream:
+                if first_chunk:
+                    result.ttft_ms = (time.perf_counter() - t_start) * 1000
+                    first_chunk = False
+
+                choice = chunk.choices[0] if chunk.choices else None
+                if not choice:
+                    continue
+                delta = choice.delta
+                if delta.content:
+                    text_parts.append(delta.content)
+                if delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in pending_tool_calls:
+                            pending_tool_calls[idx] = {"name": None, "arguments": ""}
+                        if tc_delta.function and tc_delta.function.name:
+                            pending_tool_calls[idx]["name"] = tc_delta.function.name
+                        if tc_delta.function and tc_delta.function.arguments:
+                            pending_tool_calls[idx]["arguments"] += tc_delta.function.arguments
+
+            result.total_time_ms = (time.perf_counter() - t_start) * 1000
+            result.response_text = "".join(text_parts)
+
+            if pending_tool_calls:
+                first_tc = pending_tool_calls[min(pending_tool_calls.keys())]
+                result.called_tool = first_tc["name"]
+                try:
+                    result.called_params = json.loads(first_tc["arguments"]) if first_tc["arguments"] else {}
+                except json.JSONDecodeError:
+                    result.called_params = None
+
+            result.tool_correct = result.called_tool == step.expected_tool
+
+        except Exception as e:
+            result.total_time_ms = (time.perf_counter() - t_start) * 1000
+            result.error = str(e)
+
+        results.append(result)
+
+        # Build context for next step: inject assistant tool call + mock tool result
+        # This ensures subsequent steps have the right conversation history
+        # regardless of whether this step's tool call was correct
+        call_id = _generate_tool_call_id()
+        messages.append({
+            "role": "assistant",
+            "content": result.response_text or None,
+            "tool_calls": [{
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": step.expected_tool,
+                    "arguments": json.dumps(result.called_params or {}),
+                },
+            }],
+        })
+        messages.append({
+            "role": "tool",
+            "tool_call_id": call_id,
+            "content": step.mock_result,
+        })
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Benchmark runner
+# ---------------------------------------------------------------------------
+
+def run_benchmark(
+    client: OpenAI,
+    model_id: str,
+    system_messages: list[dict],
+    tools: list[dict],
+    suite: list[TestCase],
+    chains: list[ConversationChain] | None = None,
+) -> list[TestResult]:
+    """Run all single-turn test cases and conversation chains."""
+    results = []
+    total = len(suite)
+
+    # Single-turn tests
+    if suite:
+        print("  Single-turn tests:")
+        for i, tc in enumerate(suite, 1):
+            status = f"[{i}/{total}]"
+            result = run_single_test(client, model_id, system_messages, tools, tc)
+
+            mark = "PASS" if result.tool_correct else "FAIL"
+            got = result.called_tool or "(no tool call)"
+            print(f"  {status} {mark}  {tc.text[:50]:<50}  expected: {tc.expected_tool:<25} got: {got:<25} {result.total_time_ms:.0f}ms")
+
+            results.append(result)
+
+    # Conversation chains
+    if chains:
+        print(f"\n  Conversation chains ({len(chains)}):")
+        for chain in chains:
+            print(f"    --- {chain.name} ---")
+            chain_results = run_chain_test(client, model_id, system_messages, tools, chain)
+            for j, r in enumerate(chain_results, 1):
+                mark = "PASS" if r.tool_correct else "FAIL"
+                got = r.called_tool or "(no tool call)"
+                print(f"    [{j}/{len(chain.steps)}] {mark}  {r.test_case.text[:45]:<45}  expected: {r.test_case.expected_tool:<25} got: {got:<25} {r.total_time_ms:.0f}ms")
+            results.extend(chain_results)
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Scorecard
+# ---------------------------------------------------------------------------
+
+def print_scorecard(model_id: str, results: list[TestResult], tools: list[dict]):
+    """Print a summary scorecard to stdout."""
+    total = len(results)
+    correct = sum(1 for r in results if r.tool_correct)
+    accuracy = (correct / total * 100) if total else 0
+
+    ttft_values = [r.ttft_ms for r in results if r.ttft_ms > 0]
+    time_values = [r.total_time_ms for r in results if r.total_time_ms > 0]
+    avg_ttft = sum(ttft_values) / len(ttft_values) if ttft_values else 0
+    avg_total = sum(time_values) / len(time_values) if time_values else 0
+
+    print()
+    print(f"{'=' * 60}")
+    print(f"  Model Benchmark: {model_id}")
+    print(f"{'=' * 60}")
+    print(f"  Test cases: {total} | Tools: {len(tools)}")
+    print()
+    print(f"  Tool Accuracy: {correct}/{total} ({accuracy:.1f}%)")
+    print(f"  Avg TTFT: {avg_ttft:.0f}ms | Avg Total: {avg_total:.0f}ms")
+    print()
+
+    # Per-tool breakdown
+    per_tool: dict[str, dict] = defaultdict(lambda: {"correct": 0, "total": 0, "times": []})
+    for r in results:
+        tool = r.test_case.expected_tool
+        per_tool[tool]["total"] += 1
+        per_tool[tool]["times"].append(r.total_time_ms)
+        if r.tool_correct:
+            per_tool[tool]["correct"] += 1
+
+    print(f"  {'Tool':<28} {'Score':>7}  {'Acc':>5}  {'Avg Time':>9}")
+    print(f"  {'-' * 55}")
+    for tool_name in sorted(per_tool.keys()):
+        info = per_tool[tool_name]
+        acc = info["correct"] / info["total"] * 100 if info["total"] else 0
+        avg_t = sum(info["times"]) / len(info["times"]) if info["times"] else 0
+        print(f"  {tool_name:<28} {info['correct']:>3}/{info['total']:<3}  {acc:>4.0f}%  {avg_t:>7.0f}ms")
+
+    # Reasoning test breakdown
+    reasoning_texts = {text for text, _, _ in REASONING_TEST_CASES}
+    reasoning_results = [r for r in results if r.test_case.text in reasoning_texts]
+    if reasoning_results:
+        r_correct = sum(1 for r in reasoning_results if r.tool_correct)
+        r_total = len(reasoning_results)
+        r_acc = r_correct / r_total * 100 if r_total else 0
+        print()
+        print(f"  Reasoning Tests: {r_correct}/{r_total} ({r_acc:.1f}%)")
+        for r in reasoning_results:
+            if not r.tool_correct:
+                got = r.called_tool or "(no tool call)"
+                # Find the description for this test
+                desc = next((d for t, _, d in REASONING_TEST_CASES if t == r.test_case.text), "")
+                print(f"    FAIL  \"{r.test_case.text[:50]}\"")
+                print(f"          expected: {r.test_case.expected_tool} → got: {got}  ({desc})")
+
+    # Chain breakdown
+    chain_results = [r for r in results if r.chain_name]
+    if chain_results:
+        print()
+        print(f"  Conversation Chains:")
+        by_chain: dict[str, list[TestResult]] = defaultdict(list)
+        for r in chain_results:
+            by_chain[r.chain_name].append(r)
+        for chain_name, crs in by_chain.items():
+            c = sum(1 for r in crs if r.tool_correct)
+            avg_t = sum(r.total_time_ms for r in crs) / len(crs)
+            print(f"    {chain_name:<30} {c}/{len(crs)} correct  avg {avg_t:.0f}ms")
+
+    # Failures
+    failures = [r for r in results if not r.tool_correct]
+    if failures:
+        print()
+        print(f"  Failures ({len(failures)}):")
+        for r in failures:
+            got = r.called_tool or "(no tool call)"
+            chain_tag = f" [{r.chain_name}]" if r.chain_name else ""
+            print(f"    \"{r.test_case.text}\"{chain_tag}")
+            print(f"      expected: {r.test_case.expected_tool} -> got: {got}")
+            if r.response_text:
+                preview = r.response_text[:100].replace("\n", " ")
+                print(f"      text: {preview}")
+
+    print(f"{'=' * 60}")
+
+
+# ---------------------------------------------------------------------------
+# Save results
+# ---------------------------------------------------------------------------
+
+def save_results(model_id: str, results: list[TestResult], tools: list[dict], output_dir: str) -> str:
+    """Save benchmark results to a JSON file."""
+    os.makedirs(output_dir, exist_ok=True)
+
+    total = len(results)
+    correct = sum(1 for r in results if r.tool_correct)
+    ttft_values = [r.ttft_ms for r in results if r.ttft_ms > 0]
+    time_values = [r.total_time_ms for r in results if r.total_time_ms > 0]
+
+    # Per-tool stats
+    per_tool: dict[str, dict] = defaultdict(lambda: {"correct": 0, "total": 0, "times": []})
+    for r in results:
+        tool = r.test_case.expected_tool
+        per_tool[tool]["total"] += 1
+        per_tool[tool]["times"].append(r.total_time_ms)
+        if r.tool_correct:
+            per_tool[tool]["correct"] += 1
+
+    per_tool_summary = {}
+    for tool_name, info in per_tool.items():
+        per_tool_summary[tool_name] = {
+            "total": info["total"],
+            "correct": info["correct"],
+            "accuracy_pct": round(info["correct"] / info["total"] * 100, 1) if info["total"] else 0,
+            "avg_time_ms": round(sum(info["times"]) / len(info["times"]), 1) if info["times"] else 0,
+        }
+
+    data = {
+        "model": model_id,
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "tool_count": len(tools),
+        "summary": {
+            "total_cases": total,
+            "correct": correct,
+            "accuracy_pct": round(correct / total * 100, 1) if total else 0,
+            "avg_ttft_ms": round(sum(ttft_values) / len(ttft_values), 1) if ttft_values else 0,
+            "avg_total_time_ms": round(sum(time_values) / len(time_values), 1) if time_values else 0,
+        },
+        "per_tool": per_tool_summary,
+        "results": [
+            {
+                "text": r.test_case.text,
+                "expected_tool": r.test_case.expected_tool,
+                "called_tool": r.called_tool,
+                "tool_correct": r.tool_correct,
+                "called_params": r.called_params,
+                "ttft_ms": round(r.ttft_ms, 1),
+                "total_time_ms": round(r.total_time_ms, 1),
+                "response_text": r.response_text[:200] if r.response_text else "",
+                "error": r.error,
+                "chain_name": r.chain_name,
+            }
+            for r in results
+        ],
+    }
+
+    # Sanitize model name for filename
+    safe_name = model_id.replace("/", "_").replace(" ", "_").strip("_")
+
+    # Remove old result files for this model before writing the new one
+    if os.path.isdir(output_dir):
+        for old_file in os.listdir(output_dir):
+            if old_file.startswith(safe_name + "_") and old_file.endswith(".json"):
+                os.remove(os.path.join(output_dir, old_file))
+
+    timestamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
+    filename = f"{safe_name}_{timestamp}.json"
+    filepath = os.path.join(output_dir, filename)
+
+    with open(filepath, "w") as f:
+        json.dump(data, f, indent=2)
+
+    print(f"\n  Results saved to {filepath}")
+    return filepath
+
+
+# ---------------------------------------------------------------------------
+# Load existing results (for skip & comparison)
+# ---------------------------------------------------------------------------
+
+def _sanitize_model_key(model_key: str) -> str:
+    """Sanitize a model key the same way save_results does for filenames."""
+    return model_key.replace("/", "_").replace(" ", "_").strip("_")
+
+
+def load_existing_results(output_dir: str) -> dict[str, dict]:
+    """Scan output_dir for result JSON files.
+
+    Returns a dict mapping sanitized model key -> most recent result data.
+    If a model was tested multiple times, only the latest run is kept.
+    """
+    existing = {}
+    if not os.path.isdir(output_dir):
+        return existing
+
+    for filename in os.listdir(output_dir):
+        if not filename.endswith(".json"):
+            continue
+        filepath = os.path.join(output_dir, filename)
+        try:
+            with open(filepath) as f:
+                data = json.load(f)
+            model = data.get("model", "")
+            timestamp = data.get("timestamp", "")
+            key = _sanitize_model_key(model)
+            # Keep the most recent result per model
+            if key not in existing or timestamp > existing[key].get("timestamp", ""):
+                existing[key] = data
+        except (json.JSONDecodeError, OSError):
+            continue
+
+    return existing
+
+
+def get_tested_model_keys(output_dir: str) -> set[str]:
+    """Return sanitized model keys that already have benchmark results."""
+    existing = load_existing_results(output_dir)
+    return set(existing.keys())
+
+
+# ---------------------------------------------------------------------------
+# Comparison summary
+# ---------------------------------------------------------------------------
+
+def _format_comparison_row(model: str, summary: dict) -> str:
+    """Format one row of the comparison table from a summary dict."""
+    total = summary.get("total_cases", 0)
+    correct = summary.get("correct", 0)
+    accuracy = summary.get("accuracy_pct", 0)
+    avg_ttft = summary.get("avg_ttft_ms", 0)
+    avg_total = summary.get("avg_total_time_ms", 0)
+    name = model[:38]
+    return f"  {name:<40} {correct:>2}/{total} ({accuracy:4.1f}%) {avg_ttft:>7.0f}ms {avg_total:>8.0f}ms"
+
+
+def print_comparison(all_run_results: list[tuple[str, list[TestResult]]], tools: list[dict],
+                     prior_results: dict[str, dict] | None = None):
+    """Print a side-by-side comparison table.
+
+    Includes both freshly-run results and prior results loaded from disk.
+    """
+    # Build rows: list of (model, correct, total, row_string)
+    rows: list[tuple[int, int, str]] = []
+
+    # Fresh results
+    for model_id, results in all_run_results:
+        total = len(results)
+        correct = sum(1 for r in results if r.tool_correct)
+        accuracy = correct / total * 100 if total else 0
+        ttft_values = [r.ttft_ms for r in results if r.ttft_ms > 0]
+        time_values = [r.total_time_ms for r in results if r.total_time_ms > 0]
+        avg_ttft = sum(ttft_values) / len(ttft_values) if ttft_values else 0
+        avg_total = sum(time_values) / len(time_values) if time_values else 0
+
+        summary = {"total_cases": total, "correct": correct, "accuracy_pct": round(accuracy, 1),
+                    "avg_ttft_ms": round(avg_ttft), "avg_total_time_ms": round(avg_total)}
+        rows.append((correct, total, _format_comparison_row(model_id, summary)))
+
+    # Prior results from disk (skip duplicates already in fresh results)
+    if prior_results:
+        fresh_keys = {_sanitize_model_key(m) for m, _ in all_run_results}
+        for key, data in prior_results.items():
+            if key in fresh_keys:
+                continue
+            summary = data.get("summary", {})
+            model = data.get("model", key)
+            correct = summary.get("correct", 0)
+            total = summary.get("total_cases", 0)
+            rows.append((correct, total, _format_comparison_row(f"{model} (cached)", summary)))
+
+    if len(rows) < 2:
+        return
+
+    # Sort by accuracy descending
+    rows.sort(key=lambda r: (-r[0], r[1]))
+
+    print()
+    print(f"{'=' * 80}")
+    print(f"  COMPARISON SUMMARY")
+    print(f"{'=' * 80}")
+    print(f"  {'Model':<40} {'Accuracy':>10} {'Avg TTFT':>10} {'Avg Total':>10}")
+    print(f"  {'-' * 74}")
+    for _, _, row_str in rows:
+        print(row_str)
+    print(f"{'=' * 80}")
+
+
+# ---------------------------------------------------------------------------
+# Delta logic — find new test cases not in prior results, merge after run
+# ---------------------------------------------------------------------------
+
+def get_delta_suite(suite: list[TestCase], prior_data: dict) -> list[TestCase]:
+    """Return only the test cases that weren't in a prior result file."""
+    prior_texts = {r["text"] for r in prior_data.get("results", [])}
+    return [tc for tc in suite if tc.text not in prior_texts]
+
+
+def merge_results(
+    prior_data: dict,
+    new_results: list[TestResult],
+    tools: list[dict],
+) -> tuple[str, list[TestResult]]:
+    """Merge prior JSON results with new TestResults. Returns (model_id, all_results)."""
+    model_id = prior_data.get("model", "unknown")
+
+    # Convert prior JSON entries back to TestResult objects
+    all_results: list[TestResult] = []
+    for r in prior_data.get("results", []):
+        all_results.append(TestResult(
+            test_case=TestCase(text=r["text"], expected_tool=r["expected_tool"]),
+            called_tool=r.get("called_tool"),
+            called_params=r.get("called_params"),
+            tool_correct=r.get("tool_correct", False),
+            ttft_ms=r.get("ttft_ms", 0),
+            total_time_ms=r.get("total_time_ms", 0),
+            response_text=r.get("response_text", ""),
+            error=r.get("error"),
+            chain_name=r.get("chain_name"),
+        ))
+
+    # Append new results
+    all_results.extend(new_results)
+    return model_id, all_results
+
+
+# ---------------------------------------------------------------------------
+# Run one model (load -> benchmark -> unload)
+# ---------------------------------------------------------------------------
+
+def benchmark_single_model(
+    client: OpenAI,
+    config: GladosConfig,
+    model_key: str,
+    tools: list[dict],
+    system_messages: list[dict],
+    suite: list[TestCase],
+    output_dir: str,
+    manage_loading: bool = True,
+    prior_data: dict | None = None,
+    chains: list[ConversationChain] | None = None,
+) -> list[TestResult] | None:
+    """Load a model, run the benchmark, unload it. Returns results or None on failure.
+
+    If prior_data is provided, only runs test cases not already in those results,
+    then merges old + new into a single updated result file.
+    """
+    # Determine which single-turn cases to actually run
+    run_suite = suite
+    run_chains = chains or []
+    if prior_data:
+        run_suite = get_delta_suite(suite, prior_data)
+        # Check if chains were already run (look for chain_name in prior results)
+        prior_chain_names = {r.get("chain_name") for r in prior_data.get("results", []) if r.get("chain_name")}
+        run_chains = [c for c in (chains or []) if c.name not in prior_chain_names]
+
+        if not run_suite and not run_chains:
+            print(f"  {model_key}: all test cases and chains already have results, skipping.")
+            model_id, all_results = merge_results(prior_data, [], tools)
+            return all_results
+
+    if manage_loading:
+        lms_unload_model()
+        if not lms_load_model(model_key):
+            print(f"  SKIPPING {model_key} (failed to load)")
+            return None
+
+    model_id = discover_loaded_model_id(config.completion_url) or model_key
+
+    delta_parts = []
+    if prior_data and run_suite:
+        delta_parts.append(f"{len(run_suite)} new single-turn")
+    if run_chains:
+        delta_parts.append(f"{len(run_chains)} chains")
+    delta_label = f" (delta: {', '.join(delta_parts)})" if delta_parts and prior_data else ""
+
+    total_steps = len(run_suite) + sum(len(c.steps) for c in run_chains)
+    print(f"\n{'=' * 60}")
+    print(f"  Benchmarking: {model_id}{delta_label}")
+    print(f"  Test cases: {total_steps} | Tools: {len(tools)}")
+    print(f"{'=' * 60}\n")
+
+    new_results = run_benchmark(client, model_id, system_messages, tools, run_suite, chains=run_chains)
+
+    # Merge with prior results if this is a delta run
+    if prior_data:
+        model_id, all_results = merge_results(prior_data, new_results, tools)
+    else:
+        all_results = new_results
+
+    print_scorecard(model_id, all_results, tools)
+    save_results(model_id, all_results, tools, output_dir)
+
+    if manage_loading:
+        lms_unload_model(model_key)
+
+    return all_results
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(description="Benchmark LLM models for tool-calling accuracy and speed")
+    parser.add_argument("--config", default="glados_config.yml", help="Path to glados_config.yml")
+    parser.add_argument("--model", default=None, help="Load and test a single model")
+    parser.add_argument("--models", nargs="+", default=None, help="Load and test specific models in sequence")
+    parser.add_argument("--match", default=None, help="Pattern to match model names (e.g. 'qwen2.5' tests all matching models)")
+    parser.add_argument("--all", action="store_true", help="Cycle through ALL available LLM models (skips already-tested)")
+    parser.add_argument("--retest", action="store_true", help="Re-test models even if results already exist")
+    parser.add_argument("--report", action="store_true", help="Print comparison report from existing results (no benchmarking)")
+    parser.add_argument("--output-dir", default="tests/benchmark_results", help="Directory for result JSON files")
+    args = parser.parse_args()
+
+    # --report: just print the comparison table from saved results and exit
+    if args.report:
+        prior_results = load_existing_results(args.output_dir)
+        if not prior_results:
+            print(f"No results found in {args.output_dir}/")
+            return
+        # Print comparison using only cached data (no fresh runs)
+        print_comparison([], [], prior_results)
+        return
+
+    print("Bootstrapping...")
+    client, config, tools, system_messages = bootstrap(args.config)
+
+    tool_names = [t["function"]["name"] for t in tools if isinstance(t, dict) and "function" in t]
+    print(f"Tools ({len(tools)}): {', '.join(sorted(tool_names))}")
+
+    suite = build_test_suite(tools)
+    if not suite:
+        print("No test cases to run!")
+        return
+
+    # Load existing results for delta detection and comparison
+    prior_results = load_existing_results(args.output_dir)
+
+    # Determine which models to test
+    if args.all:
+        all_models = lms_list_models()
+        if not all_models:
+            print("No models found via 'lms ls'. Is LM Studio installed?")
+            return
+        models_to_test = all_models
+
+        if args.retest:
+            print(f"\nWill benchmark {len(models_to_test)} models (full retest):")
+        else:
+            # Show delta info
+            need_delta = 0
+            fully_done = 0
+            fresh = 0
+            for m in models_to_test:
+                key = _sanitize_model_key(m)
+                if key in prior_results:
+                    delta = get_delta_suite(suite, prior_results[key])
+                    if delta:
+                        need_delta += 1
+                    else:
+                        fully_done += 1
+                else:
+                    fresh += 1
+            print(f"\nModels: {len(models_to_test)} total — {fresh} new, {need_delta} need delta update, {fully_done} fully up-to-date")
+
+        print(f"\nWill benchmark {len(models_to_test)} models:")
+        for m in models_to_test:
+            key = _sanitize_model_key(m)
+            if key in prior_results and not args.retest:
+                delta = get_delta_suite(suite, prior_results[key])
+                prior_count = len(prior_results[key].get("results", []))
+                if delta:
+                    print(f"  - {m}  (delta: {len(delta)} new cases, {prior_count} cached)")
+                else:
+                    print(f"  - {m}  (up-to-date, {prior_count} cached — skip)")
+            else:
+                print(f"  - {m}  (full run)")
+    elif args.match:
+        pattern = args.match.lower()
+        all_models = lms_list_models()
+        models_to_test = [m for m in all_models if pattern in m.lower()]
+        if not models_to_test:
+            print(f"No models matching '{args.match}' found. Available:")
+            for m in all_models:
+                print(f"  - {m}")
+            return
+        print(f"\nModels matching '{args.match}': {len(models_to_test)}")
+        for m in models_to_test:
+            print(f"  - {m}")
+    elif args.models:
+        models_to_test = args.models
+    elif args.model:
+        models_to_test = [args.model]
+    else:
+        # No model specified — test whatever is currently loaded
+        loaded = lms_get_loaded()
+        if loaded:
+            model_id = discover_loaded_model_id(config.completion_url) or loaded[0]
+            total = len(suite) + sum(len(c.steps) for c in CONVERSATION_CHAINS)
+            print(f"\nRunning {total} test cases against loaded model: {model_id}\n")
+            results = run_benchmark(client, model_id, system_messages, tools, suite, chains=CONVERSATION_CHAINS)
+            print_scorecard(model_id, results, tools)
+            save_results(model_id, results, tools, args.output_dir)
+            return
+        else:
+            print("No model loaded and no --model/--models/--all specified.")
+            print("Either load a model in LM Studio or use --model/--all.")
+            return
+
+    # Cycle through models: load -> test -> unload -> repeat
+    all_run_results: list[tuple[str, list[TestResult]]] = []
+
+    for i, model_key in enumerate(models_to_test, 1):
+        print(f"\n{'#' * 60}")
+        print(f"  Model {i}/{len(models_to_test)}: {model_key}")
+        print(f"{'#' * 60}")
+
+        # Pass prior data for delta merging (unless --retest)
+        key = _sanitize_model_key(model_key)
+        prior = prior_results.get(key) if not args.retest else None
+
+        results = benchmark_single_model(
+            client, config, model_key, tools, system_messages, suite, args.output_dir,
+            prior_data=prior, chains=CONVERSATION_CHAINS,
+        )
+        if results:
+            all_run_results.append((model_key, results))
+
+    # Print comparison — includes both new runs and any models not in this batch
+    print_comparison(all_run_results, tools, prior_results)
+
+
+if __name__ == "__main__":
+    main()

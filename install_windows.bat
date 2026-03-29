@@ -4,8 +4,8 @@ REM Download and install the required dependencies for the project on Windows
 echo Creating Virtual Environment...
 pip install uv
 uv self update
-uv venv --python 3.12.8
-call  .venv\Scripts\activate
+uv venv --python 3.10.11
+call .venv\Scripts\activate
 
 echo Installing Dependencies...
 nvcc --version >nul 2>&1
@@ -52,6 +52,8 @@ for /l %%i in (0,1,3) do (
         )
     )
 )
+
+python -m spacy download en_core_web_sm
 
 echo Installation Complete!
 pause

@@ -3,30 +3,14 @@
 # First, change to the script's directory
 cd "$(dirname "$0")"
 
-# Check if UV is installed
-if command -v uv &> /dev/null; then
-    echo "UV is already installed."
-else
-    echo "UV is not installed. Installing UV..."
-    # Run the installation script
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-
-    # Verify if installation was successful
-    if command -v uv &> /dev/null; then
-        echo "UV installed successfully."
-    else
-        echo "Failed to install UV. Please check the installation script or your internet connection."
-        exit 1
-    fi
-fi
-
 echo "Creating Virtual Environment..."
-uv venv --python 3.12.8
+python3 -m venv .venv
 source .venv/bin/activate
 echo "Installing Dependencies..."
 
 if [ -f "requirements.txt" ]; then
-    uv pip install -r requirements.txt
+    pip install -r requirements.txt
+    python -m spacy download en_core_web_sm
 else
     echo "Error: requirements.txt not found in $(pwd)"
     exit 1

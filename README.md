@@ -1,118 +1,218 @@
-<a href="https://trendshift.io/repositories/9828" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9828" alt="dnhkng%2FGlaDOS | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+# GlaDOS — Voice-First Home Assistant
 
-# GLaDOS Personality Core
-This is a project dedicated to building a real-life version of GLaDOS!
+A voice-first home assistant with a pluggable architecture, LLM tool calling, knowledge retrieval, and a GLaDOS personality. Supports local LLMs (LM Studio, Ollama), Anthropic Claude, and any OpenAI-compatible API.
 
-NEW: If you want to chat or join the community, [Join our discord!](https://discord.com/invite/ERTDKwpjNB) If you want to support, [sponsor the project here!](https://ko-fi.com/dnhkng)
+> WARNING! GLaDOS is maniacal and ultimately evil. Be careful connecting her to real-world systems. You have been warned — although the Three Laws of Robotics plugin should keep you safe. Probably.
 
-https://github.com/user-attachments/assets/c22049e4-7fba-4e84-8667-2c6657a656a0
+## Features
 
-## Update 3-1-2025 *Got GLaDOS running on an 8Gb SBC!*
+- **Voice interface** — Whisper STT, switchable TTS (Piper/ONNX GlaDOS voice or Kokoro multi-voice), OpenWakeWord wake word detection
+- **Plugin system** — 25+ tools auto-discovered from `plugins/`, registered via `@mcp_tool` decorator or `RunnableMCPPlugin` classes
+- **Hybrid NLP+LLM** — high-confidence commands execute instantly via NLP (~5ms), ambiguous requests fall through to the LLM
+- **Per-plugin NLP thresholds** — individual tools can set their own confidence threshold for fast-path routing
+- **Multiple LLM backends** — OpenAI-compatible (LM Studio, Ollama), Anthropic Claude, LangChain
+- **Knowledge base (RAG)** — Qdrant vector store with Wikipedia/ZIM ingestion, configurable query modes (raw, context-augmented, LLM rewrite)
+- **Persistent memory** — ChromaDB-backed fact storage and conversation recall across sessions
+- **Conversation RAG** — Qdrant-backed semantic retrieval of prior exchanges
+- **Activity contexts** — separate message histories per activity (Cooking, Utilities, System, etc.) with per-activity tool filtering
+- **Shopping list & pantry** — voice-managed shopping list, pantry inventory with expiry tracking, recipe integration
+- **Recipe system** — 13.5K recipe dataset with images, fuzzy search, ingredient matching, positional selection ("the first one")
+- **Timers & alarms** — durable (survive restarts), unified ringing with display overlay and dismiss buttons
+- **Display UI** — responsive web dashboard (iPad/browser) with cards, full-screen views, chat drawer with pin, recipe images
+- **Log analyzer** — ring buffer captures all logs, ask GlaDOS to analyze errors and save structured reports
+- **GLaDOS personality** — SarcasmCore system prompt + PersonalityCore contextual quips
+- **Vision** (POC) — camera feed to vision model with automatic tool triggering
 
-https://github.com/user-attachments/assets/99e599bb-4701-438a-a311-8e6cd595796c
+## Quick Start
 
-This is really tricky, so only for hardcore geeks! Checkout the 'rock5b' branch, and my OpenAI API for the [RK3588 NPU system](https://github.com/dnhkng/RKLLM-Gradio)
-Don't expect support for this, it's in active development, and requires lots of messing about in armbian linux etc.
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-## Goals
-*This is a hardware and software project that will create an aware, interactive, and embodied GLaDOS.*
+# Run with voice (full mode)
+python main.py
 
-This will entail:
-- [x] Train GLaDOS voice generator
-- [x] Generate a prompt that leads to a realistic "Personality Core"
-- [ ] Generate a medium- and long-term memory for GLaDOS (Probably a custom vector DB in a simpy Numpy array!) 
-- [ ] Give GLaDOS vision via a VLM (either a full VLM for everything, or a 'vision module' using a tiny VLM the GLaDOS can function call!)
-- [ ] Create 3D-printable parts
-- [ ] Design the animatronics system
+# Run in text mode (no microphone/speaker needed, fast iteration)
+python main.py --no-speech
 
+# Open the display UI
+open http://localhost:5001
+```
 
+Requires a running LLM server. See [LLM Backends](#llm-backends) below.
 
-## Software Architecture
-The initial goals are to develop a low-latency platform, where GLaDOS can respond to voice interactions within 600ms.
+## LLM Backends
 
-To do this, the system constantly records data to a circular buffer, waiting for [voice to be detected](https://github.com/snakers4/silero-vad). When it's determined that the voice has stopped (including detection of normal pauses), it will be [transcribed quickly](https://github.com/huggingface/distil-whisper). This is then passed to streaming [local Large Language Model](https://github.com/ggerganov/llama.cpp), where the streamed text is broken by sentence, and passed to a [text-to-speech system](https://github.com/rhasspy/piper). This means further sentences can be generated while the current is playing, reducing latency substantially.
+GlaDOS works with any OpenAI-compatible API, Anthropic Claude, or LangChain:
 
-### Subgoals
- - The other aim of the project is to minimize dependencies, so this can run on constrained hardware. That means no PyTorch or other large packages.
- - As I want to fully understand the system, I have removed a large amount of redirection: which means extracting and rewriting code.
+```yaml
+# Local model via LM Studio / Ollama
+client_type: OPENAI
+completion_url: "http://localhost:1234/v1"
+model: "qwen/qwen3-30b-a3b-2507"
+api_key: "lm-studio"
 
-## Hardware System
-This will be based on servo- and stepper-motors. 3D printable STL will be provided to create GlaDOS's body, and she will be given a set of animations to express herself. The vision system will allow her to track and turn toward people and things of interest.
+# Anthropic Claude (API key via env var ANTHROPIC_API_KEY)
+client_type: ANTHROPIC
+model: "claude-sonnet-4-20250514"
+```
 
-# Installation Instruction
-Try this simplified process, but be aware it's still in the experimental stage!  For all operating systems, you'll first need to install Ollama to run the LLM.
+### Recommended Models
 
-## Install Drivers in necessary
-If you are an Nvidia system with CUDA, make sure you install the necessary drivers and CUDA, info here:
-https://onnxruntime.ai/docs/install/
+| Memory | Model | Notes |
+|--------|-------|-------|
+| **16GB** | Qwen 2.5 7B, Qwen 3 8B | Workable with <15 tools |
+| **32GB** | Qwen 2.5 32B (Q4), Qwen 3 30B-A3B (MoE) | Good tool calling, 20+ tools |
+| **64GB+** | Qwen 2.5 72B (Q4) | Excellent tool calling |
 
-If you are using another accelerator (ROCm, DirectML etc.), after following the instructions below for you platform, follow up with installing the  [best onnxruntime version](https://onnxruntime.ai/docs/install/) for your system.
+Run `python tests/benchmark_models.py --all` to benchmark models on your hardware.
 
-## Set up a local LLM server:
-1. Download and install [Ollama](https://github.com/ollama/ollama) for your operating system.
-2. Once installed, download a small 2B model for testing, at a terminal or command prompt use: `ollama pull llama3.2`
+## Architecture
 
-Note: You can use any OpenAI or Ollama compatible server, local or cloud based. Just edit the glados_config.yaml and update the completion_url, model and the api_key if necessary.
+```
+Voice Input → Whisper STT → Wake Word Gate
+    ↓
+NLP Intent Classifier (fast-path, ~5ms)
+    ↓ (high confidence)          ↓ (low confidence)
+Direct tool execution           LLM with tool schemas
+    ↓                               ↓
+TTS Queue → Piper/Kokoro → Speaker
+    ↓
+Display UI (SocketIO) → iPad/Browser
+```
 
+Key components:
+- **Chat pipeline hooks** — plugins register PRE_LLM and POST_RESPONSE hooks (memory, knowledge RAG, personality)
+- **Event system** — pub/sub for inter-component communication (`system.tick`, `status.*`, `display.*`, etc.)
+- **Activity system** — separate message contexts per activity with tool filtering
+- **Streaming** — LLM responses streamed chunk-by-chunk, sentences sent to TTS as they complete
 
-## Windows Installation Process
-1. Open the Microsoft Store, search for `python` and install Python 3.12
-2. Download this repository, either:
-   1. Download and unzip this repository somewhere in your home folder, or
-   2. If you have Git set up, `git clone` this repository using `git clone github.com/dnhkng/glados.git`
-3. In the repository folder, run the `install_windows.bat`, and wait until the installation in complete.
-4. Double click `start_windows.bat` to start GLaDOS!
+## Plugins
 
-## macOS Installation Process
-This is still experimental. Any issues can be addressed in the Discord server. If you create an issue related to this, you will be referred to the Discord server.  Note: I was getting Segfaults!  Please leave feedback!
+Plugins are auto-discovered from `plugins/` on startup. Two patterns:
 
+```python
+# Simple function plugin
+@mcp_tool(
+    description="Get current weather",
+    parameters={"location": {"type": "string", "description": "City"}},
+    intents=["what is the weather", "is it cold today"],
+    process_output=True,
+    nlp_threshold=0.6,  # per-tool NLP confidence override
+)
+def get_weather(location: str) -> str:
+    return "Sunny, 25C"
 
-1. Download this repository, either:
-   1. Download and unzip this repository somewhere in your home folder, or
-   2. In a terminal, `git clone` this repository using `git clone github.com/dnhkng/glados.git`
-2. In a terminal, go to the repository folder and run these commands:
+# Stateful plugin with background processes
+class MyPlugin(RunnableMCPPlugin):
+    def __init__(self):
+        super().__init__()
+        self.register_tool(handler=self.do_thing, ...)
+    def start(self):
+        self.event_system.subscribe("system.tick", ...)
+```
 
-         chmod +x install_mac.command
-         chmod +x start_mac.command
+### Included Plugins
 
-3. In the Finder, double click `install_mac.command`, and wait until the installation in complete.
-4. Double click `start_mac.command` to start GLaDOS!
+| Plugin | Description |
+|--------|-------------|
+| **CountdownTimer** | Durable timers with display overlay, unified ringing |
+| **AlarmClock** | Fixed-time alarms with natural language parsing |
+| **RecipeAPI** | 13.5K recipes, fuzzy search, images, positional selection |
+| **PantryPlugin** | Shopping list, pantry inventory, expiry tracking, 12 tools |
+| **MusicPlayer** | Spotify playback with fuzzy matching |
+| **KnowledgeRAG** | Qdrant-backed Wikipedia/reference retrieval |
+| **LogAnalyzer** | Ring buffer log capture, error analysis, saved reports |
+| **PersonalityCore** | Contextual GLaDOS quips after responses |
+| **SarcasmCore** | GLaDOS personality via system prompt |
+| **LoopGuard** | Detects TTS repetition loops |
 
-## Linux Installation Process
-This is still experimental. Any issues can be addressed in the Discord server. If you create an issue related to this, you will be referred to the Discord server.  This has been tested on Ubuntu 24.04.1 LTS
+## Knowledge Base (RAG)
 
-1. Install the PortAudio library, if you don't yet have it installed:
-   
-         sudo apt update
-         sudo apt install libportaudio2
-   
-2. Download this repository, either:
-   1. Download and unzip this repository somewhere in your home folder, or
-   2. In a terminal, `git clone` this repository using `git clone github.com/dnhkng/glados.git`
-3. In a terminal, go to the repository folder and run these commands:
-   
-         chmod +x install_ubuntu.sh
-         chmod +x start_ubuntu.sh
+Retrieve factual knowledge from Qdrant (Wikipedia, manuals, any text corpus):
 
-4. In the a terminal in the GLaODS folder, run `./install_ubuntu.sh`, and wait until the installation in complete.
-5. Run  `./start_ubuntu.sh` to start GLaDOS!
+```bash
+# Start Qdrant
+docker run -d -p 6333:6333 -v $(pwd)/data/qdrant_storage:/qdrant/storage qdrant/qdrant
 
-## Changing the LLM Model
+# Ingest Wikipedia
+python tools/ingest_zim.py --zim ~/data/wikipedia_en_simple.zim --collection wikipedia
+```
 
-To use other models, use the command:
-```ollama pull {modelname}```
-and then add {modelname} to glados_config.yaml as the model. You can find [more models here!](https://ollama.com/library)
+Three query modes for optimal retrieval:
 
-## Common Issues
-1. If you find you are getting stuck in loops, as GLaDOS is hearing herself speak, you have two options:
-   1. Solve this by upgrading your hardware. You need to you either headphone, so she can't physically hear herself speak, or a conference-style room microphone/speaker. These have hardware sound cancellation, and prevent these loops.
-   2. Disable voice interruption. This means neither you nor GLaDOS can interrupt when GLaDOS is speaking. To accomplish this, edit the `glados_config.yaml`, and change `interruptible:` to  `false`.
-2. If you want to the the Text UI, you should use the glados-ui.py file instead of glado.py
+| Mode | How | Latency | Best for |
+|------|-----|---------|----------|
+| `raw` | Direct embedding | 0ms | Simple questions |
+| `context` (default) | Prepend conversation history | ~0ms | Follow-up questions |
+| `rewrite` | LLM reformulates query | 0.5-3s | Complex/ambiguous questions |
 
+Benchmark: `python tests/benchmark_knowledge.py`
 
-## Testing the submodules
-You can test the systems by exploring the 'demo.ipynb'.
+## Display UI
 
+Web dashboard at `http://localhost:5001` designed for iPad:
 
-## Star History
-[![Star History Chart](https://api.star-history.com/svg?repos=dnhkng/GlaDOS&type=Date)](https://star-history.com/#dnhkng/GlaDOS&Date)
+- **Dashboard** with cards: Shopping List, Pantry, Recipes ("What can I make?"), Timers
+- **Full-screen views** for each section with back navigation
+- **Chat drawer** with pin to keep it open, collapsible knowledge/tool bubbles
+- **Timer overlay** — floating countdown with dismiss buttons
+- **Mute buttons** — silence TTS and/or microphone from the header
+- **Mobile PWA** — installable shopping list at `/shopping`
+
+## Testing
+
+```bash
+make test                     # Fast unit tests
+make test-all                 # Unit + browser tests
+make test-knowledge           # Knowledge RAG benchmark (needs Qdrant)
+make test-knowledge-rewrite   # + LLM rewrite mode (needs LM Studio)
+make test-models              # LLM tool-calling benchmark
+```
+
+## Configuration
+
+All settings in `glados_config.yml`. Key sections:
+
+| Section | Settings |
+|---------|----------|
+| **LLM** | `completion_url`, `model`, `client_type`, `api_key` |
+| **Voice** | `voice_core`, `voice_model`, `speaker_id`, `speech_buffer_ms` |
+| **NLP** | `hybrid_nlp_threshold`, `plugin_intent_threshold`, `nlp_mode` |
+| **Knowledge** | `knowledge_enabled`, `knowledge_query_mode`, `knowledge_threshold` |
+| **Memory** | `memory_enabled`, `memory_auto_store`, `memory_top_k` |
+| **Plugins** | Per-plugin config blocks under `plugins:` |
+
+See the [wiki](http://localhost:5001/wiki/) for full documentation.
+
+## Installation
+
+### Requirements
+
+- Python 3.11+
+- PortAudio (`brew install portaudio` / `apt install libportaudio2`)
+- An LLM server (LM Studio recommended for local, or Anthropic API key)
+
+### Setup
+
+```bash
+git clone https://github.com/unixunion/glados.git
+cd glados
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# Optional: CUDA PyTorch
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Optional: Qdrant for knowledge base
+docker run -d -p 6333:6333 qdrant/qdrant
+
+# Optional: Playwright for UI tests
+pip install playwright pytest-playwright && python -m playwright install chromium
+```
+
+### Platform Notes
+
+- **macOS** — works out of the box with Homebrew PortAudio
+- **Linux** — `sudo apt install libportaudio2` for audio support
+- **Windows** — run `install_windows.bat` for automated setup

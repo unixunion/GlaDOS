@@ -109,10 +109,10 @@ class Phonemizer:
         self.token_to_idx = self._load_pickle(self.config.TOKEN_TO_IDX_PATH)
         self.idx_to_token = self._load_pickle(self.config.IDX_TO_TOKEN_PATH)
         
-        providers = ort.get_available_providers()
-        if "TensorrtExecutionProvider" in providers:
-            providers.remove("TensorrtExecutionProvider")
-        
+        # Use CPU only — CoreMLExecutionProvider is unstable on macOS and causes
+        # intermittent ONNX inference failures on longer text inputs
+        providers = ["CPUExecutionProvider"]
+
         self.ort_session = ort.InferenceSession(
             self.config.MODEL_NAME,
             sess_options=ort.SessionOptions(),

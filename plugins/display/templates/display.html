@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#ff6600">
+    <title>GlaDOS Display</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="/static/display.css">
+    <style>
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div id="app-header">
+        <button id="back-btn" onclick="goBack()">&#8592;</button>
+        <button id="mute-tts-btn" class="header-mute-btn" onclick="toggleMuteTTS()" title="Mute/unmute speech">&#128264;</button>
+        <button id="mute-mic-btn" class="header-mute-btn" onclick="toggleMuteMic()" title="Mute/unmute microphone">&#127908;</button>
+        <div id="header-title">GlaDOS</div>
+        <div id="status-dot"></div>
+        <a href="/wiki/" class="header-link" title="Wiki">&#128214;</a>
+        <button id="chat-toggle" onclick="toggleChat()">&#9776;</button>
+    </div>
+
+    <!-- Mode banner (planning / post-shopping) -->
+    <div id="mode-banner">
+        <span id="mode-banner-text"></span>
+        <button onclick="socket.emit('shopping_list_action', {action:'exit_mode'})">Exit</button>
+    </div>
+
+    <!-- Main content -->
+    <div id="main-content">
+        <div id="dashboard"></div>
+        <div id="view-container"></div>
+    </div>
+
+    <!-- Timer overlay -->
+    <div id="timer-overlay"></div>
+
+    <!-- GlaDOS avatar -->
+    <div id="glados-avatar"><img src="/images/glados.gif" alt=""></div>
+
+    <!-- Status toast -->
+    <div id="status-toast"><span class="status-text"></span></div>
+
+    <!-- Chat drawer -->
+    <div id="chat-backdrop" onclick="if(!chatPinned) toggleChat()"></div>
+    <div id="chat-drawer">
+        <div id="chat-drawer-header">
+            <h2>Chat</h2>
+            <div id="connection-status" style="font-size:0.75rem; color:#4caf50; margin-right:8px;">connected</div>
+            <button id="chat-pin" onclick="toggleChatPin()" title="Pin chat open">&#128204;</button>
+            <button id="chat-close" onclick="toggleChat()">&#10005;</button>
+        </div>
+        <div id="chat-history"></div>
+        <div id="chat-input-bar">
+            <input type="text" id="chat-input" placeholder="Type a message..." autocomplete="off" />
+            <button id="chat-send" onclick="sendChat()">Send</button>
+            <button id="chat-interrupt" onclick="socket.emit('interrupt')">Stop</button>
+        </div>
+    </div>
+
+    <!-- Mobile bottom nav -->
+    <div id="bottom-nav">
+        <div class="nav-items">
+            <button class="nav-item active" onclick="viewHistory=[];navigateTo('dashboard')"><span class="nav-icon">&#127968;</span>Home</button>
+            <button class="nav-item" onclick="socket.emit('shopping_list_action',{action:'show'})"><span class="nav-icon">&#128722;</span>List</button>
+            <button class="nav-item" onclick="socket.emit('pantry_action',{action:'show'})"><span class="nav-icon">&#127968;</span>Pantry</button>
+            <button class="nav-item" onclick="toggleChat()"><span class="nav-icon">&#128172;</span>Chat</button>
+        </div>
+    </div>
+
+    <script src="/static/socket.io.min.js"></script>
+    <script>
+        // ── GlaDOS View Framework ─────────────────────
+        const GlaDOS = {
+            views: {},
+            dashboardData: { shopping: {count:0,got:0}, pantry: {count:0,expiring:[]}, timers: {active:0}, recipes: {count:0} },
+            esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
+            _viewsReady: false,
+        };
+
+        // Load plugin view modules — uses synchronous XHR-style loading
+        // so views are registered before renderDashboard runs
+        (function loadViews() {
+            fetch('/api/views').then(r => r.json()).then(views => {
+                let loaded = 0;
+                const total = views.length;
+                if (!total) { GlaDOS._viewsReady = true; return; }
+                views.forEach(v => {
+                    const s = document.createElement('script');
+                    s.src = v.js_url;
+                    s.onload = () => { loaded++; if (loaded >= total) { GlaDOS._viewsReady = true; console.log(`Loaded ${total} plugin view(s)`); } };
+                    s.onerror = () => { loaded++; console.warn('Failed to load view:', v.js_url); if (loaded >= total) GlaDOS._viewsReady = true; };
+                    document.head.appendChild(s);
+                    if (v.css_url) {
+                        const l = document.createElement('link');
+                        l.rel = 'stylesheet';
+                        l.href = v.css_url;
+                        document.head.appendChild(l);
+                    }
+                });
+            }).catch(e => { console.warn('Failed to load plugin views:', e); GlaDOS._viewsReady = true; });
+        })();
+    </script>
+    <script>
+        // ── State ──────────────────────────────────────
+        const dashboard = document.getElementById('dashboard');
+        const viewContainer = document.getElementById('view-container');
+        const chatHistory = document.getElementById('chat-history');
+        const statusEl = document.getElementById('connection-status');
+        const timerOverlay = document.getElementById('timer-overlay');
+        let currentView = 'dashboard';
+        let viewHistory = []; // navigation stack for back button
+        let currentAssistantBubble = null;
+        let clockInterval = null;
+        const dashboardData = GlaDOS.dashboardData;
+
+        // ── SocketIO ───────────────────────────────────
+        const socket = io({ reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: Infinity, transports: ['websocket', 'polling'] });
+        socket.on('connect', () => { statusEl.textContent = 'connected'; statusEl.style.color = '#4caf50'; requestDashboardData(); });
+        socket.on('disconnect', () => { statusEl.textContent = 'reconnecting...'; statusEl.style.color = '#f44336'; });
+
+        function requestDashboardData() {
+            socket.emit('shopping_list_action', { action: 'get_state' });
+            socket.emit('pantry_action', { action: 'get_summary' });
+        }
+
+        // ── Navigation ─────────────────────────────────
+        function goBack() {
+            if (viewHistory.length > 0) {
+                const prev = viewHistory.pop();
+                navigateTo(prev, true);
+            } else {
+                navigateTo('dashboard', true);
+            }
+        }
+        function navigateTo(view, isBack) {
+            if (!isBack && currentView !== view) {
+                viewHistory.push(currentView);
+                // Keep history reasonable
+                if (viewHistory.length > 10) viewHistory.shift();
+            }
+            currentView = view;
+            const backBtn = document.getElementById('back-btn');
+            const title = document.getElementById('header-title');
+            // Update bottom nav active state
+            document.querySelectorAll('.nav-item').forEach((el, i) => el.classList.toggle('active', i === 0 && view === 'dashboard'));
+
+            if (view === 'dashboard') {
+                dashboard.style.display = '';
+                viewContainer.style.display = 'none';
+                viewContainer.classList.remove('active');
+                backBtn.style.display = 'none';
+                title.textContent = 'GlaDOS';
+                renderDashboard();
+            } else {
+                dashboard.style.display = 'none';
+                viewContainer.style.display = 'block';
+                viewContainer.classList.add('active');
+                backBtn.style.display = 'inline-block';
+                const titles = { shopping_list: 'Shopping List', pantry: 'Pantry', recipe: 'Recipe', recipe_search: 'Recipes', info: 'Information', timer: 'Timers' };
+                title.textContent = titles[view] || 'GlaDOS';
+            }
+        }
+
+        // ── Display updates — dispatches to registered view renderers ──
+        socket.on('display_update', (data) => {
+            if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
+            const vt = data.view_type || 'idle';
+
+            // Timer overlay is special — renders into its own floating container
+            if (vt === 'timer') {
+                const timerView = GlaDOS.views.timer;
+                if (timerView) timerView.render(timerOverlay, data);
+                return;
+            }
+            timerOverlay.classList.remove('visible'); timerOverlay.innerHTML = '';
+
+            if (vt === 'dashboard_data') { updateDashboardData(data); return; }
+            if (vt === 'idle') { navigateTo('dashboard'); return; }
+
+            // Dispatch to registered view renderer
+            const view = GlaDOS.views[vt];
+            if (view && view.render) {
+                navigateTo(vt);
+                view.render(viewContainer, data);
+            } else {
+                navigateTo('dashboard');
+            }
+
+            if (data.alert) { document.body.classList.add('flash-alert'); setTimeout(() => document.body.classList.remove('flash-alert'), 3000); }
+        });
+
+        // ── Dashboard ──────────────────────────────────
+        function updateDashboardData(data) {
+            if (data.shopping) dashboardData.shopping = data.shopping;
+            if (data.pantry) dashboardData.pantry = data.pantry;
+            if (data.timers) dashboardData.timers = data.timers;
+            if (data.recipes) dashboardData.recipes = data.recipes;
+            // Also update from shopping_list view_type
+            if (data.view_type === 'shopping_list' && data.items) {
+                dashboardData.shopping = { count: data.items.length, got: data.items.filter(i => i.got).length };
+            }
+            if (currentView === 'dashboard') renderDashboard();
+        }
+
+        // ── Dashboard — auto-populates cards from registered views ──
+        // Card order preference (views not listed here appear at the end)
+        const _cardOrder = ['shopping_list', 'pantry', 'recipe', 'timer'];
+
+        function renderDashboard() {
+            // Wait for view modules to load before rendering cards
+            if (!GlaDOS._viewsReady && Object.keys(GlaDOS.views).length === 0) {
+                setTimeout(renderDashboard, 100);
+                return;
+            }
+            const now = new Date();
+            const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const date = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+
+            // Collect views that have renderCard, sorted by preference
+            const cardViews = Object.entries(GlaDOS.views)
+                .filter(([, v]) => typeof v.renderCard === 'function')
+                .sort(([a], [b]) => {
+                    const ai = _cardOrder.indexOf(a), bi = _cardOrder.indexOf(b);
+                    return (ai < 0 ? 999 : ai) - (bi < 0 ? 999 : bi);
+                });
+
+            // Build card grid with placeholders
+            let cardsHtml = cardViews.map(([name]) =>
+                `<div class="dash-card" id="dash-card-${name}"></div>`
+            ).join('');
+            cardsHtml += `<div class="dash-clock"><div class="time">${time}</div>${date}</div>`;
+
+            dashboard.innerHTML = `<div class="dashboard">${cardsHtml}</div>`;
+
+            // Let each view render its card content
+            cardViews.forEach(([name, view]) => {
+                const el = document.getElementById('dash-card-' + name);
+                if (el) view.renderCard(el);
+            });
+
+            if (!clockInterval) {
+                clockInterval = setInterval(() => {
+                    const el = dashboard.querySelector('.dash-clock .time');
+                    if (el) el.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                }, 1000);
+            }
+        }
+
+
+        // ── Chat ───────────────────────────────────────
+        let chatPinned = false;
+        function toggleChat() {
+            if (chatPinned) return;  // pinned = always open
+            const d = document.getElementById('chat-drawer'), b = document.getElementById('chat-backdrop');
+            const open = d.classList.toggle('open');
+            b.classList.toggle('visible', open);
+            if (open) document.getElementById('chat-input').focus();
+        }
+        function toggleChatPin() {
+            chatPinned = !chatPinned;
+            const pin = document.getElementById('chat-pin');
+            const d = document.getElementById('chat-drawer'), b = document.getElementById('chat-backdrop');
+            pin.classList.toggle('pinned', chatPinned);
+            if (chatPinned) {
+                d.classList.add('open');
+                b.classList.remove('visible');  // no backdrop when pinned
+            }
+        }
+        function sendChat() {
+            const el = document.getElementById('chat-input');
+            const text = el.value.trim();
+            if (text) { socket.emit('user_message', { text }); addBubble('user', text); el.value = ''; }
+        }
+        document.getElementById('chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+        let lastResponseHadKnowledge = false;
+        let lastResponseHadTool = false;
+
+        socket.on('chat_message', (data) => {
+            const role = data.role || 'system';
+            if (role === 'user') { finalizeStreaming(); addBubble('user', data.content); lastResponseHadKnowledge = false; lastResponseHadTool = false; }
+            else if (role === 'assistant_start') { finalizeStreaming(); currentAssistantBubble = addBubble('assistant', '', true); }
+            else if (role === 'assistant_token') {
+                if (!currentAssistantBubble) currentAssistantBubble = addBubble('assistant', '', true);
+                const s = currentAssistantBubble.querySelector('.streaming'); if (s) s.textContent += data.token; scrollChat();
+            }
+            else if (role === 'assistant_end') {
+                if (data.content) { if (!currentAssistantBubble) currentAssistantBubble = addBubble('assistant','',true); const s=currentAssistantBubble.querySelector('.streaming'); if(s) s.textContent=data.content; }
+                if (!lastResponseHadKnowledge && !lastResponseHadTool && currentAssistantBubble) { const b=document.createElement('div'); b.className='bubble-no-sources'; b.textContent='answered from model \u2014 no knowledge base sources'; currentAssistantBubble.appendChild(b); }
+                lastResponseHadKnowledge=false; lastResponseHadTool=false; finalizeStreaming();
+            }
+            else if (role === 'spoken') {}
+            else if (role === 'knowledge_miss') { lastResponseHadKnowledge=false; }
+            else if (role === 'knowledge') { lastResponseHadKnowledge=true; finalizeStreaming(); const src=(data.sources||[]).map(s=>s.title||s.source||'?').join(', '); addCollapsibleBubble('knowledge', src?`&#128218; Knowledge: ${src}`:'&#128218; Knowledge', null, data.content); }
+            else if (role === 'thinking') { addCollapsibleBubble('thinking', '&#128173; Thinking', null, data.content); }
+            else if (role === 'tool_call') { lastResponseHadTool=true; finalizeStreaming(); const i=data.via==='nlp'?'&#9889;':'&#128295;'; const v=data.via==='nlp'?' (NLP)':''; const a=JSON.stringify(data.args||{}); addCollapsibleBubble(data.via==='nlp'?'nlp-tool':'tool-call', `${i} ${data.tool}${v}${a!=='{}'?'('+a.substring(0,60)+')':''}`, null, data.content||''); }
+            else if (role === 'tool_result') { addCollapsibleBubble('tool-result', `&#128203; ${data.tool} result`, null, (data.content||'').substring(0,500)); }
+            else if (role === 'async_event') { addCollapsibleBubble('async-event', `&#128276; ${data.source}`, null, data.content||''); }
+        });
+
+        function addBubble(type, text, isStreaming=false) {
+            const el = document.createElement('div'); el.className = `chat-bubble ${type}`;
+            el.innerHTML = isStreaming ? '<div class="bubble-text"><span class="streaming"></span></div>' : `<div class="bubble-text">${esc(text)}</div>`;
+            const t = document.createElement('div'); t.className='bubble-time'; t.textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+            el.appendChild(t); chatHistory.appendChild(el); scrollChat(); return el;
+        }
+        function addCollapsibleBubble(type, label, sources, content) {
+            const el = document.createElement('div'); el.className = `chat-bubble ${type} collapsible`;
+            let h = label; if (sources && sources.length) h += ': ' + sources.map(s => s.title || s).join(', ');
+            el.innerHTML = `<div class="bubble-header" onclick="this.parentElement.classList.toggle('expanded')">${h} <span class="toggle">&#9654;</span></div><div class="bubble-content">${esc(content||'')}</div>`;
+            chatHistory.appendChild(el); scrollChat(); return el;
+        }
+        function finalizeStreaming() { if (currentAssistantBubble) { const s=currentAssistantBubble.querySelector('.streaming'); if(s){s.className='';s.style.color='#e0e0e0';} currentAssistantBubble=null; } }
+        function scrollChat() { chatHistory.scrollTop = chatHistory.scrollHeight; }
+
+        // ── Status ─────────────────────────────────────
+        const toastEl = document.getElementById('status-toast');
+        const toastText = toastEl.querySelector('.status-text');
+        const statusDot = document.getElementById('status-dot');
+        let toastHideTimer = null;
+
+        socket.on('status_toast', (data) => {
+            if (data.status === 'activity') return; // Handled by mode banner now
+            if (data.status === 'shopping_mode') {
+                const banner = document.getElementById('mode-banner');
+                const bannerText = document.getElementById('mode-banner-text');
+                if (data.mode === 'planning') { bannerText.textContent = '📝 Planning Mode — say items to add, "done" to exit'; banner.classList.add('visible'); }
+                else if (data.mode === 'post_shopping') { bannerText.textContent = '🛒 Post-Shopping — say what you got, "done" to finish'; banner.classList.add('visible'); }
+                else { banner.classList.remove('visible'); }
+                return;
+            }
+            // Status dot + avatar glow
+            statusDot.className = '';
+            if (['listening','thinking','speaking','tool_call'].includes(data.status)) statusDot.classList.add(data.status);
+            const avatar = document.getElementById('glados-avatar');
+            if (avatar) avatar.classList.toggle('speaking', data.status === 'speaking');
+            // Toast
+            const status = data.status || 'idle', message = data.message || status;
+            if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
+            toastEl.className = 'visible' + (status === 'speaking' ? ' status-speaking' : '');
+            toastEl.id = 'status-toast';
+            toastText.textContent = message;
+            if (status === 'idle') toastHideTimer = setTimeout(() => toastEl.classList.remove('visible'), 2000);
+            else if (status === 'user_speech') { toastText.textContent = '\u201C' + message + '\u201D'; toastHideTimer = setTimeout(() => toastEl.classList.remove('visible'), 5000); }
+        });
+
+        const esc = GlaDOS.esc;
+
+        // ── Mute controls ──────────────────────────────
+        let ttsMuted = false;
+        let micMuted = false;
+        function toggleMuteTTS() {
+            ttsMuted = !ttsMuted;
+            const btn = document.getElementById('mute-tts-btn');
+            btn.classList.toggle('muted', ttsMuted);
+            btn.innerHTML = ttsMuted ? '&#128263;' : '&#128264;';
+            btn.title = ttsMuted ? 'Unmute speech' : 'Mute speech';
+            socket.emit('system_control', { action: ttsMuted ? 'mute_tts' : 'unmute_tts' });
+            if (ttsMuted) socket.emit('interrupt');
+        }
+        function toggleMuteMic() {
+            micMuted = !micMuted;
+            const btn = document.getElementById('mute-mic-btn');
+            btn.classList.toggle('muted', micMuted);
+            btn.innerHTML = micMuted ? '&#128263;' : '&#127908;';
+            btn.title = micMuted ? 'Unmute microphone' : 'Mute microphone';
+            socket.emit('system_control', { action: micMuted ? 'mute_mic' : 'unmute_mic' });
+        }
+
+        // ── Init ───────────────────────────────────────
+        navigateTo('dashboard');
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+    </script>
+</body>
+</html>

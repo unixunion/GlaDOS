@@ -1,0 +1,65 @@
+# GlaDOS — Raspberry Pi / NLP-only mode requirements
+#
+# Minimal dependencies for running GlaDOS without an LLM server.
+# Uses NLP mode (nlp_mode: true) for intent classification + direct tool execution.
+# Includes voice (Whisper STT + Piper TTS) and display UI.
+#
+# Install: pip install -r requirements_rpi.txt
+# Run:     python main.py   (with nlp_mode: true in glados_config.yml)
+
+# ── Core ──────────────────────────────────────────
+loguru>=0.7.3                  # Logging
+pyyaml>=6.0.2                  # Config loading
+numpy>=1.26.4                  # Audio processing, TTS
+scikit-learn>=1.6.1            # Intent classifier (Naive Bayes)
+
+# ── Voice ─────────────────────────────────────────
+sounddevice>=0.5.1             # Audio I/O (mic + speaker)
+onnxruntime>=1.19.2            # Piper TTS engine (CPU-only on RPi)
+num2words>=0.5.14              # Number-to-word conversion for TTS
+openwakeword>=0.6.0            # Wake word detection
+
+# PyTorch CPU-only (must be before openai-whisper to prevent NVIDIA downloads)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch                          # CPU-only from PyTorch index
+openai-whisper==20240930       # Speech-to-text
+
+# ── Display UI ────────────────────────────────────
+flask>=3.1.0                   # Web server
+flask-socketio>=5.5.1          # Real-time display updates
+jinja2>=3.1.5                  # HTML templating
+markdown>=3.6                  # Wiki rendering
+
+# ── Plugins ───────────────────────────────────────
+rapidfuzz>=3.11.0              # Fuzzy matching (pantry, recipes, shopping list)
+dateparser>=1.2.0              # Alarm time parsing ("5pm tomorrow")
+pillow>=10.2.0                 # Image handling (recipes)
+
+# ── Transitive / required ─────────────────────────
+setuptools>=68.2.0
+packaging>=24.2
+certifi>=2024.12.14
+urllib3>=2.3.0
+idna>=3.10
+cffi>=1.17.1
+pycparser>=2.22
+tqdm>=4.67.1
+soundfile>=0.13.0
+
+# ── NOT included (saves ~2GB+ on RPi) ────────────
+# torch                        # Only needed for Whisper large models
+# langchain, langchain-core    # Only needed for LangChain backend
+# ollama                       # Only needed for Ollama backend
+# openai                       # Only needed for LLM mode
+# mistralai                    # Only needed for Mistral backend
+# chromadb                     # Only needed for memory system
+# sentence-transformers        # Only needed for knowledge RAG
+# qdrant-client                # Only needed for knowledge RAG
+# spacy                        # Not currently used
+# librosa                      # Heavy audio lib, not needed with sounddevice
+# numba, llvmlite              # JIT compilation (librosa dependency)
+# adaptfilt                    # Echo cancellation (experimental)
+# pvporcupine, pvrecorder      # Picovoice (deprecated, using OpenWakeWord)
+# textual, rich, pygments      # Terminal UI (not needed for voice mode)
+# dataclasses-json             # Not used in core
+# langgraph                    # Not used in core

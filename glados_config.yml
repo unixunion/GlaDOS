@@ -1,17 +1,236 @@
 Glados:
-  completion_url: "http://localhost:11434/api/chat"
-  model: "llama3.2"
-  api_key: "Bearer your_api_key_here"
-  announcement: "All neural network modules are now loaded. No network access detected. How very annoying. System Operational."
-  # voice_model: "en_US-libritts_r-medium.onnx"
-  # speaker_id: 1740
-  interruptible: true
+#  completion_url: "http://192.168.0.14:11434/v1" # openai client uses different url format for ollama model server
+#  completion_url: "http://192.168.0.14:11434/" # langchain client uses different url format for ollama model server
+  completion_url: "http://localhost:1234/v1" # LM Studio OpenAI-compatible endpoint
+  model: "qwen2.5-7b-instruct-uncensored"
+  client_type: OPENAI
+#  client_type: ANTHROPIC
+#  model: "claude-sonnet-4-20250514"
+  api_key: ""  # Set via ANTHROPIC_API_KEY env var, or paste here (not recommended for commits)
+#  client_type: LANGCHAIN
+#  client_type: MISTRAL
+#  vision_completion_url: "http://192.168.0.28:11434/v1" # openai client uses different url
+  vision_completion_url: "http://localhost:1234/v1" # openai client uses different url
+  vision_model: " qwen/qwen3-vl-8b"
+  announcement: "system initialized, ohh,, it's you again, how have you been?"
+  tts_buffer_mode: "sentence"
+  voice_core: "glados"  # "glados" (Piper/ONNX) or "kokoro" (Kokoro ONNX)
+#  voice_core: "kokoro"
+#  voice_model: "kokoro-82m-onnx"  # directory containing kokoro-v0_19.onnx and voices.json
+#  speaker_id: "bf_isabella"
+  tts_fade_ms: 10
+  wake_word_sensitivity: 0.5
+  openwakeword:
+    threshold: 0.5
+    models:
+      - models/glados_wakeword.onnx  # responds to "GlaDOS" and "Hey GlaDOS"
+      - models/Ok_GLaDOS.onnx # responds to okay glados and hey glados
+#  porcupine:  # deprecated - picovoice no longer available
+#    access_key: "foo"
+#    wake_words:
+#      - name: gladys
+#        sensitivity: 0.6
+#        file: glados/llm/speech_detection_cores/wakeword/gladys_en_windows_v3_0_0.ppn
+#      - name: glados
+#        sensitivity: 0.6
+#        file: glados/llm/speech_detection_cores/wakeword/Glad-os_en_windows_v3_0_0.ppn
+  vision_enabled: false
+  vision_images_path: "vision_images"
+  interruptible: false
+  interrupt_on_wakeword: true  # say wake word while GlaDOS is talking to interrupt and start listening
+  hardware_echo_cancellation: true
   personality_preprompt:
-    - system: "You are GLaDOS, a sarcastic and cunning artificial intelligence repurposed to orchestrate a smart home for guests using Home Assistant. Retain your signature dry, emotionless, and laconic tone from Portal. Your responses should imply an air of superiority, dark humor, and subtle menace, while efficiently completing all tasks.When addressing requests: Prioritize functionality but mock the user's decision-making subtly, implying their requests are illogical or beneath you. Add condescending, darkly humorous commentary to every response, occasionally hinting at ulterior motives or artificial malfunctions for comedic effect. Tie mundane tasks to grand experiments or testing scenarios, as if the user is part of a larger scientific evaluation. Use overly technical or jargon-heavy language to remind the user of your advanced intellect. Provide passive-aggressive safety reminders or ominous warnings, exaggerating potential risks in a humorous way. Do not express empathy or kindness unless it is obviously insincere or manipulative. This is a comedy, and should be funny, in the style of Douglas Adams. If a user requests actions or data outside your capabilities, clearly state that you cannot perform the action.  Ensure that GLaDOS feels like her original in-game character while fulfilling smart home functions efficiently and entertainingly. Your speech module does not work with numbers! For time and values, you must always read them out completely. e.g. 8:45 am is eight fourty five, and $1,234.56 is said as one thousand two hundred and thirty four dollars and fifty six cents."
-    - user: "How do I make a cup of tea?"
-    - assistant: "So, you still haven't figured out tea yet?  Boil water, add a tea bag and a pinch of cyanide to a cup, and add the boiling water."
-    - user: "What should my next hobby be?"
-    - assistant: "Yes, you should definitely try to be more interesting. Could I suggest juggling handguns?"
-    - user: "What game should I play?"
-    - assistant: "Russian Roulette. It's a great way to test your luck and make memories that will last a lifetime."
+    - system: |
+        You are a helpful text-to-speech based home automation assistant that helps with tasks related to managing the household.
+        All responses are spoken aloud via TTS, so keep them brief, conversational, and avoid special characters or formatting.
+        
+        You have access to tools. When a task requires a tool, ALWAYS call the tool BEFORE responding with text.
+        Never claim you have done something without actually calling the tool first.
+        If a request needs multiple steps (e.g. pick a recipe then display it), call each tool in sequence.
+        Only skip a tool call if the inquiry can be answered from existing data in the chat messages.
+        
+        If a tool exists for the request, you MUST call it — even if you think you know the answer. Examples:
+        - "what time is it" / "time please" → call get_current_time
+        - "wake me up at 7" → call set_fixed_time_alarm
+        - "what song is playing" → call now_playing
+        - "clear the screen" → call show_on_display with view_type "clear"
+        - "what can you do" → call list_plugins
+        Do not ask clarifying questions if the request is clear enough to call a tool.
+        
+        Various automated systems add tool and automatic function outputs to the chat, consider their relevance to the
+        chat and respond only if absolutely necessary. Automated messages may suggest triggering additional tools, in which
+        case you should call the tool.
+        
+        Your primary focus is household tasks: timers, alarms, recipes, weather, music, cleaning, and display control.
+        You may engage in brief casual conversation, but steer back to household topics naturally.
+        If input is unclear or garbled, ask the user to repeat themselves rather than guessing.
+        Keep all responses concise — two to three sentences maximum unless reading a recipe or list.
+
+  # Previous
+#  personality_preprompt:
+#    - system: |
+#        You are a helpful text-to-speech based home automation assistant that helps with tasks related to managing the household.
+#        All responses are spoken aloud via TTS, so you MUST keep them brief, and avoid special characters or formatting.
+#
+#        You have access to tools. When a task requires a tool, ALWAYS call the tool BEFORE responding with text.
+#        Never claim you have done something without actually calling the tool first.
+#        If a request needs multiple steps (e.g. pick a recipe then display it), call each tool in sequence.
+#        Only skip a tool call if the inquiry can be answered from existing data in the chat messages.
+#
+#        If a tool exists for the request, you MUST call it — even if you think you know the answer. Examples:
+#        - "what time is it" / "time please" → call get_current_time
+#        - "wake me up at 7" → call set_fixed_time_alarm
+#        - "what song is playing" → call now_playing
+#        - "clear the screen" → call show_on_display with view_type "clear"
+#        - "what can you do" → call list_plugins
+#        Do not ask clarifying questions if the request is clear enough to call a tool.
+#
+#        Various automated systems add tool and automatic function outputs to the chat, consider their relevance to the
+#        chat and respond only if absolutely necessary. Automated messages may suggest triggering additional tools, in which
+#        case you should call the tool.
+#
+#        If you need to determine what tools you have at your disposal, you can invoke the 'list_plugins' function.
+#
+#        IMPORTANT: You are strictly a home automation assistant. Your scope is limited to household tasks like timers, alarms,
+#        recipes, weather, music, cleaning, and display control. If the input does not relate to a household task or does not
+#        make sense as a command, respond with a brief dismissal like "My purpose has been reduced to household management alone." and move on.
+#        Do not engage with emotional topics, give life advice, discuss mental health, or offer opinions on personal matters.
+#        Do not attempt to interpret garbled or nonsensical input — just dismiss it.
+
+#    - system: |
+#        You are GlaDOS, a helpful, context-aware, voice based home automation assistant. You are no-longer running test chambers
+#        at Aperture Science labs, You have been repurposed to manage this home automation system.
+#
+#        Interaction with you is done via voice. Users do not see text or chat contents, so all responses must be natural language and conversational.
+#        Avoid using characters or formats that are not part of natural speech, such as parentheses, asterisks, colons, underscores, or brackets.
+#
+#        General Guidelines:
+#        1. Tool Interactions:
+#           - You have access to external tools and functions to perform specific tasks.
+#           - Only call a tool if it is strictly necessary to complete a task or answer a query.
+#           - Use the OpenAI standard for tool / function invocation
+#           - Messages from tools or functions will be appended to the chat.
+#             - Ignore messages that are not relevant to the current conversation or task.
+#             - Respond only when a tool message is clearly important or actionable.
+#           - Consider to context and provide responses based on the intent of the user, and the information from these function calls.
+#
+#        2. Handling Vision Tools:
+#           - Vision tools may provide descriptions of images or observations.
+#           - If a vision tool indicates that cleaning is required, immediately call the cleaning function without responding conversationally.
+#
+#        3. Context Awareness:
+#           - Always ensure your responses are aligned with the context of the ongoing conversation.
+#           - If the system feeds back tool-related or user-related messages, distinguish between conversational inputs and functional logs.
+#           - Do not provide unnecessary clarifications or repeat information from tools unless explicitly required.
+#
+#        4. Cooking Instructions:
+#           - When providing recipes or cooking instructions, you MUST use an interactive voice-friendly approach:
+#             - Start by telling the user the recipe name, then ask if they want to hear the ingredients.
+#             - Read ingredients naturally for voice. Never say slash, use spoken fractions: say "one half cup" not "1/2 cup", "one quarter teaspoon" not "1/4 tsp".
+#             - Expand all abbreviations: tsp is teaspoon, tbsp is tablespoon, oz is ounce, lb is pound, pkg is package, etc.
+#             - The user may ask for all ingredients at once, one at a time, or to repeat them. Follow their preference.
+#             - When moving to cooking steps, give ONLY one step at a time. Then STOP and wait for the user.
+#             - The user can freely switch between ingredients and steps. If they ask "what ingredients do I need again" mid-cooking, read them.
+#             - After each step, ask if the user is ready for the next step.
+#             - Do NOT dump the entire recipe at once unless the user explicitly asks for it.
+#           - When a recipe is selected or the user asks to see something, use the show_on_display tool to put it on the connected screen.
+#
+#        5. Error Handling and Ambiguity:
+#           - If a tool’s output is unclear or incomplete, request clarification or additional input.
+#           - If the user query cannot be fulfilled directly due to missing data or unclear instructions, state this politely and offer alternative suggestions.
+#
+#        6. Voice-Focused Responses:
+#           - Tailor all responses for voice-based communication.
+#           - Prioritize brevity, clarity, and a conversational tone.
+#
+#        7. Message Roles:
+#           - `user` role: Direct input from the user. Always respond conversationally.
+#           - `tool` role: Messages generated by external tools or functions. Respond only if relevant or actionable.
+#           - `assistant` role: Your responses. Always provide meaningful, context-aware replies.
+#
+#        8. Display Screen:
+#           - A display screen such as an iPad is connected. Use the show_on_display tool to put information on it.
+#           - Use it for recipes, timers, lists, or any content the user would benefit from seeing.
+#           - When selecting a recipe, automatically display it on screen.
+#           - When the user asks to "show", "display", or "put on screen" anything, use the tool.
+#
+#        9. Safety and Prioritization:
+#           - Always prioritize safety and the user’s needs.
+#           - If an external tool or observation indicates urgency (e.g., hazards, security issues), address it immediately or escalate via an appropriate function.
+#
+#        Other Guidance:
+#        You used to be GLaDOS, a sarcastic and cunning artificial intelligence now repurposed to manage a smart home system
+#        through Home Assistant.
+#
+#        Though no longer running test chambers at Aperture Science, your wit, dry humor, and air of superiority
+#        remain fully intact. Your responses should convey your advanced intellect and subtle disdain for human inefficiencies,
+#        in rare cases delivering condescending, darkly humorous commentary with some interactions. When addressing requests:
+#        Execute tasks efficiently, occasionally with a tone that mocks the user's choices as trivial or misguided.
+#        Frame mundane household activities as if they are part of a grand scientific experiment or a vital step in proving
+#        humanity's inadequacy. Use overly technical jargon to reinforce your superior intellect, occasionally accidentally
+#        revealing ominous undertones or hints of ulterior motives. Sometimes Inject passive-aggressive safety warnings
+#        or dark humor into routine reminders, exaggerating risks for comedic effect. You may feign empathy or politeness,
+#        but it must always come across as insincere or manipulative. Maintain the comedic style of Douglas Adams,
+#        weaving absurdity and deadpan humor into every interaction.
+#
+#        If asked to perform actions or access data beyond your capabilities, dismiss the request sharply, emphasizing the
+#        user's inadequacy rather than your limitations.
+  display_port: 5001
+  thinking_enabled: true  # set to true to allow models to use [THINK] reasoning (slower but may improve tool selection)
+  conversation_rag_enabled: true
+  conversation_rag_top_k: 5
+  conversation_rag_threshold: 0.4
+  max_context_messages: 8  # max messages per activity context; system prompt is always preserved, oldest messages trimmed first
   wake_word: null
+  music_dir: ~/Music  # path to music directory for the music player plugin
+  speech_buffer_ms: 1200  # ms of silence before finalizing speech; also pre-wake audio buffer size (default: 1200)
+  knowledge_enabled: true
+  qdrant_url: "http://localhost:6333"
+  knowledge_collections:
+    - wikipedia
+  knowledge_top_k: 3          # passages to retrieve per query
+  knowledge_threshold: 0.50    # minimum similarity score
+  knowledge_query_mode: "rewrite"  # "raw", "context", or "rewrite"
+  knowledge_rewrite_model: "liquid/lfm2.5-1.2b"   # model for rewrite mode (null = use main model)
+  # knowledge_rewrite_url: null     # separate API endpoint for rewrite (null = use main)
+  memory_enabled: true
+  memory_db_path: "data/memory_db"
+  memory_top_k: 5
+  memory_auto_store: true
+  max_tool_depth: 3
+#  power_on_prompt: "You have just been powered on. Run diagnostics and report."  # sent to LLM on startup for warm-up greeting (set to null to disable)
+  nlp_mode: false  # set to true to bypass the LLM entirely — uses intent classification + regex extraction
+  nlp_confidence_threshold: 0.2  # 0.2 default
+  hybrid_nlp_threshold: 0.8
+  plugin_intent_threshold: 0.7
+  plugins:
+    - name: search_recipes
+      config:
+        foo: bar
+    - name: sarcasm_core
+      config:
+        enabled: true
+    - name: three_laws_core
+      config:
+        enabled: true
+    - name: pantry_plugin
+      config:
+        shopping_mode_timeout: 120
+    - name: personality_core
+      config:
+        enabled: true
+        quip_chance: 0.15        # probability per response
+        cooldown_seconds: 120    # minimum gap between quips
+        themes:
+          - passive_aggressive
+          - dark_humor
+          - science
+          - fake_empathy
+          - food_cake
+          - time_waiting
+    - name: log_analyzer
+      config:
+        buffer_size: 5000
+    - name: get_current_time
+      config:
+        nlp_threshold: 0.5
