@@ -25,22 +25,32 @@ from glados.system.event_system import EventMessage, EventHook
 
 CATEGORY_MAP = {
     "dairy": ["milk", "cheese", "yogurt", "yoghurt", "butter", "cream", "eggs", "egg"],
-    "produce": [
-        "apple", "banana", "lettuce", "tomato", "onion", "potato", "carrot",
-        "pepper", "cucumber", "spinach", "broccoli", "avocado", "lemon", "lime",
-        "garlic", "ginger", "mushroom", "celery", "corn", "peas", "beans",
+    "dry_goods": [
+        "rice", "pasta", "flour", "cornflour", "sugar", "cereal", "oats", "lentils",
+        "couscous", "noodles", "spaghetti", "tagliatelle", "lasagne tiles", "lasagne sheets",
+        "baking powder", "bicarbonate", "canned", "tinned",
+    ],
+    "spices": [
+        "paprika", "cayenne", "thyme", "oregano", "cumin", "cinnamon", "turmeric",
+        "chilli powder", "chili powder", "nutmeg", "coriander", "basil", "rosemary",
+        "bay leaves", "cloves", "cardamom", "fennel seed",
+        "black pepper", "white pepper", "ground pepper", "peppercorn",
     ],
     "meat": [
         "chicken", "beef", "pork", "bacon", "sausage", "mince", "steak", "lamb",
         "turkey", "ham", "salami", "prosciutto", "duck",
     ],
     "seafood": ["fish", "salmon", "tuna", "prawns", "shrimp", "cod", "haddock"],
+    "produce": [
+        "apple", "banana", "lettuce", "tomato", "onion", "potato", "carrot",
+        "bell pepper", "cucumber", "spinach", "broccoli", "avocado", "lemon", "lime",
+        "garlic", "ginger", "mushroom", "celery", "corn on the cob", "peas", "beans",
+    ],
     "frozen": ["ice cream", "frozen peas", "fish fingers", "pizza"],
     "bakery": ["bread", "rolls", "croissant", "bagel", "muffin", "wrap", "tortilla", "pitta"],
-    "dry_goods": ["rice", "pasta", "flour", "sugar", "cereal", "oats", "lentils", "couscous", "noodles"],
     "beverages": ["juice", "water", "soda", "coffee", "tea", "beer", "wine"],
-    "condiments": ["ketchup", "mustard", "mayo", "mayonnaise", "sauce", "oil", "vinegar", "salt", "pepper"],
-    "snacks": ["crisps", "chips", "nuts", "chocolate", "biscuits", "cookies", "popcorn"],
+    "condiments": ["ketchup", "mustard", "mayo", "mayonnaise", "sauce", "oil", "vinegar", "salt"],
+    "snacks": ["crisps", "chips", "nuts", "chocolate", "biscuits", "cookies", "popcorn", "seeds"],
 }
 
 
@@ -60,13 +70,20 @@ READY_MEAL_KEYWORDS = [
     "quiche", "pasta bake", "mac and cheese", "shepherd's pie", "cottage pie",
     "ready meal", "tv dinner", "microwave meal", "frozen dinner", "frozen meal",
     "leftover", "leftovers", "cooked", "prepared", "meal prep",
-    "burrito", "wrap", "sandwich", "salad", "risotto", "paella",
+    "burrito", "filled wrap", "sandwich", "salad", "risotto", "paella",
     "chili", "chilli", "bolognese", "moussaka", "enchilada", "frittata",
     "tikka", "korma", "biryani", "stir fry", "stir-fry", "fried rice",
     "roast", "gratin", "ratatouille", "goulash", "tagine",
     "dumplings", "gyoza", "samosa", "empanada", "spring rolls",
     "fish cake", "fishcake", "fish fingers", "nuggets", "schnitzel",
     "meatballs", "meatloaf", "pot pie", "calzone", "focaccia",
+]
+
+
+# Words that override a ready_meal match — these are ingredients, not meals
+_INGREDIENT_OVERRIDES = [
+    "tiles", "sheets", "sauce", "paste", "powder", "seasoning", "mix",
+    "base", "stock", "broth", "dried", "canned", "tinned", "raw",
 ]
 
 
@@ -77,6 +94,9 @@ def _classify_item_type(name: str) -> str:
     like 'rice' matching 'risotto'. Multi-word keywords use token overlap.
     """
     name_lower = name.lower()
+    # Check overrides first — if the name contains an ingredient indicator, it's not a meal
+    if any(ov in name_lower for ov in _INGREDIENT_OVERRIDES):
+        return "ingredient"
     for keyword in READY_MEAL_KEYWORDS:
         if keyword in name_lower:
             return "ready_meal"
@@ -85,6 +105,51 @@ def _classify_item_type(name: str) -> str:
         if len(kw_words) > 1 and all(w in name_lower for w in kw_words):
             return "ready_meal"
     return "ingredient"
+
+
+# ---------------------------------------------------------------------------
+# Shelf life estimation defaults (days) — keyed by category → location type
+# ---------------------------------------------------------------------------
+
+DEFAULT_SHELF_LIFE = {
+    "dairy":      {"fridge": 10,  "freezer": 90,  "room_temp": 1},
+    "produce":    {"fridge": 7,   "freezer": 180, "room_temp": 3},
+    "meat":       {"fridge": 3,   "freezer": 180, "room_temp": 0},
+    "seafood":    {"fridge": 2,   "freezer": 180, "room_temp": 0},
+    "frozen":     {"fridge": 3,   "freezer": 180, "room_temp": 1},
+    "bakery":     {"fridge": 7,   "freezer": 90,  "room_temp": 4},
+    "dry_goods":  {"fridge": 365, "freezer": 365, "room_temp": 365},
+    "beverages":  {"fridge": 30,  "freezer": 180, "room_temp": 30},
+    "condiments": {"fridge": 180, "freezer": 365, "room_temp": 90},
+    "snacks":     {"fridge": 30,  "freezer": 90,  "room_temp": 30},
+    "spices":     {"fridge": 365, "freezer": 365, "room_temp": 365},
+    "other":      {"fridge": 7,   "freezer": 90,  "room_temp": 14},
+    "ready_meal": {"fridge": 3,   "freezer": 90,  "room_temp": 1},
+}
+
+# Keywords in location names used to infer storage type
+LOCATION_TYPE_HINTS = {
+    "fridge": "fridge",
+    "refrigerator": "fridge",
+    "freezer": "freezer",
+    "dry": "room_temp",
+    "cupboard": "room_temp",
+    "spice": "room_temp",
+    "pantry": "room_temp",
+    "counter": "room_temp",
+    "shelf": "room_temp",
+    "cabinet": "room_temp",
+    "garage": "room_temp",
+}
+
+
+def _infer_location_type(loc_id: str, loc_name: str) -> str:
+    """Infer storage type from location id/name. Returns fridge, freezer, or room_temp."""
+    combined = f"{loc_id} {loc_name}".lower()
+    for keyword, loc_type in LOCATION_TYPE_HINTS.items():
+        if keyword in combined:
+            return loc_type
+    return "room_temp"
 
 
 # ---------------------------------------------------------------------------
@@ -459,14 +524,16 @@ class PantryPlugin(RunnableMCPPlugin):
         self._shopping_list = self._load_json("shopping_list.json", {"items": [], "recurring_rules": []})
         self._pantry = self._load_json("pantry.json", {
             "locations": [
-                {"id": "fridge", "name": "Fridge"},
-                {"id": "freezer-1", "name": "Freezer Drawer 1"},
-                {"id": "freezer-2", "name": "Freezer Drawer 2"},
-                {"id": "freezer-3", "name": "Freezer Drawer 3"},
-                {"id": "dry-goods", "name": "Dry Goods Cupboard"},
+                {"id": "fridge", "name": "Fridge", "type": "fridge"},
+                {"id": "freezer-1", "name": "Freezer Drawer 1", "type": "freezer"},
+                {"id": "freezer-2", "name": "Freezer Drawer 2", "type": "freezer"},
+                {"id": "freezer-3", "name": "Freezer Drawer 3", "type": "freezer"},
+                {"id": "dry-goods", "name": "Dry Goods Cupboard", "type": "room_temp"},
             ],
             "items": [],
+            "shelf_life_config": {},
         })
+        self._migrate_pantry_data()
 
         self._last_recurring_check = None
         self._expiry_warned_today = False
@@ -499,6 +566,7 @@ class PantryPlugin(RunnableMCPPlugin):
         # Register display views
         self.register_view("shopping_list", "plugins/pantry/views/shopping.js", dashboard_card=True)
         self.register_view("pantry", "plugins/pantry/views/pantry.js", dashboard_card=True)
+        self.register_view("pantry_shelf_life", "plugins/pantry/views/pantry.js")
 
         list_count = len(self._shopping_list["items"])
         pantry_count = len(self._pantry["items"])
@@ -527,6 +595,102 @@ class PantryPlugin(RunnableMCPPlugin):
         path = os.path.join(self._data_dir, "pantry.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self._pantry, f, indent=2, ensure_ascii=False)
+
+    # -----------------------------------------------------------------------
+    # Data migration
+    # -----------------------------------------------------------------------
+
+    def _migrate_pantry_data(self):
+        """Migrate pantry data to current schema. Safe to run multiple times."""
+        changed = False
+
+        # Add "type" to locations missing it
+        for loc in self._pantry["locations"]:
+            if "type" not in loc:
+                loc["type"] = _infer_location_type(loc["id"], loc["name"])
+                changed = True
+
+        # Add "expiry_source" to items
+        for item in self._pantry["items"]:
+            if "expiry_source" not in item:
+                item["expiry_source"] = "user" if item.get("expires") else None
+                changed = True
+
+        # Ensure shelf_life_config exists
+        if "shelf_life_config" not in self._pantry:
+            self._pantry["shelf_life_config"] = {}
+            changed = True
+
+        if changed:
+            self._save_pantry()
+            logger.info("[Pantry] Migrated pantry data to current schema")
+
+    # -----------------------------------------------------------------------
+    # Shelf life estimation
+    # -----------------------------------------------------------------------
+
+    def _estimate_expiry(self, item_name: str, location_id: str) -> Optional[str]:
+        """Estimate expiry date based on item category and storage location type.
+
+        Resolution order: user UI overrides → config file overrides → hardcoded defaults.
+        Returns ISO date string (YYYY-MM-DD) or None.
+        """
+        if not self.plugin_config.get("auto_estimate_expiry", True):
+            return None
+
+        loc = next((l for l in self._pantry["locations"] if l["id"] == location_id), None)
+        if not loc:
+            return None
+
+        loc_type = loc.get("type", "room_temp")
+        category = _categorize_item(item_name)
+        # If the location itself is a spice rack, treat items as spices
+        loc_name = loc.get("name", "").lower()
+        if "spice" in loc_name and category not in ("spices",):
+            category = "spices"
+        # Ready meals use their own shelf life regardless of ingredient category
+        item_type = _classify_item_type(item_name)
+        if item_type == "ready_meal":
+            category = "ready_meal"
+
+        # Layer 1: user overrides from UI (stored in pantry.json)
+        ui_overrides = self._pantry.get("shelf_life_config", {})
+        if category in ui_overrides and loc_type in ui_overrides[category]:
+            days = ui_overrides[category][loc_type]
+        # Layer 2: config file overrides
+        elif category in self.plugin_config.get("shelf_life_overrides", {}) \
+                and loc_type in self.plugin_config["shelf_life_overrides"][category]:
+            days = self.plugin_config["shelf_life_overrides"][category][loc_type]
+        # Layer 3: hardcoded defaults
+        elif category in DEFAULT_SHELF_LIFE and loc_type in DEFAULT_SHELF_LIFE[category]:
+            days = DEFAULT_SHELF_LIFE[category][loc_type]
+        else:
+            days = DEFAULT_SHELF_LIFE.get("other", {}).get(loc_type, 7)
+
+        if days <= 0:
+            logger.debug(f"[Pantry] Shelf life for '{item_name}' ({category}) in {loc_type} is {days}d — not recommended")
+            return None
+
+        estimated = (date.today() + timedelta(days=days)).isoformat()
+        logger.debug(f"[Pantry] Estimated expiry for '{item_name}' ({category}, {loc_type}): {estimated} ({days}d)")
+        return estimated
+
+    def _get_shelf_life_config(self) -> dict:
+        """Get the merged shelf life config: defaults + config overrides + UI overrides."""
+        merged = {}
+        for category, loc_map in DEFAULT_SHELF_LIFE.items():
+            merged[category] = dict(loc_map)
+        # Apply config file overrides
+        for category, loc_map in self.plugin_config.get("shelf_life_overrides", {}).items():
+            if category not in merged:
+                merged[category] = {}
+            merged[category].update(loc_map)
+        # Apply UI overrides (highest priority)
+        for category, loc_map in self._pantry.get("shelf_life_config", {}).items():
+            if category not in merged:
+                merged[category] = {}
+            merged[category].update(loc_map)
+        return merged
 
     # -----------------------------------------------------------------------
     # Fuzzy matching helpers
@@ -904,6 +1068,21 @@ class PantryPlugin(RunnableMCPPlugin):
             nlp_response=lambda r: r.get("message", "Done."),
         )
 
+        self.register_tool(
+            handler=self.move_item,
+            description=(
+                "Move a pantry item to a different storage location. "
+                "Use when the user says they moved something from one place to another. "
+                "Only use this for items already in the pantry — for new items use store_item instead."
+            ),
+            parameters={
+                "item": {"type": "string", "description": "The item to move"},
+                "new_location": {"type": "string", "description": "The destination location, e.g. 'freezer drawer 1'"},
+            },
+            required=["item", "new_location"],
+            activity=[Activity.GENERAL, Activity.COOKING],
+        )
+
     def _register_recipe_integration_tools(self):
         self.register_tool(
             handler=self.suggest_meals_from_pantry,
@@ -933,6 +1112,11 @@ class PantryPlugin(RunnableMCPPlugin):
                 "suggest a meal",
                 "what meals can I make",
                 "what recipes can I make with what I have",
+                "what do we have to eat",
+                "what's for dinner",
+                "do we have any left overs",
+                "is anything ready to eat",
+                "I'm starving"
             ],
             process_output=True,
             activity=[Activity.GENERAL, Activity.COOKING],
@@ -1360,7 +1544,9 @@ class PantryPlugin(RunnableMCPPlugin):
                     "location_id": None,
                     "stored": datetime.now().isoformat(timespec="seconds"),
                     "expires": None,
+                    "expiry_source": None,
                     "notes": item.get("quantity"),
+                    "item_type": _classify_item_type(item["name"]),
                 }
                 self._pantry["items"].append(pantry_item)
                 moved.append(item)
@@ -1391,8 +1577,17 @@ class PantryPlugin(RunnableMCPPlugin):
             return {"status": "error", "message": f"Unknown location '{location}'. Use manage_pantry_locations to add it."}
 
         expires_date = None
+        expiry_source = None
         if expires:
             expires_date = _parse_expiry_date(expires)
+            if expires_date:
+                expiry_source = "user"
+
+        # Auto-estimate expiry if none provided
+        if not expires_date:
+            expires_date = self._estimate_expiry(item, loc["id"])
+            if expires_date:
+                expiry_source = "estimated"
 
         # Classify item type: explicit > keyword auto-detect
         effective_type = item_type or _classify_item_type(item)
@@ -1409,6 +1604,7 @@ class PantryPlugin(RunnableMCPPlugin):
                 existing["notes"] = notes
             if expires_date:
                 existing["expires"] = expires_date
+                existing["expiry_source"] = expiry_source
             existing["stored"] = datetime.now().isoformat(timespec="seconds")
             existing["item_type"] = item_type or existing.get("item_type") or effective_type
         else:
@@ -1418,6 +1614,7 @@ class PantryPlugin(RunnableMCPPlugin):
                 "location_id": loc["id"],
                 "stored": datetime.now().isoformat(timespec="seconds"),
                 "expires": expires_date,
+                "expiry_source": expiry_source,
                 "notes": notes,
                 "item_type": effective_type,
             })
@@ -1435,6 +1632,41 @@ class PantryPlugin(RunnableMCPPlugin):
         self._save_pantry()
         logger.info(f"[Pantry] Stored '{item}' in {loc['name']} (type={effective_type})")
         return {"status": "success", "item": item, "location": loc["name"], "item_type": effective_type}
+
+    def move_item(self, item: str, new_location: str) -> dict:
+        """Move a pantry item to a different storage location."""
+        matches = self._find_pantry_items(item)
+        if not matches:
+            return {"status": "error", "message": f"'{item}' is not in the pantry."}
+
+        loc = self._find_location(new_location)
+        if not loc:
+            return {"status": "error", "message": f"Unknown location '{new_location}'."}
+
+        moved = matches[0]
+        old_loc = next((l for l in self._pantry["locations"] if l["id"] == moved.get("location_id")), None)
+        old_name = old_loc["name"] if old_loc else "unknown"
+
+        moved["location_id"] = loc["id"]
+
+        # Re-estimate expiry if the current one was auto-estimated
+        if moved.get("expiry_source") == "estimated" or not moved.get("expires"):
+            new_estimate = self._estimate_expiry(moved["name"], loc["id"])
+            if new_estimate:
+                moved["expires"] = new_estimate
+                moved["expiry_source"] = "estimated"
+                logger.info(f"[Pantry] Re-estimated expiry for '{moved['name']}' after move: {new_estimate}")
+
+        self._save_pantry()
+        self._publish_pantry_display()
+        logger.info(f"[Pantry] Moved '{moved['name']}' from {old_name} to {loc['name']}")
+        return {
+            "status": "success",
+            "item": moved["name"],
+            "from": old_name,
+            "to": loc["name"],
+            "message": f"Moved {moved['name']} from {old_name} to {loc['name']}.",
+        }
 
     def _get_llm_classifier(self):
         """Get the fast LLM client + model for item classification. Returns (client, model) or (None, None)."""
@@ -1634,7 +1866,9 @@ class PantryPlugin(RunnableMCPPlugin):
             loc_id = name.lower().replace(" ", "-")
             if any(l["id"] == loc_id for l in self._pantry["locations"]):
                 return {"status": "exists", "message": f"Location '{name}' already exists."}
-            self._pantry["locations"].append({"id": loc_id, "name": name})
+            self._pantry["locations"].append({
+                "id": loc_id, "name": name, "type": _infer_location_type(loc_id, name),
+            })
             self._save_pantry()
             return {"status": "success", "message": f"Added location '{name}'."}
 
@@ -1750,12 +1984,14 @@ class PantryPlugin(RunnableMCPPlugin):
             locations_data.append({
                 "id": loc["id"],
                 "name": loc["name"],
+                "type": loc.get("type", "room_temp"),
                 "items": [
                     {
                         "id": i["id"],
                         "name": i["name"],
                         "notes": i.get("notes"),
                         "expires": i.get("expires"),
+                        "expiry_source": i.get("expiry_source"),
                         "stored": i.get("stored", "")[:10],
                         "item_type": i.get("item_type"),
                         "category": _categorize_item(i["name"]),
@@ -1770,12 +2006,14 @@ class PantryPlugin(RunnableMCPPlugin):
             locations_data.append({
                 "id": "_unassigned",
                 "name": "Unassigned",
+                "type": "room_temp",
                 "items": [
                     {
                         "id": i["id"],
                         "name": i["name"],
                         "notes": i.get("notes"),
                         "expires": i.get("expires"),
+                        "expiry_source": i.get("expiry_source"),
                         "stored": i.get("stored", "")[:10],
                         "item_type": i.get("item_type"),
                         "category": _categorize_item(i["name"]),
@@ -2200,6 +2438,7 @@ class PantryPlugin(RunnableMCPPlugin):
         """Handle interactive actions from the pantry display."""
         data = event.content if isinstance(event.content, dict) else {}
         action = data.get("action")
+        logger.debug(f"[Pantry] UI action: {action} data={data}")
 
         if action == "show":
             self._publish_pantry_display()
@@ -2235,13 +2474,20 @@ class PantryPlugin(RunnableMCPPlugin):
             if name and location_id:
                 expires = data.get("expires", "").strip() or None
                 notes = data.get("notes", "").strip() or None
+                expiry_source = "user" if expires else None
+                if not expires:
+                    expires = self._estimate_expiry(name, location_id)
+                    if expires:
+                        expiry_source = "estimated"
                 self._pantry["items"].append({
                     "id": uuid.uuid4().hex[:8],
                     "name": name,
                     "location_id": location_id,
                     "stored": datetime.now().isoformat(timespec="seconds"),
                     "expires": expires,
+                    "expiry_source": expiry_source,
                     "notes": notes,
+                    "item_type": _classify_item_type(name),
                 })
                 # Remove from shopping list if present
                 shopping_match = self._find_shopping_item(name)
@@ -2259,6 +2505,7 @@ class PantryPlugin(RunnableMCPPlugin):
             for item in self._pantry["items"]:
                 if item["id"] == item_id:
                     item["expires"] = expires
+                    item["expiry_source"] = "user"
                     logger.info(f"[Pantry] UI: set expiry for '{item['name']}' to {expires}")
                     break
             self._save_pantry()
@@ -2278,6 +2525,26 @@ class PantryPlugin(RunnableMCPPlugin):
                     break
             self._save_pantry()
             self._publish_pantry_display()
+
+        elif action == "move_item":
+            item_id = data.get("item_id")
+            new_location_id = data.get("new_location_id")
+            logger.info(f"[Pantry] UI move: item_id={item_id} -> location={new_location_id}")
+            if item_id and new_location_id:
+                item = next((i for i in self._pantry["items"] if i["id"] == item_id), None)
+                loc = next((l for l in self._pantry["locations"] if l["id"] == new_location_id), None)
+                if item and loc:
+                    old_loc_id = item.get("location_id")
+                    item["location_id"] = new_location_id
+                    # Re-estimate expiry if it was auto-estimated or missing
+                    if item.get("expiry_source") == "estimated" or not item.get("expires"):
+                        new_exp = self._estimate_expiry(item["name"], new_location_id)
+                        if new_exp:
+                            item["expires"] = new_exp
+                            item["expiry_source"] = "estimated"
+                    self._save_pantry()
+                    self._publish_pantry_display()
+                    logger.info(f"[Pantry] UI: moved '{item['name']}' from {old_loc_id} to {new_location_id}")
 
         elif action == "reclassify":
             import threading
@@ -2299,6 +2566,31 @@ class PantryPlugin(RunnableMCPPlugin):
             if recipe_name:
                 self.add_recipe_ingredients_to_list(recipe_name)
                 # No TTS — user clicked a UI button, they can see the shopping list update
+
+        elif action == "get_shelf_life_config":
+            merged = self._get_shelf_life_config()
+            self.event_system.publish(EventMessage(
+                role="display", name="pantry_shelf_life",
+                content={"config": merged},
+                process_output=False,
+            ))
+
+        elif action == "update_shelf_life":
+            config = data.get("config", {})
+            self._pantry["shelf_life_config"] = config
+            self._save_pantry()
+            logger.info(f"[Pantry] UI: updated shelf life config ({len(config)} categories)")
+
+        elif action == "set_location_type":
+            loc_id = data.get("location_id")
+            loc_type = data.get("type")
+            if loc_id and loc_type in ("fridge", "freezer", "room_temp"):
+                for loc in self._pantry["locations"]:
+                    if loc["id"] == loc_id:
+                        loc["type"] = loc_type
+                        break
+                self._save_pantry()
+                self._publish_pantry_display()
 
     # -----------------------------------------------------------------------
     # Tick handler — recurring items + expiry warnings
@@ -2376,14 +2668,27 @@ class PantryPlugin(RunnableMCPPlugin):
                     days_left = (exp - today).days
                     if days_left <= 2:
                         loc_name = self._location_name(item["location_id"])
+                        is_estimated = item.get("expiry_source") == "estimated"
                         if days_left < 0:
-                            expiring.append(f"the {item['name']} in the {loc_name} expired {-days_left} days ago")
+                            if is_estimated:
+                                expiring.append(f"the {item['name']} in the {loc_name} is probably past its best, it's been about {-days_left} days")
+                            else:
+                                expiring.append(f"the {item['name']} in the {loc_name} expired {-days_left} days ago")
                         elif days_left == 0:
-                            expiring.append(f"the {item['name']} in the {loc_name} expires today")
+                            if is_estimated:
+                                expiring.append(f"the {item['name']} in the {loc_name} might be getting old")
+                            else:
+                                expiring.append(f"the {item['name']} in the {loc_name} expires today")
                         elif days_left == 1:
-                            expiring.append(f"the {item['name']} in the {loc_name} expires tomorrow")
+                            if is_estimated:
+                                expiring.append(f"the {item['name']} in the {loc_name} is probably close to its limit")
+                            else:
+                                expiring.append(f"the {item['name']} in the {loc_name} expires tomorrow")
                         else:
-                            expiring.append(f"the {item['name']} in the {loc_name} expires in {days_left} days")
+                            if is_estimated:
+                                expiring.append(f"the {item['name']} in the {loc_name} should probably be used soon")
+                            else:
+                                expiring.append(f"the {item['name']} in the {loc_name} expires in {days_left} days")
                 except ValueError:
                     continue
 

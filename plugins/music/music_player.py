@@ -1,4 +1,5 @@
 import os
+import re
 import threading
 from typing import Optional
 
@@ -9,7 +10,7 @@ from spotipy.oauth2 import SpotifyOAuth
 from glados.context.activity import Activity
 from glados.mcp.runnable_mcp_plugin import RunnableMCPPlugin
 from glados.nlp.extractors import extract_music_action
-from glados.system.event_system import EventHook
+from glados.system.event_system import EventHook, EventMessage
 
 
 def _music_nlp_extract(text: str) -> dict:
@@ -53,13 +54,13 @@ def _list_devices_nlp_response(result: dict) -> str:
     devices = result.get("devices", [])
     if not devices:
         return "No Spotify devices found."
-    names = [d["name"] for d in devices]
-    active = [d["name"] for d in devices if d.get("active")]
-    listing = ", ".join(names)
-    response = f"Available devices: {listing}."
-    if active:
-        response += f" {active[0]} is currently active."
-    return response
+    parts = []
+    for d in devices:
+        label = f"{d.get('number', '?')}, {d['name']}"
+        if d.get("active"):
+            label += " (active)"
+        parts.append(label)
+    return "Available devices: " + ". ".join(parts) + ". Say 'play on' followed by the name or number to switch."
 
 
 def _now_playing_nlp_response(result: dict) -> str:
@@ -99,7 +100,7 @@ class MusicPlayer(RunnableMCPPlugin):
         cache_path = os.path.join(os.getcwd(), ".spotify_cache")
 
         # Load .env file if env vars aren't already set
-        if not os.environ.get("SPOTIPY_CLIENT_ID"):
+        if not os.environ.get("SPOTIFY_CLIENT_ID"):
             env_path = os.path.join(os.getcwd(), ".env")
             if os.path.exists(env_path):
                 with open(env_path) as f:
@@ -113,9 +114,9 @@ class MusicPlayer(RunnableMCPPlugin):
         if os.path.exists(cache_path):
             try:
                 self.sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
-                    client_id=os.environ.get("SPOTIPY_CLIENT_ID", ""),
-                    client_secret=os.environ.get("SPOTIPY_CLIENT_SECRET", ""),
-                    redirect_uri=os.environ.get("SPOTIPY_REDIRECT_URI", "https://127.0.0.1:8888/callback"),
+                    client_id=os.environ.get("SPOTIFY_CLIENT_ID", ""),
+                    client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET", ""),
+                    redirect_uri=os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:5001/spotify/callback"),
                     scope=SPOTIFY_SCOPES,
                     cache_path=cache_path,
                     open_browser=False,
@@ -217,6 +218,35 @@ class MusicPlayer(RunnableMCPPlugin):
             nlp_response=_list_devices_nlp_response,
         )
 
+        self.register_tool(
+            handler=self.switch_device,
+            description="Switch Spotify playback to a different device by name or number.",
+            parameters={
+                "device": {
+                    "type": "string",
+                    "description": "Device name (fuzzy matched) or number from list_devices",
+                },
+            },
+            required=["device"],
+            intents=[
+                "play on the kitchen speaker",
+                "switch to the living room",
+                "play music on device 2",
+                "transfer playback to the TV",
+                "use the bedroom speaker",
+                "switch audio to my phone",
+                "play on speaker number 1",
+            ],
+            process_output=True,
+            activity=[Activity.ENTERTAINMENT, Activity.GENERAL],
+            nlp_extract_fn=lambda text: {"device": re.sub(
+                r"^(?:play\s+(?:music\s+)?on\s+(?:the\s+)?|switch\s+(?:to|audio\s+to)\s+(?:the\s+)?|"
+                r"transfer\s+(?:playback\s+)?to\s+(?:the\s+)?|use\s+(?:the\s+)?)",
+                "", text, flags=re.IGNORECASE
+            ).strip() or text},
+            nlp_response=lambda r: r.get("message", "Done."),
+        )
+
     @property
     def is_playing(self) -> bool:
         if not self.sp:
@@ -237,6 +267,68 @@ class MusicPlayer(RunnableMCPPlugin):
             "system.music_resume",
             EventHook("music_resume", callback=self._on_resume_event, priority=5)
         )
+
+        # Register display view and UI action
+        self.register_view("music", "plugins/music/views/music.js", dashboard_card=True)
+        self.register_ui_action("music_action", self._on_music_ui_action)
+        self.event_system.subscribe(
+            "ui.music_action",
+            EventHook("music_ui", callback=self._on_music_ui_action, priority=5)
+        )
+        # Poll Spotify state every ~10 seconds to catch track changes
+        self._tick_count = 0
+        self.event_system.subscribe(
+            "system.tick",
+            EventHook("music_poll", callback=self._on_tick, priority=10)
+        )
+
+    def _on_tick(self, event):
+        """Poll Spotify every ~10 ticks (seconds) for track changes."""
+        self._tick_count += 1
+        if self._tick_count == 3 or self._tick_count % 10 == 0:
+            self._publish_music_state()
+
+    def _publish_music_state(self):
+        """Push current playback state to dashboard."""
+        state = {"is_playing": False, "track": "", "artist": "", "device": ""}
+        if self.sp:
+            try:
+                pb = self.sp.current_playback()
+                if pb:
+                    state["is_playing"] = pb.get("is_playing", False)
+                    item = pb.get("item")
+                    if item:
+                        state["track"] = item.get("name", "")
+                        artists = item.get("artists", [])
+                        state["artist"] = artists[0]["name"] if artists else ""
+                    dev = pb.get("device")
+                    if dev:
+                        state["device"] = dev.get("name", "")
+            except Exception:
+                pass
+        self.event_system.publish(EventMessage(
+            role="display", name="dashboard_data",
+            content={"music": state},
+            process_output=False,
+        ))
+
+    def _on_music_ui_action(self, event):
+        """Handle music UI actions from the display."""
+        data = event.content if isinstance(event.content, dict) else {}
+        action = data.get("action", "").upper()
+
+        if action == "GET_STATE":
+            self._publish_music_state()
+            return
+        elif action == "SWITCH_DEVICE":
+            device = data.get("device", "")
+            if device:
+                self.switch_device(device)
+        elif action in ("PLAY", "PAUSE", "RESUME", "STOP", "SKIP", "PREVIOUS"):
+            self.play_music(action=action)
+
+        # Update dashboard state after action
+        self._publish_music_state()
 
     def stop(self):
         logger.info("MusicPlayer stopping...")
@@ -319,7 +411,7 @@ class MusicPlayer(RunnableMCPPlugin):
 
     def play_music(self, action: str, query: str = None) -> dict:
         if not self.sp:
-            return {"status": "error", "message": "Spotify is not configured. Set SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, and SPOTIPY_REDIRECT_URI."}
+            return {"status": "error", "message": "Spotify is not configured. Set SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, and SPOTIFY_REDIRECT_URI."}
 
         action = action.upper()
         try:
@@ -374,6 +466,48 @@ class MusicPlayer(RunnableMCPPlugin):
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
+    def switch_device(self, device: str) -> dict:
+        """Switch Spotify playback to a device by name (fuzzy) or number."""
+        if not self.sp:
+            return {"status": "error", "message": "Spotify is not configured."}
+        try:
+            from rapidfuzz import fuzz
+            result = self.sp.devices()
+            if not result or not result.get("devices"):
+                return {"status": "error", "message": "No Spotify devices found."}
+
+            devices = result["devices"]
+            target = None
+
+            # Try numeric match: "device 2", "number 1", just "2"
+            num_match = re.search(r"(\d+)", device)
+            if num_match:
+                idx = int(num_match.group(1)) - 1  # 1-indexed
+                if 0 <= idx < len(devices):
+                    target = devices[idx]
+
+            # Fuzzy name match
+            if not target:
+                best_score, best_device = 0, None
+                for d in devices:
+                    score = fuzz.partial_ratio(device.lower(), d["name"].lower())
+                    if score > best_score:
+                        best_score = score
+                        best_device = d
+                if best_score >= 60:
+                    target = best_device
+
+            if not target:
+                names = ", ".join(d["name"] for d in devices)
+                return {"status": "error", "message": f"No device matching '{device}'. Available: {names}"}
+
+            self.sp.transfer_playback(target["id"], force_play=True)
+            logger.info(f"[Music] Switched playback to {target['name']}")
+            return {"status": "success", "message": f"Switched playback to {target['name']}."}
+
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     def list_devices(self) -> dict:
         """List available Spotify playback devices."""
         if not self.sp:
@@ -384,11 +518,13 @@ class MusicPlayer(RunnableMCPPlugin):
                 return {"status": "error", "message": "No Spotify devices found. Open Spotify on a device first."}
             devices = [
                 {
+                    "id": d.get("id", ""),
                     "name": d.get("name", "Unknown"),
                     "type": d.get("type", "Unknown"),
                     "active": d.get("is_active", False),
+                    "number": i + 1,
                 }
-                for d in result["devices"]
+                for i, d in enumerate(result["devices"])
             ]
             return {"status": "success", "devices": devices}
         except Exception as e:

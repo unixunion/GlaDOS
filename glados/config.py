@@ -155,6 +155,7 @@ class GladosConfig:
     interrupt_on_wakeword: bool = False
     hardware_echo_cancellation: bool = False
     display_port: int = 5001
+    display_ssl: bool = False  # Enable HTTPS with self-signed cert
     thinking_enabled: bool = False
     max_context_messages: int = 20
     music_dir: Optional[str] = None

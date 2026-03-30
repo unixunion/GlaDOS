@@ -2,27 +2,33 @@
   "locations": [
     {
       "id": "fridge",
-      "name": "Fridge"
+      "name": "Fridge",
+      "type": "fridge"
     },
     {
       "id": "freezer-1",
-      "name": "Freezer Drawer 1"
+      "name": "Freezer Drawer 1",
+      "type": "freezer"
     },
     {
       "id": "freezer-2",
-      "name": "Freezer Drawer 2"
+      "name": "Freezer Drawer 2",
+      "type": "freezer"
     },
     {
       "id": "freezer-3",
-      "name": "Freezer Drawer 3"
+      "name": "Freezer Drawer 3",
+      "type": "freezer"
     },
     {
       "id": "dry-goods",
-      "name": "Dry Goods Cupboard"
+      "name": "Dry Goods Cupboard",
+      "type": "room_temp"
     },
     {
       "id": "spices",
-      "name": "Spices"
+      "name": "Spices",
+      "type": "room_temp"
     }
   ],
   "items": [
@@ -31,17 +37,19 @@
       "name": "chicken cuts",
       "location_id": "fridge",
       "stored": "2026-03-28T15:51:30",
-      "expires": null,
+      "expires": "2026-04-01",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "c01f7b83",
       "name": "saussage",
       "location_id": "fridge",
       "stored": "2026-03-28T15:51:34",
-      "expires": null,
-      "notes": null
+      "expires": "2026-04-01",
+      "notes": null,
+      "expiry_source": "estimated"
     },
     {
       "id": "19808060",
@@ -50,106 +58,118 @@
       "stored": "2026-03-28T15:51:37",
       "expires": "2026-04-03",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "user"
     },
     {
       "id": "3a1ebfb0",
       "name": "garlic",
       "location_id": "fridge",
       "stored": "2026-03-28T15:51:58",
-      "expires": null,
+      "expires": "2026-04-05",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "71cd740a",
       "name": "lettuce",
       "location_id": "fridge",
       "stored": "2026-03-28T15:52:02",
-      "expires": null,
+      "expires": "2026-04-05",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "6f8e2767",
       "name": "eggs",
       "location_id": "fridge",
       "stored": "2026-03-28T15:52:07",
-      "expires": null,
+      "expires": "2026-04-08",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "6007ce92",
       "name": "wraps",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:52:13",
-      "expires": null,
+      "expires": "2026-04-02",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "42195fd8",
       "name": "flour",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:52:16",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "89aa4dd0",
       "name": "sugar",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:52:18",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "1cb826f2",
       "name": "cornflour",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:52:23",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "bd497066",
       "name": "baking powder",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:52:28",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "e13a5cbe",
       "name": "bicarbonate of soda",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:52:35",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "64e80f03",
       "name": "sunflower seeds",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:52:42",
-      "expires": null,
+      "expires": "2026-04-28",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "f3cbf55b",
       "name": "pumpkin seeds",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:52:50",
-      "expires": null,
+      "expires": "2026-04-28",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "27e4fbe5",
@@ -158,124 +178,138 @@
       "stored": "2026-03-28T15:52:53",
       "expires": null,
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": null
     },
     {
       "id": "cf94da43",
       "name": "ketchup",
       "location_id": "fridge",
       "stored": "2026-03-28T15:52:59",
-      "expires": null,
+      "expires": "2026-09-25",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "321599ef",
       "name": "mustard",
       "location_id": "fridge",
       "stored": "2026-03-28T15:53:05",
-      "expires": null,
+      "expires": "2026-09-25",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "87f5c2d3",
       "name": "onion",
       "location_id": "fridge",
       "stored": "2026-03-28T15:53:16",
-      "expires": null,
+      "expires": "2026-04-05",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "9fc87ccd",
       "name": "yoghurt",
       "location_id": "fridge",
       "stored": "2026-03-28T15:53:21",
-      "expires": null,
+      "expires": "2026-04-08",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "b111fe1f",
       "name": "chicken breast",
       "location_id": "freezer-1",
       "stored": "2026-03-28T15:53:29",
-      "expires": null,
+      "expires": "2026-09-25",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "5fc2909c",
       "name": "bread",
       "location_id": "freezer-1",
       "stored": "2026-03-28T15:53:33",
-      "expires": null,
+      "expires": "2026-06-27",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "2a79a6db",
       "name": "eel food",
       "location_id": "freezer-3",
       "stored": "2026-03-28T15:53:38",
-      "expires": null,
+      "expires": "2026-06-27",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "973a76d8",
       "name": "ice cream",
       "location_id": "freezer-3",
       "stored": "2026-03-28T15:53:44",
-      "expires": null,
+      "expires": "2026-06-27",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "3ebe3b87",
       "name": "whole pealed tomatoes canned",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:55:03",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "044b03cb",
       "name": "spaghetti",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:55:10",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "56c5da42",
       "name": "tagliatelle",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:55:19",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "a4fb20ab",
       "name": "lasagne tiles",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:55:25",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "a2b49e04",
       "name": "noodles",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:55:38",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "e490bbc9",
@@ -284,7 +318,8 @@
       "stored": "2026-03-28T15:57:19",
       "expires": null,
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": null
     },
     {
       "id": "a6487e0a",
@@ -293,79 +328,89 @@
       "stored": "2026-03-28T15:57:22",
       "expires": null,
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "user"
     },
     {
       "id": "72426e17",
       "name": "paprika",
       "location_id": "spices",
       "stored": "2026-03-28T15:57:25",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "b12dd511",
       "name": "smoked paprika",
       "location_id": "spices",
       "stored": "2026-03-28T15:57:28",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "e8956854",
       "name": "cayenne pepper",
       "location_id": "spices",
       "stored": "2026-03-28T15:58:03",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "ebad343d",
       "name": "thyme",
       "location_id": "spices",
       "stored": "2026-03-28T15:58:10",
-      "expires": null,
+      "expires": "2027-03-29",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "3d205551",
       "name": "mince",
       "location_id": "fridge",
       "stored": "2026-03-28T16:33:27",
-      "expires": null,
+      "expires": "2026-04-01",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "a5399995",
       "name": "bread",
       "location_id": "dry-goods",
       "stored": "2026-03-29T11:56:08",
-      "expires": null,
+      "expires": "2026-04-02",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "cd8ab151",
       "name": "burger patties",
       "location_id": "freezer-2",
       "stored": "2026-03-29T11:56:22",
-      "expires": null,
+      "expires": "2026-06-27",
       "notes": null,
-      "item_type": "ingredient"
+      "item_type": "ingredient",
+      "expiry_source": "estimated"
     },
     {
       "id": "2e2eab5c",
       "name": "lasagna",
       "location_id": "freezer-3",
       "stored": "2026-03-29T14:59:39",
-      "expires": null,
+      "expires": "2026-06-27",
       "notes": "2 portions",
-      "item_type": "ready_meal"
+      "item_type": "ready_meal",
+      "expiry_source": "estimated"
     }
-  ]
+  ],
+  "shelf_life_config": {}
 }

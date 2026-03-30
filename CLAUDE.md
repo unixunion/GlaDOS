@@ -32,25 +32,33 @@ glados/                    # Core application code
 
 plugins/                   # Auto-discovered plugins (walked recursively on startup)
   basic/                   # clock, timers, alarms, unit converter
-  recipes/                 # Recipe search and selection (13.5K recipes with images, fuzzy ingredient matching)
-  pantry/                  # Shopping list + pantry inventory, expiry tracking, recipe integration
+    views/                 # Timer display view (timer.js)
+  recipes/                 # Recipe search and selection (13.5K recipes with images)
+    views/                 # Recipe display views (recipe.js)
+  pantry/                  # Shopping list + pantry inventory, expiry tracking
+    views/                 # Pantry + shopping display views (pantry.js, shopping.js)
   music/                   # Spotify playback control
-  display/                 # Flask+SocketIO web display for iPad/browser
+  display/                 # Flask+SocketIO web display framework
+    templates/display.html # Framework shell only (~370 lines) — no plugin view code
+    static/display.css     # All CSS (extracted from HTML)
+    views/                 # Built-in views (info.js, settings.js)
   chores/                  # Vacuum control
   vision/                  # Camera/vision model integration (POC)
-  system/                  # list_plugins, get_logs, loop_guard
-  cores/                   # personality cores (sarcasm, memory, three laws, neurotoxin, personality quips)
+  system/                  # list_plugins, get_logs, loop_guard, log_analyzer
+  cores/                   # personality cores (sarcasm, memory, three laws, personality quips)
   knowledge/               # RAG retrieval plugin (Qdrant)
 
 models/                    # TTS model files (glados.onnx, kokoro-82m-onnx/)
 data/recipes/              # Recipe dataset CSV + images (data/recipes/img/Food Images/)
 data/memory_db/            # ChromaDB persistent storage (auto-created)
 data/glados_quotes/        # Themed GLaDOS personality quotes for PersonalityCore
-plugin_data/pantry/        # Shopping list + pantry JSON persistence
+plugin_data/               # Plugin persistence (pantry JSON, timer JSON, log reports)
+docs/wiki/                 # Wiki documentation (served in-app + browsable on GitHub)
 tools/                     # Offline utilities (ingest_zim.py for Qdrant ingestion)
-tests/                     # NLP test suite, model benchmarks
+tests/                     # NLP tests, pantry tests, model benchmarks, knowledge benchmarks
 glados_config.yml          # All runtime configuration
 main.py                    # Entry point — wires everything together
+Makefile                   # Test runner commands (make test, make test-all, etc.)
 ```
 
 ## Architecture Patterns
@@ -90,6 +98,8 @@ The memory system in `glados/llm/memory/store.py` uses ChromaDB PersistentClient
 | LLM tool | `self.register_tool()` | Editing `chat_client.py` |
 | System prompt | `self.register_system_prompt()` | Editing system prompts elsewhere |
 | Chat pipeline hook | `self.register_chat_hook()` | Modifying `chat()` directly |
+| Display view (full screen) | `self.register_view()` + JS file in `plugin/views/` | Editing `display.html` |
+| Dashboard card | `self.register_view(..., dashboard_card=True)` + `renderCard()` in JS | Editing `display.html` |
 | Display UI action (button, form) | `self.register_ui_action()` | Adding SocketIO handlers to `display_server.py` |
 | NLP intents | `intents=` param on `register_tool()` | Editing `intent_classifier.py` |
 | Event handling | `self.event_system.subscribe()` | Modifying event publishers |
@@ -111,6 +121,38 @@ Frontend emits directly to the plugin's event — no `user_message` → NLP → 
 socket.emit('my_action', { action: 'do_thing', param: 'value' });
 ```
 
+### Display View Pattern
+
+Plugins provide their own display views as JS files loaded dynamically at runtime. **Never edit `display.html` to add plugin views.**
+
+```python
+# In plugin __init__ or start():
+self.register_view(
+    view_type="my_view",                      # matches EventMessage name
+    js_path="plugins/my_plugin/views/my.js",  # JS renderer module
+    css_path="plugins/my_plugin/views/my.css", # optional CSS
+    dashboard_card=True,                       # provides a dashboard card
+)
+```
+
+The JS file registers on `GlaDOS.views`:
+```javascript
+// plugins/my_plugin/views/my.js
+GlaDOS.views.my_view = {
+    render(container, data) { container.innerHTML = `...`; },      // full-screen view
+    renderCard(container) { container.innerHTML = `...`; },        // dashboard card (optional)
+};
+```
+
+Framework APIs available in view JS: `GlaDOS.esc(str)`, `GlaDOS.dashboardData`, `socket` (SocketIO).
+
+File layout: `plugins/<name>/views/<name>.js` (and optional `.css`).
+
+Push data to the view:
+```python
+self.event_system.publish(EventMessage(role="display", name="my_view", content={...}, process_output=False))
+```
+
 ### When to use LLM vs. direct action
 
 - **UI button/form** → `register_ui_action()` (direct, instant)
@@ -129,7 +171,9 @@ python main.py
 python main.py --no-speech
 
 # Run tests
-pytest tests/
+make test                     # fast unit tests
+make test-all                 # unit + browser tests
+make test-knowledge           # knowledge RAG benchmark (needs Qdrant)
 ```
 
 ## Notes

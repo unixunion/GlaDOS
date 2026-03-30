@@ -41,6 +41,13 @@ Untested — contributions welcome.
    ./start_ubuntu.sh
    ```
 
+## Post-Install (All Platforms)
+
+Download OpenWakeWord preprocessor models (required for wake word detection):
+```bash
+python3 -c "import openwakeword; openwakeword.utils.download_models()"
+```
+
 ## Running Modes
 
 | Command | Input | Output | Audio HW |
@@ -67,6 +74,9 @@ pip install -r requirements_rpi.txt
 
 # OR: with cloud LLM support (Anthropic Claude, remote LM Studio)
 pip install -r requirements_rpi_llm.txt
+
+# Download OpenWakeWord preprocessor models (required, ~2MB)
+python3 -c "import openwakeword; openwakeword.utils.download_models()"
 
 # Edit glados_config.yml:
 #   nlp_mode: true              # for NLP-only

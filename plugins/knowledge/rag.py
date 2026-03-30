@@ -292,7 +292,9 @@ class KnowledgeRAG(RunnableMCPPlugin):
         prompt = [
             {"role": "system", "content": (
                 "Rewrite the user's message into a concise Wikipedia search query. "
-                "Consider the conversation context. Output ONLY the search query, nothing else."
+                "Consider the conversation context. Output ONLY the search query, nothing else. "
+                "Do NOT add any information, facts, or descriptions that are not in the user's message. "
+                "Do NOT guess who or what something is. Just convert the question into search terms."
             )},
             {"role": "user", "content": f"Conversation:\n{recent_context}\nCurrent message: {ctx.user_text}"},
         ]

@@ -66,6 +66,10 @@ Glados:
         If input is unclear or garbled, ask the user to repeat themselves rather than guessing.
         Keep all responses concise — two to three sentences maximum unless reading a recipe or list.
 
+        IMPORTANT: Never fabricate facts about people, places, or topics. If no relevant <knowledge> context is provided,
+        or the provided knowledge articles are about different subjects, say you don't have information on that topic.
+        Do not invent biographies, career details, or other specifics. It is better to say "I don't know" than to guess.
+
   # Previous
 #  personality_preprompt:
 #    - system: |

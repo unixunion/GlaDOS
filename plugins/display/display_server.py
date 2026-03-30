@@ -58,6 +58,90 @@ class DisplayPlugin(RunnablePlugin):
         def shopping_mobile():
             return render_template("shopping_mobile.html")
 
+        def _load_spotify_env():
+            """Load Spotify credentials from .env if not already in environment."""
+            if not os.environ.get("SPOTIFY_CLIENT_ID"):
+                env_path = os.path.join(os.getcwd(), ".env")
+                if os.path.exists(env_path):
+                    with open(env_path) as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith("#") and "=" in line:
+                                key, _, value = line.partition("=")
+                                os.environ[key.strip()] = value.strip().strip('"').strip("'")
+
+        @self._flask_app.route("/spotify/auth")
+        def spotify_auth():
+            """Start Spotify OAuth flow — redirects to Spotify login."""
+            try:
+                import spotipy
+                from spotipy.oauth2 import SpotifyOAuth
+            except ImportError:
+                return "spotipy not installed. Run: pip install spotipy", 500
+
+            _load_spotify_env()
+            client_id = os.environ.get("SPOTIFY_CLIENT_ID", "")
+            client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+            if not client_id or not client_secret:
+                return ("<h2>Spotify credentials not set</h2>"
+                        "<p>Set <code>SPOTIFY_CLIENT_ID</code> and <code>SPOTIFY_CLIENT_SECRET</code> "
+                        "environment variables (or in <code>.env</code>).</p>"
+                        "<p>Get them from <a href='https://developer.spotify.com/dashboard'>Spotify Developer Dashboard</a>.</p>"
+                        "<p>Add redirect URI: <code>http://127.0.0.1:5001/spotify/callback</code></p>"), 400
+
+            auth_manager = SpotifyOAuth(
+                client_id=client_id,
+                client_secret=client_secret,
+                redirect_uri=os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:5001/spotify/callback"),
+                scope="user-modify-playback-state user-read-playback-state user-read-currently-playing",
+                cache_path=os.path.join(os.getcwd(), ".spotify_cache"),
+                open_browser=False,
+            )
+            auth_url = auth_manager.get_authorize_url()
+            from flask import redirect
+            return redirect(auth_url)
+
+        @self._flask_app.route("/spotify/callback")
+        def spotify_callback():
+            """Handle Spotify OAuth callback — saves token and shows result."""
+            from flask import request
+            try:
+                import spotipy
+                from spotipy.oauth2 import SpotifyOAuth
+            except ImportError:
+                return "spotipy not installed", 500
+
+            _load_spotify_env()
+            code = request.args.get("code")
+            if not code:
+                return "<h2>Error</h2><p>No authorization code received.</p>", 400
+
+            auth_manager = SpotifyOAuth(
+                client_id=os.environ.get("SPOTIFY_CLIENT_ID", ""),
+                client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET", ""),
+                redirect_uri=os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:5001/spotify/callback"),
+                scope="user-modify-playback-state user-read-playback-state user-read-currently-playing",
+                cache_path=os.path.join(os.getcwd(), ".spotify_cache"),
+                open_browser=False,
+            )
+            try:
+                auth_manager.get_access_token(code)
+                sp = spotipy.Spotify(auth_manager=auth_manager)
+                devices = sp.devices().get("devices", [])
+                device_html = "".join(
+                    f"<li>{d['name']} ({d['type']}) {'<b>[ACTIVE]</b>' if d['is_active'] else ''}</li>"
+                    for d in devices
+                ) or "<li>No devices found — open Spotify on a device</li>"
+
+                logger.success("[Spotify] OAuth token saved successfully")
+                return (f"<h2>Spotify Connected!</h2>"
+                        f"<p>Token saved. Restart GlaDOS or the music plugin will pick it up.</p>"
+                        f"<h3>Devices</h3><ul>{device_html}</ul>"
+                        f"<p><a href='/'>Back to GlaDOS</a></p>")
+            except Exception as e:
+                logger.error(f"[Spotify] OAuth callback failed: {e}")
+                return f"<h2>Authentication Failed</h2><p>{e}</p><p><a href='/spotify/auth'>Try Again</a></p>", 500
+
         @self._flask_app.route("/images/<path:filename>")
         def serve_image(filename):
             images_dir = os.path.join(os.getcwd(), "glados_ui", "images")
@@ -296,20 +380,52 @@ class DisplayPlugin(RunnablePlugin):
         if self._worker_thread and self._worker_thread.is_alive():
             return
 
-        # Register the built-in info view
+        # Register built-in views
         plugin_manager.register_view("info", "plugins/display/views/info.js")
+        plugin_manager.register_view("settings", "plugins/display/views/settings.js",
+                                     css_path="plugins/display/views/settings.css",
+                                     dashboard_card=True)
 
-        # Auto-register plugin UI actions as SocketIO event handlers
+        # Settings action handler
+        plugin_manager.register_ui_action("settings_action", self._on_settings_action)
+
+        # Register known plugin UI actions as SocketIO event handlers
         ui_actions = plugin_manager.get_ui_actions()
+        registered_actions = set()
         for action_name in ui_actions:
-            # Create a SocketIO handler for each registered UI action
             def make_handler(name):
                 @self._socketio.on(name)
                 def handler(data):
                     logger.info(f"[Display] Plugin UI action: {name}: {data}")
                     self.event_system.publish(EventMessage("ui", name, data))
             make_handler(action_name)
+            registered_actions.add(action_name)
             logger.info(f"[Display] Registered SocketIO handler for plugin UI action: {action_name}")
+
+        # Late-registered actions: plugins that register UI actions in start()
+        # (after the display server loop above) need a way to get wired up.
+        # Re-check periodically and register any new ones.
+        def _wire_late_actions(event):
+            for name in plugin_manager.get_ui_actions():
+                if name not in registered_actions:
+                    def make_late_handler(n):
+                        @self._socketio.on(n)
+                        def handler(data):
+                            logger.info(f"[Display] Plugin UI action: {n}: {data}")
+                            self.event_system.publish(EventMessage("ui", n, data))
+                    make_late_handler(name)
+                    registered_actions.add(name)
+                    logger.info(f"[Display] Late-registered SocketIO handler: {name}")
+        self.event_system.subscribe(
+            "system.tick",
+            EventHook("display_late_actions", callback=_wire_late_actions, priority=99)
+        )
+
+        # Subscribe to settings UI action
+        self.event_system.subscribe(
+            "ui.settings_action",
+            EventHook("settings_ui", callback=self._on_settings_action, priority=5)
+        )
 
         # Subscribe to display events, status events, and tick
         self.event_system.subscribe(
@@ -332,13 +448,109 @@ class DisplayPlugin(RunnablePlugin):
         )
 
         def run_flask():
-            logger.info("Starting display server on port 5001...")
+            from glados.config import GladosConfig
+            try:
+                config = GladosConfig.from_yaml("glados_config.yml")
+                use_ssl = getattr(config, 'display_ssl', False)
+            except Exception:
+                use_ssl = False
+
+            if use_ssl:
+                logger.info("Starting display server on port 5001 (HTTPS)...")
+                import ssl
+                ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                cert_path = os.path.join(os.path.dirname(__file__), "cert.pem")
+                key_path = os.path.join(os.path.dirname(__file__), "key.pem")
+                if not os.path.exists(cert_path):
+                    logger.info("Generating self-signed SSL certificate...")
+                    try:
+                        import subprocess
+                        subprocess.run([
+                            "openssl", "req", "-x509", "-newkey", "rsa:2048",
+                            "-keyout", key_path, "-out", cert_path,
+                            "-days", "3650", "-nodes",
+                            "-subj", "/CN=GlaDOS/O=Aperture Science",
+                            "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:0.0.0.0",
+                        ], check=True, capture_output=True)
+                    except Exception as e:
+                        logger.warning(f"Could not generate SSL cert: {e}. Falling back to HTTP.")
+                        use_ssl = False
+                if use_ssl:
+                    ctx.load_cert_chain(cert_path, key_path)
+                    self._socketio.run(self._flask_app, host="0.0.0.0", port=5001, allow_unsafe_werkzeug=True, ssl_context=ctx)
+                    return
+
+            logger.info("Starting display server on port 5001 (HTTP)...")
             self._socketio.run(self._flask_app, host="0.0.0.0", port=5001, allow_unsafe_werkzeug=True)
 
         self._stop_event.clear()
         self._worker_thread = threading.Thread(target=run_flask, daemon=True)
         self._worker_thread.start()
         logger.success("DisplayPlugin started on port 5001!")
+
+    def _on_settings_action(self, event):
+        """Handle settings UI actions — gather system info and push to display."""
+        data = event.content if isinstance(event.content, dict) else {}
+        action = data.get("action")
+
+        if action == "show":
+            from glados.config import GladosConfig
+            try:
+                config = GladosConfig.from_yaml("glados_config.yml")
+            except Exception:
+                config = None
+
+            # Check Spotify status
+            spotify_info = {"connected": False}
+            try:
+                import spotipy
+                cache_path = os.path.join(os.getcwd(), ".spotify_cache")
+                if os.path.exists(cache_path):
+                    from spotipy.oauth2 import SpotifyOAuth
+                    sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+                        client_id=os.environ.get("SPOTIFY_CLIENT_ID", ""),
+                        client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET", ""),
+                        redirect_uri="http://127.0.0.1:5001/spotify/callback",
+                        scope="user-read-playback-state",
+                        cache_path=cache_path,
+                        open_browser=False,
+                    ))
+                    playback = sp.current_playback()
+                    spotify_info["connected"] = True
+                    if playback and playback.get("device"):
+                        spotify_info["device"] = playback["device"]["name"]
+            except Exception:
+                pass
+
+            # System info
+            system_info = {}
+            if config:
+                system_info = {
+                    "model": getattr(config, "model", ""),
+                    "client_type": getattr(config, "client_type", ""),
+                    "nlp_mode": getattr(config, "nlp_mode", False),
+                    "voice_core": getattr(config, "voice_core", ""),
+                    "knowledge_enabled": getattr(config, "knowledge_enabled", False),
+                    "memory_enabled": getattr(config, "memory_enabled", False),
+                    "tts_fade_ms": getattr(config, "tts_fade_ms", 10),
+                    "plugin_count": len(plugin_manager.plugins),
+                }
+                # Knowledge point count
+                if system_info["knowledge_enabled"]:
+                    try:
+                        from qdrant_client import QdrantClient
+                        qc = QdrantClient(url=getattr(config, "qdrant_url", "http://localhost:6333"), timeout=2)
+                        for coll in (getattr(config, "knowledge_collections", None) or []):
+                            info = qc.get_collection(coll)
+                            system_info["knowledge_points"] = info.points_count
+                    except Exception:
+                        system_info["knowledge_points"] = "?"
+
+            self.event_system.publish(EventMessage(
+                role="display", name="settings",
+                content={"spotify": spotify_info, "system": system_info},
+                process_output=False,
+            ))
 
     def stop(self):
         logger.info("Stopping DisplayPlugin...")

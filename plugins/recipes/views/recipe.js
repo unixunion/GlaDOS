@@ -41,23 +41,59 @@ GlaDOS.views.recipe = {
 GlaDOS.views.recipe_search = {
     render(container, data) {
         const results = data.results || [];
+        const readyMeals = data.ready_meals || [];
         const query = data.query || '';
-        if (!results.length) {
-            container.innerHTML = `<div class="view-title">No recipes found for "${GlaDOS.esc(query)}"</div>`;
-            return;
-        }
-        const items = results.map(r => {
-            const img = r.image_name
-                ? `<img class="rs-thumb" src="/recipe-images/${encodeURIComponent(r.image_name)}.jpg" onerror="this.style.display='none'">`
-                : '<div class="rs-thumb-placeholder">&#127859;</div>';
-            return `<div class="rs-item" onclick="socket.emit('recipe_action',{action:'select',recipe_name:'${GlaDOS.esc(r.title).replace(/'/g, "\\'")}'})">
-                ${img}
-                <div class="rs-info">
-                    <div class="rs-title">${GlaDOS.esc(r.title)}</div>
-                    <div class="rs-meta">${r.ingredient_count || '?'} ingredients</div>
-                </div>
+        let html = `<div class="view-title">${GlaDOS.esc(data.title || 'Recipe Search')}</div>`;
+
+        // Ready meals section — complete dishes ready to eat/heat
+        if (readyMeals.length) {
+            const mealItems = readyMeals.map(m => {
+                let meta = GlaDOS.esc(m.location || '');
+                if (m.expires) {
+                    const ed = new Date(m.expires + 'T00:00:00'), td = new Date(); td.setHours(0,0,0,0);
+                    const dl = Math.floor((ed - td) / 86400000);
+                    const label = dl < 0 ? 'expired' : dl === 0 ? 'today' : dl === 1 ? 'tomorrow' : dl + 'd';
+                    const cls = dl <= 0 ? ' rm-exp-urgent' : dl <= 3 ? ' rm-exp-soon' : '';
+                    meta += ` &mdash; <span class="rm-expiry${cls}">${label}</span>`;
+                }
+                return `<div class="rm-item">
+                    <span class="rm-icon">&#127373;</span>
+                    <div class="rm-info">
+                        <div class="rm-name">${GlaDOS.esc(m.name)}</div>
+                        <div class="rm-meta">${meta}</div>
+                    </div>
+                </div>`;
+            }).join('');
+            html += `<div class="rm-section">
+                <div class="rm-section-title">&#127860; Ready to Eat</div>
+                <div class="rm-list">${mealItems}</div>
             </div>`;
-        }).join('');
-        container.innerHTML = `<div class="view-title">${GlaDOS.esc(data.title || 'Recipe Search')}</div><div class="rs-list">${items}</div>`;
+        }
+
+        // Recipe suggestions section
+        if (results.length) {
+            const items = results.map(r => {
+                const img = r.image_name
+                    ? `<img class="rs-thumb" src="/recipe-images/${encodeURIComponent(r.image_name)}.jpg" onerror="this.style.display='none'">`
+                    : '<div class="rs-thumb-placeholder">&#127859;</div>';
+                return `<div class="rs-item" onclick="socket.emit('recipe_action',{action:'select',recipe_name:'${GlaDOS.esc(r.title).replace(/'/g, "\\'")}'})">
+                    ${img}
+                    <div class="rs-info">
+                        <div class="rs-title">${GlaDOS.esc(r.title)}</div>
+                        <div class="rs-meta">${r.ingredient_count || '?'} ingredients</div>
+                    </div>
+                </div>`;
+            }).join('');
+            if (readyMeals.length) {
+                html += `<div class="rm-section-title" style="margin-top:16px">&#127859; Recipes You Can Make</div>`;
+            }
+            html += `<div class="rs-list">${items}</div>`;
+        }
+
+        if (!results.length && !readyMeals.length) {
+            html = `<div class="view-title">No recipes found for "${GlaDOS.esc(query)}"</div>`;
+        }
+
+        container.innerHTML = html;
     }
 };

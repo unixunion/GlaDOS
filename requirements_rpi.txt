@@ -45,6 +45,9 @@ cffi>=1.17.1
 pycparser>=2.22
 tqdm>=4.67.1
 soundfile>=0.13.0
+mcp
+langchain-core
+dataclasses-json
 
 # ── NOT included (saves ~2GB+ on RPi) ────────────
 # torch                        # Only needed for Whisper large models

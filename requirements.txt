@@ -54,6 +54,7 @@ adaptfilt>=0.3
 dateparser>=1.2.0
 pydub>=0.25.1
 fuzzywuzzy>=0.18.0
+spotipy>=2.23.0
 flask>=3.1.0
 flask-socketio>=5.5.1
 pillow>=10.2.0

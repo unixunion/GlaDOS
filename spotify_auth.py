@@ -1,10 +1,17 @@
-"""Run this script to authenticate with Spotify. Only needed once — the token is cached.
+"""Standalone Spotify auth script (alternative to the web UI method).
+
+Preferred method: Open http://localhost:5001/spotify/auth in a browser while GlaDOS is running.
+
+This script is for headless setups or when GlaDOS isn't running.
 
 Setup:
 1. Go to https://developer.spotify.com/dashboard
 2. Create an app (or use existing)
-3. Add redirect URI: http://127.0.0.1:8888/callback  (http, NOT https)
-4. Run this script — it starts a local server, opens browser, catches the callback automatically
+3. Add BOTH redirect URIs:
+   - http://localhost:5001/spotify/callback  (for web UI auth)
+   - http://127.0.0.1:8888/callback          (for this script)
+4. Set env vars: SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET
+5. Run this script
 """
 import os
 import sys
@@ -22,7 +29,7 @@ if not CLIENT_ID or not CLIENT_SECRET:
     print("Set SPOTIPY_CLIENT_ID and SPOTIPY_CLIENT_SECRET environment variables.")
     print("Get them from https://developer.spotify.com/dashboard")
     sys.exit(1)
-REDIRECT_URI = "https://127.0.0.1:8888/callback"
+REDIRECT_URI = "http://127.0.0.1:5001/spotify/callback"
 SCOPE = "user-modify-playback-state user-read-playback-state user-read-currently-playing"
 CACHE_PATH = ".spotify_cache"
 

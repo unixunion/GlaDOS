@@ -126,6 +126,7 @@
         function requestDashboardData() {
             socket.emit('shopping_list_action', { action: 'get_state' });
             socket.emit('pantry_action', { action: 'get_summary' });
+            socket.emit('music_action', { action: 'get_state' });
         }
 
         // ── Navigation ─────────────────────────────────
@@ -196,10 +197,12 @@
 
         // ── Dashboard ──────────────────────────────────
         function updateDashboardData(data) {
-            if (data.shopping) dashboardData.shopping = data.shopping;
-            if (data.pantry) dashboardData.pantry = data.pantry;
-            if (data.timers) dashboardData.timers = data.timers;
-            if (data.recipes) dashboardData.recipes = data.recipes;
+            // Merge any keys from the incoming data into dashboardData
+            for (const key of Object.keys(data)) {
+                if (key !== 'view_type' && typeof data[key] === 'object' && data[key] !== null) {
+                    dashboardData[key] = data[key];
+                }
+            }
             // Also update from shopping_list view_type
             if (data.view_type === 'shopping_list' && data.items) {
                 dashboardData.shopping = { count: data.items.length, got: data.items.filter(i => i.got).length };
@@ -209,7 +212,7 @@
 
         // ── Dashboard — auto-populates cards from registered views ──
         // Card order preference (views not listed here appear at the end)
-        const _cardOrder = ['shopping_list', 'pantry', 'recipe', 'timer'];
+        const _cardOrder = ['shopping_list', 'pantry', 'recipe', 'timer', 'music', 'settings'];
 
         function renderDashboard() {
             // Wait for view modules to load before rendering cards
@@ -280,10 +283,11 @@
 
         let lastResponseHadKnowledge = false;
         let lastResponseHadTool = false;
+        let lastKnowledgeSources = [];
 
         socket.on('chat_message', (data) => {
             const role = data.role || 'system';
-            if (role === 'user') { finalizeStreaming(); addBubble('user', data.content); lastResponseHadKnowledge = false; lastResponseHadTool = false; }
+            if (role === 'user') { finalizeStreaming(); addBubble('user', data.content); lastResponseHadKnowledge = false; lastResponseHadTool = false; lastKnowledgeSources = []; }
             else if (role === 'assistant_start') { finalizeStreaming(); currentAssistantBubble = addBubble('assistant', '', true); }
             else if (role === 'assistant_token') {
                 if (!currentAssistantBubble) currentAssistantBubble = addBubble('assistant', '', true);
@@ -291,12 +295,17 @@
             }
             else if (role === 'assistant_end') {
                 if (data.content) { if (!currentAssistantBubble) currentAssistantBubble = addBubble('assistant','',true); const s=currentAssistantBubble.querySelector('.streaming'); if(s) s.textContent=data.content; }
+                if (lastResponseHadKnowledge && lastKnowledgeSources.length && currentAssistantBubble) {
+                    const cite = document.createElement('div'); cite.className = 'bubble-citation';
+                    cite.innerHTML = '&#128218; ' + lastKnowledgeSources.map(s => `<span class="cite-source">${esc(s.title)} <span class="cite-score">${Math.round(s.score*100)}%</span></span>`).join(' ');
+                    currentAssistantBubble.appendChild(cite);
+                }
                 if (!lastResponseHadKnowledge && !lastResponseHadTool && currentAssistantBubble) { const b=document.createElement('div'); b.className='bubble-no-sources'; b.textContent='answered from model \u2014 no knowledge base sources'; currentAssistantBubble.appendChild(b); }
-                lastResponseHadKnowledge=false; lastResponseHadTool=false; finalizeStreaming();
+                lastResponseHadKnowledge=false; lastResponseHadTool=false; lastKnowledgeSources=[]; finalizeStreaming();
             }
             else if (role === 'spoken') {}
             else if (role === 'knowledge_miss') { lastResponseHadKnowledge=false; }
-            else if (role === 'knowledge') { lastResponseHadKnowledge=true; finalizeStreaming(); const src=(data.sources||[]).map(s=>s.title||s.source||'?').join(', '); addCollapsibleBubble('knowledge', src?`&#128218; Knowledge: ${src}`:'&#128218; Knowledge', null, data.content); }
+            else if (role === 'knowledge') { lastResponseHadKnowledge=true; lastKnowledgeSources=(data.sources||[]).map(s=>({title:s.title||'?',source:s.source||'?',score:s.score||0})); finalizeStreaming(); const src=lastKnowledgeSources.map(s=>s.title).join(', '); addCollapsibleBubble('knowledge', src?`&#128218; Knowledge: ${src}`:'&#128218; Knowledge', null, data.content); }
             else if (role === 'thinking') { addCollapsibleBubble('thinking', '&#128173; Thinking', null, data.content); }
             else if (role === 'tool_call') { lastResponseHadTool=true; finalizeStreaming(); const i=data.via==='nlp'?'&#9889;':'&#128295;'; const v=data.via==='nlp'?' (NLP)':''; const a=JSON.stringify(data.args||{}); addCollapsibleBubble(data.via==='nlp'?'nlp-tool':'tool-call', `${i} ${data.tool}${v}${a!=='{}'?'('+a.substring(0,60)+')':''}`, null, data.content||''); }
             else if (role === 'tool_result') { addCollapsibleBubble('tool-result', `&#128203; ${data.tool} result`, null, (data.content||'').substring(0,500)); }

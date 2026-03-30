@@ -167,3 +167,5 @@ cython_debug/
 *.bin
 *.gguf
 *.onnx
+# SSL certs
+*.pem

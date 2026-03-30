@@ -137,6 +137,15 @@ class MemoryCore(RunnableMCPPlugin):
     def stop(self):
         logger.info("MemoryCore plugin stopped")
 
+    def _emit_chat_response(self, intent: str, response: str):
+        """Emit chat events so the display panel shows the memory action and response."""
+        self.event_system.publish(EventMessage("chat", "tool_call", {
+            "role": "tool_call", "tool": f"memory_{intent}", "args": {}, "via": "nlp",
+        }))
+        self.event_system.publish(EventMessage(
+            "chat", "response_complete", {"role": "assistant_end", "content": response}
+        ))
+
     # ---------------------------------------------------------------------------
     # Chat pipeline hook
     # ---------------------------------------------------------------------------
@@ -154,24 +163,30 @@ class MemoryCore(RunnableMCPPlugin):
 
         if intent_type == "debug":
             count = self._store.dump_all()
-            ctx.tts_queue.put(f"Dumped {count} memories to the log.")
+            response = f"Dumped {count} memories to the log."
+            ctx.tts_queue.put(response)
             ctx.tts_queue.put("<EOS>")
+            self._emit_chat_response(intent_type, response)
             ctx.handled = True
             return
 
         if intent_type == "forget_all":
             count = self._store.clear_all()
             logger.info(f"[Memory] Cleared all {count} memories")
-            ctx.tts_queue.put(f"Done. All {count} memories have been cleared.")
+            response = f"Done. All {count} memories have been cleared."
+            ctx.tts_queue.put(response)
             ctx.tts_queue.put("<EOS>")
+            self._emit_chat_response(intent_type, response)
             ctx.handled = True
             return
 
         if intent_type == "remember" and intent_content:
             self._store.store_fact(intent_content, session_id=session_id)
             logger.info(f"[Memory] Stored fact: {intent_content}")
-            ctx.tts_queue.put("Got it, I'll remember that.")
+            response = "Got it, I'll remember that."
+            ctx.tts_queue.put(response)
             ctx.tts_queue.put("<EOS>")
+            self._emit_chat_response(intent_type, response)
             ctx.handled = True
             return
 

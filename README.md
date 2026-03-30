@@ -201,6 +201,9 @@ cd glados
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
+# Download wake word models (required)
+python -c "import openwakeword; openwakeword.utils.download_models()"
+
 # Optional: CUDA PyTorch
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 

@@ -140,7 +140,7 @@
         .dash-clock .time { font-size: 3rem; font-weight: 200; color: #e0e0e0; }
 
         /* ── Full-screen view container ────────────────── */
-        #view-container { display: none; padding: 20px; }
+        #view-container { display: none; padding: 20px; max-width: 66%; margin: 0 auto; }
         #view-container.active { display: block; }
 
         /* ── View shared styles ────────────────────────── */
@@ -168,6 +168,17 @@
         .rs-info { flex: 1; min-width: 0; }
         .rs-title { font-size: 1.05rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .rs-meta { font-size: 0.8rem; color: #888; margin-top: 3px; }
+        .rm-section { margin-bottom: 12px; }
+        .rm-section-title { font-size: 0.95rem; font-weight: 600; color: #ff8c00; margin-bottom: 8px; }
+        .rm-list { display: flex; flex-direction: column; gap: 6px; }
+        .rm-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: rgba(255,140,0,0.08); border: 1px solid rgba(255,140,0,0.2); border-radius: 10px; }
+        .rm-icon { font-size: 1.4rem; flex-shrink: 0; }
+        .rm-info { flex: 1; min-width: 0; }
+        .rm-name { font-size: 1rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rm-meta { font-size: 0.8rem; color: #999; margin-top: 2px; }
+        .rm-expiry { font-weight: 500; }
+        .rm-exp-urgent { color: #ff4444; }
+        .rm-exp-soon { color: #ffaa00; }
         .recipe-section-label { font-size: 0.9rem; font-weight: 600; color: #ff6600; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.05em; }
         .ingredient-list { list-style: disc; padding-left: 24px; }
         .ingredient-list li { margin: 4px 0; color: #ccc; }
@@ -269,6 +280,17 @@
         .pantry-expiry-picker:hover { border-color: #ff6600; }
         .pi-remove { font-size: 0.9rem; color: #555; background: none; border: none; cursor: pointer; padding: 8px; min-width: 40px; min-height: 40px; }
         .pi-remove:hover { color: #e55; }
+        .pi-move { background: #1a1a2e; color: #888; border: 1px solid #333; border-radius: 4px; font-size: 0.7rem; padding: 2px 4px; cursor: pointer; max-width: 50px; }
+        .pi-move:hover { border-color: #ff6600; color: #ccc; }
+        .pi-expiry.estimated { font-style: italic; opacity: 0.7; }
+        .pantry-loc-type { background: #1a1a2e; color: #888; border: 1px solid #333; border-radius: 4px; font-size: 0.7rem; padding: 2px 6px; margin-left: 8px; cursor: pointer; }
+        .pantry-loc-type:hover { border-color: #ff6600; }
+        .sl-table { width: 100%; border-collapse: collapse; }
+        .sl-table th { text-align: left; padding: 6px 8px; color: #888; font-size: 0.8rem; border-bottom: 1px solid #333; }
+        .sl-table td { padding: 4px 8px; border-bottom: 1px solid #222; }
+        .sl-cat { color: #ccc; text-transform: capitalize; font-size: 0.85rem; }
+        .sl-input { width: 60px; background: #1a1a2e; color: #e0e0e0; border: 1px solid #333; border-radius: 4px; padding: 4px 6px; text-align: center; font-size: 0.85rem; }
+        .sl-input:focus { border-color: #ff6600; outline: none; }
         .pantry-empty { color: #555; font-style: italic; padding: 8px 0; font-size: 0.85rem; }
         .pantry-add-item { display: flex; gap: 6px; padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.04); }
         .pantry-add-item input { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px; color: #e0e0e0; font-size: 0.85rem; }
@@ -339,7 +361,10 @@
         .chat-bubble.assistant .streaming { color: #888; }
         .bubble-time { font-size: 0.6rem; color: #555; margin-top: 4px; }
         .bubble-no-sources { font-size: 0.6rem; color: #555; font-style: italic; margin-top: 2px; }
-        .chat-bubble.collapsible { padding: 2px 0; overflow: hidden; margin: 4px 0; }
+        .bubble-citation { font-size: 0.65rem; color: #888; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+        .cite-source { background: rgba(100,149,237,0.12); border: 1px solid rgba(100,149,237,0.25); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+        .cite-score { color: #6a6; font-size: 0.6rem; }
+        .chat-bubble.collapsible { padding: 0; margin: 4px 0; }
         .bubble-header { padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; user-select: none; }
         .bubble-header:hover { filter: brightness(1.2); }
         .bubble-header .toggle { font-size: 0.7rem; transition: transform 0.2s; margin-left: 8px; }
