@@ -9,11 +9,11 @@ GlaDOS.views.pantry = {
         }).join('');
         container.innerHTML = `
             <div class="dash-card-header" onclick="socket.emit('pantry_action',{action:'show'})">
-                <span class="dash-card-icon">&#127968;</span> Pantry
+                <span class="dash-card-icon"><i class="icon-warehouse"></i></span> Pantry
                 <span class="dash-card-badge${(d.expiring||[]).length ? ' urgent' : ''}">${d.count || 0}</span>
             </div>
             <div class="dash-card-body">
-                ${expList || '<span style="color:#555">Nothing expiring</span>'}
+                ${expList || '<span class="text-muted">Nothing expiring</span>'}
             </div>`;
     },
     render(container, data) {
@@ -23,9 +23,9 @@ GlaDOS.views.pantry = {
         const unassignedLoc = locations.find(l => l.id === '_unassigned');
         const unassignedCount = unassignedLoc ? unassignedLoc.items.length : 0;
         let html = '<div class="pantry-toolbar">'
-            + (unassignedCount > 0 ? `<button class="toolbar-highlight" onclick="socket.emit('pantry_action',{action:'show_put_away'})">&#x1F4E6; Put Away (${unassignedCount})</button>` : '')
-            + '<button onclick="socket.emit(\'pantry_action\',{action:\'reclassify\'})">&#x1F3F7; Reclassify All</button>'
-            + '<button onclick="socket.emit(\'pantry_action\',{action:\'get_shelf_life_config\'})">&#x2699; Shelf Life</button>'
+            + (unassignedCount > 0 ? `<button class="toolbar-highlight" onclick="socket.emit('pantry_action',{action:'show_put_away'})"><i class="icon-package"></i> Put Away (${unassignedCount})</button>` : '')
+            + '<button onclick="socket.emit(\'pantry_action\',{action:\'reclassify\'})"><i class="icon-tag"></i> Reclassify All</button>'
+            + '<button onclick="socket.emit(\'pantry_action\',{action:\'get_shelf_life_config\'})"><i class="icon-settings"></i> Shelf Life</button>'
             + '</div>';
         if (expiring.length) {
             const expItems = expiring.map(i => {
@@ -35,8 +35,8 @@ GlaDOS.views.pantry = {
                 return `<div class="exp-row"><span class="exp-info">${GlaDOS.esc(i.name)} (${GlaDOS.esc(i.location)}) — ${l}</span><button class="exp-btn ${actionCls}" onclick="socket.emit('pantry_action',{action:'remove_item',item_id:'${i.id}'});GlaDOS.views.pantry.toast('Removed ${GlaDOS.esc(i.name).replace(/'/g,"\\'")}')">${actionLabel}</button></div>`;
             }).join('');
             html += `<div class="pantry-expiry-banner">
-                <div class="pantry-expiry-banner-title">&#9888; Expiring Soon
-                    <button class="exp-recipe-btn" onclick="socket.emit('recipe_action',{action:'search_from_pantry',expiring_items:${JSON.stringify(expiring.map(i=>i.name))}})">&#127859; Find Recipes</button>
+                <div class="pantry-expiry-banner-title"><i class="icon-alert-triangle"></i> Expiring Soon
+                    <button class="exp-recipe-btn" onclick="socket.emit('recipe_action',{action:'search_from_pantry',expiring_items:JSON.parse(this.dataset.items)});" data-items='${JSON.stringify(expiring.map(i=>i.name))}'><i class="icon-chef-hat"></i> Find Recipes</button>
                 </div>
                 ${expItems}
             </div>`;
@@ -45,7 +45,7 @@ GlaDOS.views.pantry = {
 
         locations.forEach((loc, idx) => {
             const exp = idx === 0 || loc.items.length > 0 ? ' expanded' : '';
-            const locTypeIcon = loc.type === 'fridge' ? '&#x2744;' : loc.type === 'freezer' ? '&#x1F9CA;' : '&#x1F3E0;';
+            const locTypeIcon = loc.type === 'fridge' ? '<i class="icon-refrigerator"></i>' : loc.type === 'freezer' ? '<i class="icon-snowflake"></i>' : '<i class="icon-warehouse"></i>';
             const locTypeLabel = loc.type === 'fridge' ? 'fridge' : loc.type === 'freezer' ? 'freezer' : 'room temp';
             let itemsHtml = '';
             if (!loc.items.length) { itemsHtml = '<div class="pantry-empty">Empty</div>'; }
@@ -78,8 +78,8 @@ GlaDOS.views.pantry = {
                     const moveOpts = allLocations.filter(l => l.id !== loc.id).map(l =>
                         `<option value="${l.id}">${GlaDOS.esc(l.name)}</option>`
                     ).join('');
-                    const moveHtml = moveOpts ? `<select class="pi-move" onchange="if(this.value){socket.emit('pantry_action',{action:'move_item',item_id:'${item.id}',new_location_id:this.value});GlaDOS.views.pantry.toast('Moved ${GlaDOS.esc(item.name).replace(/'/g,"\\'")}');this.value='';}" title="Move to..."><option value="">&#8594;</option>${moveOpts}</select>` : '';
-                    itemsHtml += `<div class="pantry-item"><span class="pi-name">${GlaDOS.esc(item.name)}</span>${notes}${tagsHtml}${expHtml}${moveHtml}<button class="si-edit" onclick="GlaDOS.views.pantry.editItem('${item.id}','${GlaDOS.esc(item.name).replace(/'/g,"\\'")}','${GlaDOS.esc(item.notes||'').replace(/'/g,"\\'")}')" title="Edit">&#9998;</button><button class="pi-remove" onclick="GlaDOS.views.pantry.removeItem('${item.id}','${GlaDOS.esc(item.name).replace(/'/g,"\\'")}','${loc.id}')" title="Remove">&#10005;</button></div>`;
+                    const moveHtml = moveOpts ? `<select class="pi-move" onchange="if(this.value){socket.emit('pantry_action',{action:'move_item',item_id:'${item.id}',new_location_id:this.value});GlaDOS.views.pantry.toast('Moved ${GlaDOS.esc(item.name).replace(/'/g,"\\'")}');this.value='';}" title="Move to..."><option value="">Move</option>${moveOpts}</select>` : '';
+                    itemsHtml += `<div class="pantry-item"><span class="pi-name">${GlaDOS.esc(item.name)}</span>${notes}${tagsHtml}${expHtml}${moveHtml}<button class="si-edit" onclick="GlaDOS.views.pantry.editItem('${item.id}','${GlaDOS.esc(item.name).replace(/'/g,"\\'")}','${GlaDOS.esc(item.notes||'').replace(/'/g,"\\'")}')" title="Edit"><i class="icon-pencil"></i></button><button class="pi-remove" onclick="GlaDOS.views.pantry.removeItem('${item.id}','${GlaDOS.esc(item.name).replace(/'/g,"\\'")}','${loc.id}')" title="Remove"><i class="icon-x"></i></button></div>`;
                 });
             }
             const addHtml = `<div class="pantry-add-item">
@@ -89,7 +89,7 @@ GlaDOS.views.pantry = {
                 <button onclick="GlaDOS.views.pantry.addItem('${loc.id}')">+</button>
             </div>`;
             // Location type selector
-            const typeSelect = loc.id !== '_unassigned' ? `<select class="pantry-loc-type" onchange="socket.emit('pantry_action',{action:'set_location_type',location_id:'${loc.id}',type:this.value})" onclick="event.stopPropagation()"><option value="fridge"${loc.type==='fridge'?' selected':''}>&#x2744; Fridge</option><option value="freezer"${loc.type==='freezer'?' selected':''}>&#x1F9CA; Freezer</option><option value="room_temp"${loc.type==='room_temp'?' selected':''}>&#x1F3E0; Room Temp</option></select>` : '';
+            const typeSelect = loc.id !== '_unassigned' ? `<select class="pantry-loc-type" onchange="socket.emit('pantry_action',{action:'set_location_type',location_id:'${loc.id}',type:this.value})" onclick="event.stopPropagation()"><option value="fridge"${loc.type==='fridge'?' selected':''}>Fridge</option><option value="freezer"${loc.type==='freezer'?' selected':''}>Freezer</option><option value="room_temp"${loc.type==='room_temp'?' selected':''}>Room Temp</option></select>` : '';
             html += `<div class="pantry-location${exp}">
                 <div class="pantry-loc-header" onclick="this.parentElement.classList.toggle('expanded')"><span class="pantry-loc-name">${locTypeIcon} ${GlaDOS.esc(loc.name)}</span>${typeSelect}<span class="pantry-loc-count">${loc.items.length}</span></div>
                 <div class="pantry-loc-items">${itemsHtml}${addHtml}</div>
@@ -150,7 +150,7 @@ GlaDOS.views.pantry_shelf_life = {
         const config = data.config || {};
         const categories = Object.keys(config).sort();
         const locTypes = ['fridge', 'freezer', 'room_temp'];
-        const locLabels = { fridge: '&#x2744; Fridge', freezer: '&#x1F9CA; Freezer', room_temp: '&#x1F3E0; Room Temp' };
+        const locLabels = { fridge: '<i class="icon-refrigerator"></i> Fridge', freezer: '<i class="icon-snowflake"></i> Freezer', room_temp: '<i class="icon-warehouse"></i> Room Temp' };
         let rows = categories.map(cat => {
             const label = cat.replace(/_/g, ' ');
             const cells = locTypes.map(lt => {
@@ -161,7 +161,7 @@ GlaDOS.views.pantry_shelf_life = {
         }).join('');
         container.innerHTML = `
             <div class="view-title">Shelf Life Defaults (days)</div>
-            <p style="color:#888;font-size:0.8rem;margin-bottom:12px">How long items last in each storage type. Changes apply to new items only.</p>
+            <p class="text-help" style="margin-bottom:12px">How long items last in each storage type. Changes apply to new items only.</p>
             <table class="sl-table">
                 <thead><tr><th>Category</th>${locTypes.map(lt => `<th>${locLabels[lt]}</th>`).join('')}</tr></thead>
                 <tbody>${rows}</tbody>
@@ -194,7 +194,7 @@ GlaDOS.views.pantry_put_away = {
             setTimeout(() => socket.emit('pantry_action', {action: 'show'}), 1500);
             return;
         }
-        const locTypeIcon = t => t === 'fridge' ? '&#x2744;' : t === 'freezer' ? '&#x1F9CA;' : '&#x1F3E0;';
+        const locTypeIcon = t => t === 'fridge' ? '<i class="icon-refrigerator"></i>' : t === 'freezer' ? '<i class="icon-snowflake"></i>' : '<i class="icon-warehouse"></i>';
         const itemCards = items.map(item => {
             const catLabel = (item.category || 'other').replace(/_/g, ' ');
             const typeLabel = item.item_type === 'ready_meal' ? 'meal' : '';
@@ -215,7 +215,7 @@ GlaDOS.views.pantry_put_away = {
         }).join('');
         container.innerHTML = `
             <div class="view-title">Put Away Shopping</div>
-            <p style="color:#888;font-size:0.85rem;margin-bottom:14px">${items.length} item${items.length !== 1 ? 's' : ''} to put away. Suggested locations highlighted.</p>
+            <p class="text-help" style="margin-bottom:14px">${items.length} item${items.length !== 1 ? 's' : ''} to put away. Suggested locations highlighted.</p>
             ${itemCards}
             <div style="margin-top:16px;display:flex;gap:8px">
                 <button class="btn-primary" style="background:#333" onclick="socket.emit('pantry_action',{action:'show'})">Skip &mdash; go to Pantry</button>

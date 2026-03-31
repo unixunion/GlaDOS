@@ -8,6 +8,7 @@
     <meta name="theme-color" content="#ff6600">
     <title>Shopping List</title>
     <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="/static/fonts/lucide.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -178,7 +179,7 @@
 
     <div class="footer-bar">
         <span class="progress" id="progress">0 of 0</span>
-        <button class="done-btn" id="done-btn" onclick="doneShopping()" disabled>Done Shopping &#10004;</button>
+        <button class="done-btn" id="done-btn" onclick="doneShopping()" disabled>Done Shopping <i class="icon-check"></i></button>
     </div>
 
     <script src="/static/socket.io.min.js"></script>
@@ -235,10 +236,10 @@
         // --- Rendering ---
         const categoryOrder = ['produce', 'meat', 'seafood', 'dairy', 'bakery', 'frozen', 'dry_goods', 'beverages', 'condiments', 'spices', 'snacks', 'other'];
         const categoryLabels = {
-            produce: '🥦 Fresh Produce', meat: '🥩 Butchery & Meat', seafood: '🐟 Seafood', dairy: '🥛 Dairy & Eggs',
-            bakery: '🍞 Bakery', frozen: '🧊 Frozen', dry_goods: '🏠 Pantry & Dry Goods',
-            beverages: '🥤 Beverages', condiments: '🧈 Condiments & Sauces', spices: '🧂 Spices',
-            snacks: '🍪 Snacks', other: '🛒 Other'
+            produce: '<i class="icon-carrot"></i> Fresh Produce', meat: '<i class="icon-beef"></i> Butchery & Meat', seafood: '<i class="icon-fish"></i> Seafood', dairy: '<i class="icon-milk"></i> Dairy & Eggs',
+            bakery: '<i class="icon-sandwich"></i> Bakery', frozen: '<i class="icon-snowflake"></i> Frozen', dry_goods: '<i class="icon-warehouse"></i> Pantry & Dry Goods',
+            beverages: '<i class="icon-wine"></i> Beverages', condiments: '<i class="icon-flame"></i> Condiments & Sauces', spices: '<i class="icon-leaf"></i> Spices',
+            snacks: '<i class="icon-cookie"></i> Snacks', other: '<i class="icon-shopping-bag"></i> Other'
         };
 
         function render() {
@@ -250,7 +251,7 @@
             document.getElementById('progress').textContent = `${gotCount} of ${total}`;
             const doneBtn = document.getElementById('done-btn');
             doneBtn.disabled = gotCount === 0;
-            doneBtn.textContent = gotCount > 0 ? `Done Shopping (${gotCount}) \u2714` : 'Done Shopping \u2714';
+            doneBtn.innerHTML = gotCount > 0 ? `Done Shopping (${gotCount}) <i class="icon-check"></i>` : 'Done Shopping <i class="icon-check"></i>';
 
             if (total === 0) {
                 container.innerHTML = '<div class="empty-state">Shopping list is empty</div>';
@@ -268,17 +269,17 @@
             let html = '';
             categoryOrder.forEach(cat => {
                 if (!groups[cat] || groups[cat].length === 0) return;
-                html += `<div class="category-header">${esc(categoryLabels[cat] || cat)}</div>`;
+                html += `<div class="category-header">${categoryLabels[cat] || esc(cat)}</div>`;
                 groups[cat].sort((a, b) => a.name.localeCompare(b.name));
                 groups[cat].forEach(item => {
                     const gotCls = item.got ? ' got' : '';
                     const qty = item.quantity ? `<span class="item-qty">${esc(item.quantity)}</span>` : '';
-                    const rec = item.recurring ? '<span class="item-recurring">&#8635;</span>' : '';
+                    const rec = item.recurring ? '<span class="item-recurring"><i class="icon-repeat"></i></span>' : '';
                     html += `<div class="list-item${gotCls}" onclick="toggleItem('${item.id}')">
                         <div class="check-box"></div>
                         <span class="item-name">${esc(item.name)}</span>
                         ${qty}${rec}
-                        <button class="item-remove" onclick="event.stopPropagation(); removeItem('${item.id}')">&#10005;</button>
+                        <button class="item-remove" onclick="event.stopPropagation(); removeItem('${item.id}')"><i class="icon-x"></i></button>
                     </div>`;
                 });
             });

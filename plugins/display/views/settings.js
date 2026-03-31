@@ -3,9 +3,9 @@ GlaDOS.views.settings = {
     renderCard(container) {
         container.innerHTML = `
             <div class="dash-card-header" onclick="socket.emit('settings_action',{action:'show'})">
-                <span class="dash-card-icon">&#9881;</span> Settings
+                <span class="dash-card-icon"><i class="icon-settings"></i></span> Settings
             </div>
-            <div class="dash-card-body" style="font-size:0.8rem;color:#666">
+            <div class="dash-card-body settings-card-body">
                 Integrations &amp; system config
             </div>`;
     },
@@ -13,16 +13,34 @@ GlaDOS.views.settings = {
     render(container, data) {
         const spotify = data.spotify || {};
         const spotifyStatus = spotify.connected
-            ? `<span style="color:#4caf50">Connected</span> — ${spotify.device || 'no active device'}`
-            : '<span style="color:#888">Not connected</span>';
+            ? `<span class="settings-connected">Connected</span> — ${spotify.device || 'no active device'}`
+            : '<span class="settings-disconnected">Not connected</span>';
 
         const system = data.system || {};
+
+        const themes = [
+            { id: 'default', name: 'Default', desc: 'Dark blue' },
+            { id: 'retro-crt', name: 'Retro CRT', desc: '80s green phosphor' },
+        ];
+        const currentTheme = GlaDOS.getTheme ? GlaDOS.getTheme() : 'default';
+        const themeBtns = themes.map(t => {
+            const active = t.id === currentTheme ? ' active' : '';
+            return `<button class="theme-btn${active}" onclick="GlaDOS.setTheme('${t.id}');socket.emit('settings_action',{action:'show'})">
+                <div class="theme-btn-name">${GlaDOS.esc(t.name)}</div>
+                <div class="theme-btn-desc">${GlaDOS.esc(t.desc)}</div>
+            </button>`;
+        }).join('');
 
         container.innerHTML = `
             <div class="view-title">Settings</div>
 
             <div class="settings-section">
-                <div class="settings-section-title">&#127925; Spotify</div>
+                <div class="settings-section-title"><i class="icon-palette"></i> Theme</div>
+                <div class="theme-picker">${themeBtns}</div>
+            </div>
+
+            <div class="settings-section">
+                <div class="settings-section-title"><i class="icon-music"></i> Spotify</div>
                 <div class="settings-row">
                     <span class="settings-label">Status</span>
                     <span class="settings-value">${spotifyStatus}</span>
@@ -36,7 +54,7 @@ GlaDOS.views.settings = {
             </div>
 
             <div class="settings-section">
-                <div class="settings-section-title">&#129302; System</div>
+                <div class="settings-section-title"><i class="icon-settings"></i> System</div>
                 <div class="settings-row">
                     <span class="settings-label">Model</span>
                     <span class="settings-value">${GlaDOS.esc(system.model || '—')}</span>
@@ -72,7 +90,7 @@ GlaDOS.views.settings = {
             </div>
 
             <div class="settings-section">
-                <div class="settings-section-title">&#128279; Links</div>
+                <div class="settings-section-title"><i class="icon-link"></i> Links</div>
                 <div class="settings-row">
                     <a href="/wiki/" class="settings-btn">Wiki Documentation</a>
                     <a href="/shopping" class="settings-btn">Mobile Shopping List</a>

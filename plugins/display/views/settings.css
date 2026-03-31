@@ -1,18 +1,18 @@
 /* Settings view */
 .settings-section {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
     padding: 16px 20px;
     margin-bottom: 16px;
 }
 .settings-section-title {
     font-size: 1rem;
     font-weight: 600;
-    color: #ff6600;
+    color: var(--accent);
     margin-bottom: 12px;
     padding-bottom: 8px;
-    border-bottom: 1px solid rgba(255,102,0,0.15);
+    border-bottom: 1px solid var(--accent-glow);
 }
 .settings-row {
     display: flex;
@@ -22,30 +22,68 @@
     min-height: 36px;
 }
 .settings-label {
-    color: #888;
+    color: var(--text-secondary);
     font-size: 0.85rem;
     min-width: 110px;
     flex-shrink: 0;
 }
 .settings-value {
-    color: #e0e0e0;
+    color: var(--text-primary);
     font-size: 0.9rem;
     flex: 1;
 }
+.settings-card-body { font-size: 0.8rem; color: var(--text-dim); }
+.settings-connected { color: var(--status-success); }
+.settings-disconnected { color: var(--text-secondary); }
 .settings-btn {
     display: inline-block;
-    background: rgba(255,102,0,0.12);
-    color: #ff8c00;
-    border: 1px solid rgba(255,102,0,0.25);
+    background: var(--accent-bg);
+    color: var(--accent-light);
+    border: 1px solid var(--accent-border);
     padding: 8px 18px;
-    border-radius: 8px;
+    border-radius: var(--radius);
     cursor: pointer;
     font-size: 0.85rem;
     text-decoration: none;
     transition: all 0.15s;
 }
 .settings-btn:hover {
-    background: rgba(255,102,0,0.2);
-    border-color: #ff6600;
-    color: #ff6600;
+    background: var(--accent-glow);
+    border-color: var(--accent);
+    color: var(--accent);
 }
+
+/* Theme picker */
+.theme-picker {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.theme-btn {
+    background: var(--bg-input);
+    border: 2px solid var(--border-dark);
+    border-radius: var(--radius);
+    padding: 12px 18px;
+    cursor: pointer;
+    transition: all 0.15s;
+    min-width: 120px;
+    text-align: center;
+}
+.theme-btn:hover {
+    border-color: var(--accent);
+}
+.theme-btn.active {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+}
+.theme-btn-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+.theme-btn-desc {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+.theme-btn.active .theme-btn-name { color: var(--accent); }

@@ -42,20 +42,20 @@
       "name": "garlic",
       "location_id": "fridge",
       "stored": "2026-03-28T15:51:58",
-      "expires": "2026-04-05",
+      "expires": "2026-04-30",
       "notes": null,
       "item_type": "ingredient",
-      "expiry_source": "estimated"
+      "expiry_source": "user"
     },
     {
       "id": "71cd740a",
       "name": "lettuce",
       "location_id": "fridge",
       "stored": "2026-03-28T15:52:02",
-      "expires": "2026-04-05",
+      "expires": "2026-04-03",
       "notes": null,
       "item_type": "ingredient",
-      "expiry_source": "estimated"
+      "expiry_source": "user"
     },
     {
       "id": "6f8e2767",
@@ -172,10 +172,10 @@
       "name": "onion",
       "location_id": "fridge",
       "stored": "2026-03-28T15:53:16",
-      "expires": "2026-04-05",
+      "expires": "2026-04-16",
       "notes": null,
       "item_type": "ingredient",
-      "expiry_source": "estimated"
+      "expiry_source": "user"
     },
     {
       "id": "9fc87ccd",
@@ -350,68 +350,98 @@
     {
       "id": "02903b1a",
       "name": "pinto beans",
-      "location_id": null,
+      "location_id": "fridge",
       "stored": "2026-03-30T22:04:28",
-      "expires": null,
-      "expiry_source": null,
+      "expires": "2026-04-07",
+      "expiry_source": "estimated",
       "notes": "1 can",
       "item_type": "ingredient"
     },
     {
       "id": "1aa439f1",
       "name": "thick tortilla chips",
-      "location_id": null,
+      "location_id": "dry-goods",
       "stored": "2026-03-30T22:04:28",
-      "expires": null,
-      "expiry_source": null,
+      "expires": "2026-04-04",
+      "expiry_source": "estimated",
       "notes": "8 cups",
       "item_type": "ingredient"
     },
     {
       "id": "96adb691",
       "name": "parmesan",
-      "location_id": null,
+      "location_id": "freezer-1",
       "stored": "2026-03-30T22:04:28",
-      "expires": null,
-      "expiry_source": null,
+      "expires": "2026-06-29",
+      "expiry_source": "estimated",
       "notes": null,
       "item_type": "ingredient"
     },
     {
       "id": "847acc30",
       "name": "cilantro",
-      "location_id": null,
+      "location_id": "kitchen-island",
       "stored": "2026-03-30T22:04:28",
-      "expires": null,
-      "expiry_source": null,
+      "expires": "2026-04-14",
+      "expiry_source": "estimated",
       "notes": null,
       "item_type": "ingredient"
     },
     {
       "id": "ca7c2a03",
       "name": "hot sauce",
-      "location_id": null,
+      "location_id": "dry-goods",
       "stored": "2026-03-30T22:04:28",
-      "expires": null,
-      "expiry_source": null,
+      "expires": "2026-06-29",
+      "expiry_source": "estimated",
       "notes": null,
       "item_type": "ingredient"
     },
     {
       "id": "01b8c29f",
       "name": "mayonnaise",
-      "location_id": null,
+      "location_id": "fridge",
       "stored": "2026-03-30T22:04:28",
-      "expires": null,
-      "expiry_source": null,
+      "expires": "2026-09-27",
+      "expiry_source": "estimated",
       "notes": null,
       "item_type": "ingredient"
     },
     {
       "id": "05f7806d",
       "name": "cornstarch",
-      "location_id": null,
+      "location_id": "dry-goods",
       "stored": "2026-03-30T22:04:28",
+      "expires": "2026-04-14",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "d2c6b0e6",
+      "name": "hamburger patties",
+      "location_id": "fridge",
+      "stored": "2026-03-31T13:04:40",
+      "expires": "2026-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "a526f2a6",
+      "name": "frozen chicken breasts",
+      "location_id": null,
+      "stored": "2026-03-31T13:04:40",
+      "expires": null,
+      "expiry_source": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "4918f883",
+      "name": "salt",
+      "location_id": null,
+      "stored": "2026-03-31T13:04:40",
       "expires": null,
       "expiry_source": null,
       "notes": null,

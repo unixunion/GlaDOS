@@ -35,6 +35,8 @@ class DisplayPlugin(RunnablePlugin):
         self._flask_app = Flask(__name__, template_folder="templates", static_folder="static")
         self._socketio = SocketIO(self._flask_app, cors_allowed_origins="*")
         self.current_display = {"view_type": "idle", "title": "", "content": ""}
+        self._tts_muted = False
+        self._mic_muted = False
         self.event_system = EventSystem()
         self._configure_routes()
         self._register_tools()
@@ -232,6 +234,11 @@ class DisplayPlugin(RunnablePlugin):
         def handle_connect():
             logger.info("Display client connected")
             self._socketio.emit("display_update", self.current_display)
+            # Send current mute state so UI buttons sync on refresh
+            self._socketio.emit("mute_state", {
+                "tts_muted": self._tts_muted,
+                "mic_muted": self._mic_muted,
+            })
 
         @self._socketio.on("interrupt")
         def handle_interrupt():
@@ -244,6 +251,14 @@ class DisplayPlugin(RunnablePlugin):
         def handle_system_control(data):
             action = data.get("action", "")
             logger.info(f"[Display] System control: {action}")
+            if action == "mute_tts":
+                self._tts_muted = True
+            elif action == "unmute_tts":
+                self._tts_muted = False
+            elif action == "mute_mic":
+                self._mic_muted = True
+            elif action == "unmute_mic":
+                self._mic_muted = False
             self.event_system.publish(EventMessage("system", action, {}))
 
         @self._socketio.on("user_message")

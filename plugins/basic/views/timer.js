@@ -7,15 +7,15 @@ GlaDOS.views.timer = {
         let activeHtml = '';
         if (active.length) {
             activeHtml = active.slice(0, 3).map(t => {
-                const icon = t.type === 'alarm' ? '&#9200;' : (t.type === 'timer_done' || t.type === 'alarm_done') ? '&#9888;' : '&#9201;';
+                const icon = t.type === 'alarm' ? '<i class="icon-alarm-clock"></i>' : (t.type === 'timer_done' || t.type === 'alarm_done') ? '<i class="icon-alert-triangle"></i>' : '<i class="icon-timer"></i>';
                 const isDone = t.type === 'timer_done' || t.type === 'alarm_done';
-                const cls = isDone ? ' style="color:#ff4444;font-weight:600"' : '';
+                const cls = isDone ? ' class="timer-done-text"' : '';
                 return `<div${cls}>${icon} ${GlaDOS.esc(t.description||'Timer')} — ${GlaDOS.esc(t.expires_in||'done')}</div>`;
             }).join('');
         }
         container.innerHTML = `
             <div class="dash-card-header">
-                <span class="dash-card-icon">&#9201;</span> Timers
+                <span class="dash-card-icon"><i class="icon-timer"></i></span> Timers
                 ${active.length ? '<span class="dash-card-badge' + (active.some(t=>t.type.includes('done'))?' urgent':'') + '">' + active.length + '</span>' : ''}
             </div>
             <div class="dash-card-body" id="dash-timers">
@@ -74,7 +74,7 @@ GlaDOS.views.timer = {
             overlay.innerHTML = data.timers.map(t => {
                 const desc = GlaDOS.esc(t.description || 'Timer');
                 const isDone = t.type === 'timer_done' || t.type === 'alarm_done';
-                const icon = t.type === 'alarm' ? '&#9200;' : isDone ? '&#9888;' : '&#9201;';
+                const icon = t.type === 'alarm' ? '<i class="icon-alarm-clock"></i>' : isDone ? '<i class="icon-alert-triangle"></i>' : '<i class="icon-timer"></i>';
                 const doneClass = isDone ? ' timer-done' : '';
                 const btn = isDone
                     ? `<button class="tf-dismiss tf-dismiss-done" onclick="socket.emit('timer_action',{action:'dismiss_ring'})">Dismiss</button>`

@@ -1316,16 +1316,20 @@ class PantryPlugin(RunnableMCPPlugin):
             # Push results to display as recipe search view
             from plugins.recipes.recipe_api import _count_pantry_matches
             pantry_names = [i["name"].lower() for i in self._pantry["items"]]
+            expiring_set = set(e.lower() for e in expiring) if expiring else set()
             display_results = []
             for m in top:
                 ings = m.get("ingredients", [])
                 have, missing = _count_pantry_matches(ings, pantry_names) if ings else (0, 0)
+                matched = m.get("matched_ingredients", [])
+                matched_expiring = [i for i in matched if i.lower() in expiring_set]
                 display_results.append({
                     "title": m["title"],
                     "image_name": m.get("image_name"),
                     "ingredient_count": len(ings),
                     "have_count": have,
                     "missing_count": missing,
+                    "matched_expiring": matched_expiring,
                 })
             self.event_system.publish(EventMessage(
                 role="display", name="recipe_search",

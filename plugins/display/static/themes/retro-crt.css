@@ -1,0 +1,124 @@
+/* Retro CRT Theme — 80s green phosphor terminal aesthetic */
+:root {
+    /* Backgrounds */
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #0d0d0d;
+    --bg-card: rgba(0,255,65,0.03);
+    --bg-input: rgba(0,255,65,0.06);
+    --bg-overlay: #111;
+    --bg-hover: rgba(0,255,65,0.05);
+
+    /* Accent — phosphor green */
+    --accent: #00ff41;
+    --accent-light: #33ff66;
+    --accent-dim: #00cc33;
+    --accent-glow: rgba(0,255,65,0.12);
+    --accent-bg: rgba(0,255,65,0.08);
+    --accent-border: rgba(0,255,65,0.2);
+
+    /* Text — green shades */
+    --text-primary: #00ff41;
+    --text-secondary: #00bb33;
+    --text-muted: #007722;
+    --text-dim: #005518;
+    --text-bright: #33ff66;
+    --text-link: #00cc33;
+
+    /* Borders */
+    --border: rgba(0,255,65,0.1);
+    --border-subtle: rgba(0,255,65,0.06);
+    --border-input: rgba(0,255,65,0.15);
+    --border-dark: rgba(0,255,65,0.12);
+    --border-darker: rgba(0,255,65,0.18);
+
+    /* Status */
+    --status-success: #00ff41;
+    --status-success-light: #66ff88;
+    --status-error: #ff3333;
+    --status-error-dim: #cc2222;
+    --status-warning: #ffaa00;
+    --status-muted: #cc2222;
+
+    /* Chat */
+    --chat-user-bg: rgba(0,255,65,0.1);
+    --chat-assistant-bg: rgba(0,255,65,0.04);
+    --chat-knowledge: #00ff41;
+    --chat-thinking: #00cc88;
+    --chat-tool: #00aaff;
+    --chat-nlp-tool: #00ddcc;
+    --chat-tool-result: #00bbff;
+    --chat-async: #ffcc00;
+
+    /* Font — monospace for that terminal feel */
+    --font-family: 'Courier New', 'Lucida Console', 'Monaco', monospace;
+
+    /* Sharp corners — no rounded edges on CRTs */
+    --radius: 2px;
+    --radius-sm: 1px;
+    --radius-lg: 3px;
+}
+
+/* ── CRT Effects ─────────────────────────────── */
+
+/* Scanlines overlay */
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.12) 0px,
+        rgba(0,0,0,0.12) 1px,
+        transparent 1px,
+        transparent 3px
+    );
+    pointer-events: none;
+    z-index: 9998;
+}
+
+/* Phosphor glow on text */
+body {
+    text-shadow: 0 0 4px rgba(0,255,65,0.3);
+}
+
+/* Subtle screen curvature vignette */
+#main-content::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    box-shadow: inset 0 0 120px rgba(0,0,0,0.6);
+    pointer-events: none;
+    z-index: 9997;
+}
+
+/* Enhanced glow on interactive elements */
+button:hover, a:hover, select:hover, input:focus {
+    text-shadow: 0 0 8px rgba(0,255,65,0.6);
+}
+
+/* Pulsing cursor effect on inputs */
+input[type="text"]:focus, input[type="date"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 6px rgba(0,255,65,0.3);
+}
+
+/* Dashboard cards — terminal window look */
+.dash-card {
+    border-style: solid;
+    border-width: 1px;
+    box-shadow: 0 0 8px rgba(0,255,65,0.05);
+}
+
+/* Status dot glow */
+#status-dot.listening { background: var(--accent); box-shadow: 0 0 8px rgba(0,255,65,0.5); }
+#status-dot.speaking { background: var(--accent); box-shadow: 0 0 8px rgba(0,255,65,0.5); }
+#status-dot.thinking { background: var(--status-warning); box-shadow: 0 0 8px rgba(255,170,0,0.5); }
+
+/* Chat bubbles — terminal message style */
+.chat-bubble.user { border-left: 2px solid var(--accent); }
+.chat-bubble.assistant { border-left: 2px solid rgba(0,255,65,0.3); }
+
+/* Avatar glow */
+#glados-avatar img {
+    filter: hue-rotate(80deg) saturate(2);
+}

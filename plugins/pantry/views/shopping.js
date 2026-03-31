@@ -1,12 +1,12 @@
 // Shopping list view renderer
 GlaDOS.views.shopping_list = {
     cardTitle: 'Shopping',
-    cardIcon: '&#128722;',
+    cardIcon: '<i class="icon-shopping-cart"></i>',
     renderCard(container) {
         const d = GlaDOS.dashboardData.shopping || {};
         container.innerHTML = `
             <div class="dash-card-header" onclick="socket.emit('shopping_list_action',{action:'show'})">
-                <span class="dash-card-icon">&#128722;</span> Shopping
+                <span class="dash-card-icon"><i class="icon-shopping-cart"></i></span> Shopping
                 <span class="dash-card-badge">${d.count || 0}</span>
             </div>
             <div class="dash-card-body">
@@ -33,10 +33,10 @@ GlaDOS.views.shopping_list = {
             <input type="text" id="sl-add-qty" placeholder="Qty" style="width:80px" onkeydown="if(event.key==='Enter') GlaDOS.views.shopping_list.addItem()">
             <button onclick="GlaDOS.views.shopping_list.addItem()">Add</button>
         </div>`;
-        if (!total) { container.innerHTML = `${addForm}<div style="text-align:center;color:#555;padding:40px">Shopping list is empty</div>`; return; }
+        if (!total) { container.innerHTML = `${addForm}<div class="empty-state">Shopping list is empty</div>`; return; }
 
         const catOrder = ['produce','meat','seafood','dairy','bakery','frozen','dry_goods','beverages','condiments','spices','snacks','other'];
-        const catLabels = {produce:'&#x1F966; Fresh Produce',meat:'&#x1F969; Butchery & Meat',seafood:'&#x1F41F; Seafood',dairy:'&#x1F95B; Dairy & Eggs',bakery:'&#x1F35E; Bakery',frozen:'&#x1F9CA; Frozen',dry_goods:'&#x1F3E0; Pantry & Dry Goods',beverages:'&#x1F964; Beverages',condiments:'&#x1F9C8; Condiments & Sauces',spices:'&#x1F9C2; Spices',snacks:'&#x1F36A; Snacks',other:'&#x1F6D2; Other'};
+        const catLabels = {produce:'<i class="icon-carrot"></i> Fresh Produce',meat:'<i class="icon-beef"></i> Butchery & Meat',seafood:'<i class="icon-fish"></i> Seafood',dairy:'<i class="icon-milk"></i> Dairy & Eggs',bakery:'<i class="icon-sandwich"></i> Bakery',frozen:'<i class="icon-snowflake"></i> Frozen',dry_goods:'<i class="icon-warehouse"></i> Pantry & Dry Goods',beverages:'<i class="icon-wine"></i> Beverages',condiments:'<i class="icon-flame"></i> Condiments & Sauces',spices:'<i class="icon-leaf"></i> Spices',snacks:'<i class="icon-cookie"></i> Snacks',other:'<i class="icon-shopping-bag"></i> Other'};
         const groups = {};
         items.forEach(i => { const c = i.category||'other'; if(!groups[c]) groups[c]=[]; groups[c].push(i); });
 
@@ -54,7 +54,7 @@ GlaDOS.views.shopping_list = {
                     <span class="si-name" onclick="event.stopPropagation();GlaDOS.views.shopping_list.inlineEdit(this,'${item.id}','name','${GlaDOS.esc(item.name).replace(/'/g,"\\'")}')" title="Click to edit name">${GlaDOS.esc(item.name)}</span>
                     <span class="si-qty" onclick="event.stopPropagation();GlaDOS.views.shopping_list.inlineEdit(this,'${item.id}','quantity','${GlaDOS.esc(item.quantity||'').replace(/'/g,"\\'")}')" title="Click to edit quantity">${GlaDOS.esc(item.quantity||'—')}</span>
                     ${rec}
-                    <button class="si-remove" onclick="event.stopPropagation();socket.emit('shopping_list_action',{action:'remove',item_id:'${item.id}'})" title="Remove">&#10005;</button>
+                    <button class="si-remove" onclick="event.stopPropagation();socket.emit('shopping_list_action',{action:'remove',item_id:'${item.id}'})" title="Remove"><i class="icon-x"></i></button>
                 </div>`;
             });
         });
@@ -64,7 +64,7 @@ GlaDOS.views.shopping_list = {
             ${gotCount > 0 ? `<button class="btn-primary" onclick="socket.emit('shopping_list_action',{action:'complete'})">Done Shopping (${gotCount})</button>` : ''}
         </div>`;
         const putAwayBanner = unassignedCount > 0
-            ? `<div class="shopping-put-away-banner" onclick="socket.emit('pantry_action',{action:'show_put_away'})">&#x1F4E6; ${unassignedCount} item${unassignedCount !== 1 ? 's' : ''} bought but not stored &mdash; <strong>Put Away</strong></div>`
+            ? `<div class="shopping-put-away-banner" onclick="socket.emit('pantry_action',{action:'show_put_away'})"><i class="icon-package"></i> ${unassignedCount} item${unassignedCount !== 1 ? 's' : ''} bought but not stored &mdash; <strong>Put Away</strong></div>`
             : '';
         container.innerHTML = `${addForm}${statusBar}${putAwayBanner}${html}`;
     },

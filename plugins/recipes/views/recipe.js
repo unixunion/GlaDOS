@@ -4,15 +4,15 @@ GlaDOS.views.recipe = {
         const d = GlaDOS.dashboardData.recipes || {};
         container.innerHTML = `
             <div class="dash-card-header">
-                <span class="dash-card-icon">&#127859;</span> Recipes
+                <span class="dash-card-icon"><i class="icon-chef-hat"></i></span> Recipes
                 <span class="dash-card-badge">${d.count || '...'}</span>
             </div>
             <div class="dash-card-body">
                 <div class="quick-input">
                     <input type="text" id="dash-recipe-search" placeholder="Search recipes..." onkeydown="if(event.key==='Enter') GlaDOS.views.recipe.dashSearch()">
-                    <button onclick="GlaDOS.views.recipe.dashSearch()">&#128269;</button>
+                    <button onclick="GlaDOS.views.recipe.dashSearch()"><i class="icon-search"></i></button>
                 </div>
-                <button onclick="socket.emit('recipe_action',{action:'search_from_pantry'})" style="margin-top:6px;width:100%;padding:6px 0;background:rgba(255,102,0,0.12);color:#ff8c00;border:1px solid rgba(255,102,0,0.2);border-radius:6px;cursor:pointer;font-size:0.8rem">&#127860; Use what's expiring</button>
+                <button class="btn-accent-outline" onclick="socket.emit('recipe_action',{action:'search_from_pantry'})" style="margin-top:6px;width:100%;padding:6px 0;font-size:0.8rem"><i class="icon-utensils"></i> Use what's expiring</button>
             </div>`;
     },
     dashSearch() {
@@ -26,7 +26,7 @@ GlaDOS.views.recipe = {
         const safeTitle = GlaDOS.esc(title).replace(/'/g, "\\'");
         const actions = `<div style="display:flex;gap:8px;margin:12px 0">
             <button class="btn-primary" style="font-size:0.85rem;padding:8px 16px" onclick="socket.emit('pantry_action',{action:'check_recipe',recipe_name:'${safeTitle}'})">Check Pantry</button>
-            <button class="btn-primary" style="font-size:0.85rem;padding:8px 16px;background:#2a3a5c" onclick="socket.emit('pantry_action',{action:'add_recipe_to_list',recipe_name:'${safeTitle}'})">Add Missing to List</button>
+            <button class="btn-primary btn-secondary" style="font-size:0.85rem;padding:8px 16px" onclick="socket.emit('pantry_action',{action:'add_recipe_to_list',recipe_name:'${safeTitle}'})">Add Missing to List</button>
         </div>`;
         if (data.ingredients && data.directions) {
             const ings = (Array.isArray(data.ingredients) ? data.ingredients : data.ingredients.split('\n')).map(i => i.replace(/^[-\s]*/, '').trim()).filter(Boolean).map(i => `<li>${GlaDOS.esc(i)}</li>`).join('');
@@ -57,7 +57,7 @@ GlaDOS.views.recipe_search = {
                     meta += ` &mdash; <span class="rm-expiry${cls}">${label}</span>`;
                 }
                 return `<div class="rm-item">
-                    <span class="rm-icon">&#127373;</span>
+                    <span class="rm-icon"><i class="icon-utensils"></i></span>
                     <div class="rm-info">
                         <div class="rm-name">${GlaDOS.esc(m.name)}</div>
                         <div class="rm-meta">${meta}</div>
@@ -65,7 +65,7 @@ GlaDOS.views.recipe_search = {
                 </div>`;
             }).join('');
             html += `<div class="rm-section">
-                <div class="rm-section-title">&#127860; Ready to Eat</div>
+                <div class="rm-section-title"><i class="icon-utensils"></i> Ready to Eat</div>
                 <div class="rm-list">${mealItems}</div>
             </div>`;
         }
@@ -75,7 +75,7 @@ GlaDOS.views.recipe_search = {
             const items = results.map(r => {
                 const img = r.image_name
                     ? `<img class="rs-thumb" src="/recipe-images/${encodeURIComponent(r.image_name)}.jpg" onerror="this.style.display='none'">`
-                    : '<div class="rs-thumb-placeholder">&#127859;</div>';
+                    : '<div class="rs-thumb-placeholder"><i class="icon-chef-hat"></i></div>';
                 let meta, metaCls = '';
                 if (r.have_count != null) {
                     const pct = r.ingredient_count ? Math.round(r.have_count / r.ingredient_count * 100) : 0;
@@ -89,17 +89,21 @@ GlaDOS.views.recipe_search = {
                 const addBtn = r.missing_count > 0
                     ? `<button class="rs-add-btn" onclick="event.stopPropagation();socket.emit('pantry_action',{action:'add_recipe_to_list',recipe_name:'${safeTitle}'})">+ List</button>`
                     : '';
+                const expMatch = (r.matched_expiring && r.matched_expiring.length)
+                    ? `<div class="rs-expiring-match"><i class="icon-alert-triangle"></i> Uses: ${r.matched_expiring.map(i => GlaDOS.esc(i)).join(', ')}</div>`
+                    : '';
                 return `<div class="rs-item" onclick="socket.emit('recipe_action',{action:'select',recipe_name:'${safeTitle}'})">
                     ${img}
                     <div class="rs-info">
                         <div class="rs-title">${GlaDOS.esc(r.title)}</div>
                         <div class="rs-meta${metaCls}">${meta}</div>
+                        ${expMatch}
                     </div>
                     ${addBtn}
                 </div>`;
             }).join('');
             if (readyMeals.length) {
-                html += `<div class="rm-section-title" style="margin-top:16px">&#127859; Recipes You Can Make</div>`;
+                html += `<div class="rm-section-title" style="margin-top:16px"><i class="icon-chef-hat"></i> Recipes You Can Make</div>`;
             }
             html += `<div class="rs-list">${items}</div>`;
         }

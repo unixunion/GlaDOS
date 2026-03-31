@@ -8,21 +8,30 @@
     <meta name="theme-color" content="#ff6600">
     <title>GlaDOS Display</title>
     <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="/static/fonts/lucide.css">
     <link rel="stylesheet" href="/static/display.css">
+    <link id="theme-css" rel="stylesheet" href="">
+    <script>
+        // Load saved theme immediately (before render to avoid flash)
+        (function() {
+            var t = localStorage.getItem('glados_theme');
+            if (t && t !== 'default') document.getElementById('theme-css').href = '/static/themes/' + t + '.css';
+        })();
+    </script>
     <style>
     </style>
 </head>
 <body>
     <!-- Header -->
     <div id="app-header">
-        <button id="home-btn" onclick="navigateTo('dashboard',false)" title="Home">&#127968;</button>
-        <button id="back-btn" onclick="goBack()">&#8592;</button>
-        <button id="mute-tts-btn" class="header-mute-btn" onclick="toggleMuteTTS()" title="Mute/unmute speech">&#128264;</button>
-        <button id="mute-mic-btn" class="header-mute-btn" onclick="toggleMuteMic()" title="Mute/unmute microphone">&#127908;</button>
+        <button id="home-btn" onclick="navigateTo('dashboard',false)" title="Home"><i class="icon-home"></i></button>
+        <button id="back-btn" onclick="goBack()"><i class="icon-arrow-left"></i></button>
+        <button id="mute-tts-btn" class="header-mute-btn" onclick="toggleMuteTTS()" title="Mute/unmute speech"><i class="icon-volume-2"></i></button>
+        <button id="mute-mic-btn" class="header-mute-btn" onclick="toggleMuteMic()" title="Mute/unmute microphone"><i class="icon-mic"></i></button>
         <div id="header-title">GlaDOS</div>
         <div id="status-dot"></div>
-        <a href="/wiki/" class="header-link" title="Wiki">&#128214;</a>
-        <button id="chat-toggle" onclick="toggleChat()">&#9776;</button>
+        <a href="/wiki/" class="header-link" title="Wiki"><i class="icon-book-open"></i></a>
+        <button id="chat-toggle" onclick="toggleChat()"><i class="icon-menu"></i></button>
     </div>
 
     <!-- Mode banner (planning / post-shopping) -->
@@ -52,8 +61,8 @@
         <div id="chat-drawer-header">
             <h2>Chat</h2>
             <div id="connection-status" style="font-size:0.75rem; color:#4caf50; margin-right:8px;">connected</div>
-            <button id="chat-pin" onclick="toggleChatPin()" title="Pin chat open">&#128204;</button>
-            <button id="chat-close" onclick="toggleChat()">&#10005;</button>
+            <button id="chat-pin" onclick="toggleChatPin()" title="Pin chat open"><i class="icon-pin"></i></button>
+            <button id="chat-close" onclick="toggleChat()"><i class="icon-x"></i></button>
         </div>
         <div id="chat-history"></div>
         <div id="chat-input-bar">
@@ -66,10 +75,10 @@
     <!-- Mobile bottom nav -->
     <div id="bottom-nav">
         <div class="nav-items">
-            <button class="nav-item active" onclick="viewHistory=[];navigateTo('dashboard')"><span class="nav-icon">&#127968;</span>Home</button>
-            <button class="nav-item" onclick="socket.emit('shopping_list_action',{action:'show'})"><span class="nav-icon">&#128722;</span>List</button>
-            <button class="nav-item" onclick="socket.emit('pantry_action',{action:'show'})"><span class="nav-icon">&#127968;</span>Pantry</button>
-            <button class="nav-item" onclick="toggleChat()"><span class="nav-icon">&#128172;</span>Chat</button>
+            <button class="nav-item active" onclick="viewHistory=[];navigateTo('dashboard')"><span class="nav-icon"><i class="icon-home"></i></span>Home</button>
+            <button class="nav-item" onclick="socket.emit('shopping_list_action',{action:'show'})"><span class="nav-icon"><i class="icon-shopping-cart"></i></span>List</button>
+            <button class="nav-item" onclick="socket.emit('pantry_action',{action:'show'})"><span class="nav-icon"><i class="icon-warehouse"></i></span>Pantry</button>
+            <button class="nav-item" onclick="toggleChat()"><span class="nav-icon"><i class="icon-message-circle"></i></span>Chat</button>
         </div>
     </div>
 
@@ -131,14 +140,49 @@
         }
 
         // ── Navigation ─────────────────────────────────
+        let _navigatingBack = false;
         function goBack() {
             if (viewHistory.length > 0) {
                 const prev = viewHistory.pop();
-                navigateTo(prev, true);
+                const refreshActions = {
+                    pantry: () => socket.emit('pantry_action', {action: 'show'}),
+                    shopping_list: () => socket.emit('shopping_list_action', {action: 'show'}),
+                    settings: () => socket.emit('settings_action', {action: 'show'}),
+                    pantry_shelf_life: () => socket.emit('pantry_action', {action: 'get_shelf_life_config'}),
+                    pantry_put_away: () => socket.emit('pantry_action', {action: 'show_put_away'}),
+                };
+                if (prev === 'dashboard') {
+                    navigateTo('dashboard', true);
+                } else if (refreshActions[prev]) {
+                    _navigatingBack = true;
+                    showLoading();
+                    refreshActions[prev]();
+                } else {
+                    navigateTo('dashboard', true);
+                }
             } else {
                 navigateTo('dashboard', true);
             }
         }
+        function showLoading() {
+            viewContainer.innerHTML = '<div class="view-loading"><div class="view-spinner"></div></div>';
+            dashboard.style.display = 'none';
+            viewContainer.style.display = 'block';
+            viewContainer.classList.add('active');
+        }
+        // Auto-show spinner for known view-loading socket emits
+        const _origEmit = socket.emit.bind(socket);
+        socket.emit = function(event, data) {
+            if (data && data.action === 'show' && ['pantry_action','shopping_list_action','settings_action'].includes(event)) {
+                showLoading();
+            }
+            if (data && data.action === 'search_from_pantry') showLoading();
+            if (data && data.action === 'show_put_away') showLoading();
+            if (data && data.action === 'get_shelf_life_config') showLoading();
+            if (event === 'recipe_action' && data && data.action === 'search') showLoading();
+            if (event === 'recipe_action' && data && data.action === 'select') showLoading();
+            return _origEmit(event, data);
+        };
         function navigateTo(view, isBack) {
             if (!isBack && currentView !== view) {
                 viewHistory.push(currentView);
@@ -187,7 +231,12 @@
             // Dispatch to registered view renderer
             const view = GlaDOS.views[vt];
             if (view && view.render) {
-                navigateTo(vt);
+                if (_navigatingBack) {
+                    _navigatingBack = false;
+                    navigateTo(vt, true); // Don't push to history — this is a back-refresh
+                } else {
+                    navigateTo(vt);
+                }
                 view.render(viewContainer, data);
             } else {
                 navigateTo('dashboard');
@@ -298,7 +347,7 @@
                 if (data.content) { if (!currentAssistantBubble) currentAssistantBubble = addBubble('assistant','',true); const s=currentAssistantBubble.querySelector('.streaming'); if(s) s.textContent=data.content; }
                 if (lastResponseHadKnowledge && lastKnowledgeSources.length && currentAssistantBubble) {
                     const cite = document.createElement('div'); cite.className = 'bubble-citation';
-                    cite.innerHTML = '&#128218; ' + lastKnowledgeSources.map(s => `<span class="cite-source">${esc(s.title)} <span class="cite-score">${Math.round(s.score*100)}%</span></span>`).join(' ');
+                    cite.innerHTML = '<i class="icon-book-open"></i> ' + lastKnowledgeSources.map(s => `<span class="cite-source">${esc(s.title)} <span class="cite-score">${Math.round(s.score*100)}%</span></span>`).join(' ');
                     currentAssistantBubble.appendChild(cite);
                 }
                 if (!lastResponseHadKnowledge && !lastResponseHadTool && currentAssistantBubble) { const b=document.createElement('div'); b.className='bubble-no-sources'; b.textContent='answered from model \u2014 no knowledge base sources'; currentAssistantBubble.appendChild(b); }
@@ -306,11 +355,11 @@
             }
             else if (role === 'spoken') {}
             else if (role === 'knowledge_miss') { lastResponseHadKnowledge=false; }
-            else if (role === 'knowledge') { lastResponseHadKnowledge=true; lastKnowledgeSources=(data.sources||[]).map(s=>({title:s.title||'?',source:s.source||'?',score:s.score||0})); finalizeStreaming(); const src=lastKnowledgeSources.map(s=>s.title).join(', '); addCollapsibleBubble('knowledge', src?`&#128218; Knowledge: ${src}`:'&#128218; Knowledge', null, data.content); }
-            else if (role === 'thinking') { addCollapsibleBubble('thinking', '&#128173; Thinking', null, data.content); }
-            else if (role === 'tool_call') { lastResponseHadTool=true; finalizeStreaming(); const i=data.via==='nlp'?'&#9889;':'&#128295;'; const v=data.via==='nlp'?' (NLP)':''; const a=JSON.stringify(data.args||{}); addCollapsibleBubble(data.via==='nlp'?'nlp-tool':'tool-call', `${i} ${data.tool}${v}${a!=='{}'?'('+a.substring(0,60)+')':''}`, null, data.content||''); }
-            else if (role === 'tool_result') { addCollapsibleBubble('tool-result', `&#128203; ${data.tool} result`, null, (data.content||'').substring(0,500)); }
-            else if (role === 'async_event') { addCollapsibleBubble('async-event', `&#128276; ${data.source}`, null, data.content||''); }
+            else if (role === 'knowledge') { lastResponseHadKnowledge=true; lastKnowledgeSources=(data.sources||[]).map(s=>({title:s.title||'?',source:s.source||'?',score:s.score||0})); finalizeStreaming(); const src=lastKnowledgeSources.map(s=>s.title).join(', '); addCollapsibleBubble('knowledge', src?`<i class="icon-book-open"></i> Knowledge: ${src}`:'<i class="icon-book-open"></i> Knowledge', null, data.content); }
+            else if (role === 'thinking') { addCollapsibleBubble('thinking', '<i class="icon-brain"></i> Thinking', null, data.content); }
+            else if (role === 'tool_call') { lastResponseHadTool=true; finalizeStreaming(); const i=data.via==='nlp'?'<i class="icon-zap"></i>':'<i class="icon-wrench"></i>'; const v=data.via==='nlp'?' (NLP)':''; const a=JSON.stringify(data.args||{}); addCollapsibleBubble(data.via==='nlp'?'nlp-tool':'tool-call', `${i} ${data.tool}${v}${a!=='{}'?'('+a.substring(0,60)+')':''}`, null, data.content||''); }
+            else if (role === 'tool_result') { addCollapsibleBubble('tool-result', `<i class="icon-clipboard"></i> ${data.tool} result`, null, (data.content||'').substring(0,500)); }
+            else if (role === 'async_event') { addCollapsibleBubble('async-event', `<i class="icon-bell"></i> ${data.source}`, null, data.content||''); }
         });
 
         function addBubble(type, text, isStreaming=false) {
@@ -322,7 +371,7 @@
         function addCollapsibleBubble(type, label, sources, content) {
             const el = document.createElement('div'); el.className = `chat-bubble ${type} collapsible`;
             let h = label; if (sources && sources.length) h += ': ' + sources.map(s => s.title || s).join(', ');
-            el.innerHTML = `<div class="bubble-header" onclick="this.parentElement.classList.toggle('expanded')">${h} <span class="toggle">&#9654;</span></div><div class="bubble-content">${esc(content||'')}</div>`;
+            el.innerHTML = `<div class="bubble-header" onclick="this.parentElement.classList.toggle('expanded')">${h} <span class="toggle"><i class="icon-chevron-right"></i></span></div><div class="bubble-content">${esc(content||'')}</div>`;
             chatHistory.appendChild(el); scrollChat(); return el;
         }
         function finalizeStreaming() { if (currentAssistantBubble) { const s=currentAssistantBubble.querySelector('.streaming'); if(s){s.className='';s.style.color='#e0e0e0';} currentAssistantBubble=null; } }
@@ -339,14 +388,14 @@
             if (data.status === 'reclassify_progress') {
                 let el = document.getElementById('reclassify-progress');
                 if (data.phase === 'start') {
-                    if (!el) { el = document.createElement('div'); el.id = 'reclassify-progress'; el.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#222;border:1px solid #444;border-radius:12px;padding:20px 30px;z-index:999;text-align:center;min-width:250px'; document.body.appendChild(el); }
-                    el.innerHTML = `<div style="color:#ff8c00;font-weight:600;margin-bottom:8px">Reclassifying...</div><div style="background:#333;border-radius:4px;height:8px;overflow:hidden"><div id="rcl-bar" style="height:100%;background:#ff6600;width:0%;transition:width 0.2s"></div></div><div id="rcl-label" style="color:#888;font-size:0.8rem;margin-top:6px">0 / ${data.total}</div>`;
+                    if (!el) { el = document.createElement('div'); el.id = 'reclassify-progress'; el.className = 'reclassify-overlay'; document.body.appendChild(el); }
+                    el.innerHTML = `<div class="reclassify-title">Reclassifying...</div><div class="reclassify-bar-bg"><div id="rcl-bar" class="reclassify-bar"></div></div><div id="rcl-label" class="reclassify-label">0 / ${data.total}</div>`;
                 } else if (data.phase === 'running' && el) {
                     const pct = Math.round(data.current / data.total * 100);
                     const bar = document.getElementById('rcl-bar'); if (bar) bar.style.width = pct + '%';
                     const label = document.getElementById('rcl-label'); if (label) label.textContent = `${data.current} / ${data.total} — ${data.item || ''}`;
                 } else if (data.phase === 'done' && el) {
-                    el.innerHTML = `<div style="color:#6c6;font-weight:600">Done!</div><div style="color:#888;font-size:0.85rem;margin-top:4px">${data.updated} of ${data.total} changed</div>`;
+                    el.innerHTML = `<div class="reclassify-done">Done!</div><div class="reclassify-done-detail">${data.updated} of ${data.total} changed</div>`;
                     setTimeout(() => el.remove(), 2500);
                 }
                 return;
@@ -354,8 +403,8 @@
             if (data.status === 'shopping_mode') {
                 const banner = document.getElementById('mode-banner');
                 const bannerText = document.getElementById('mode-banner-text');
-                if (data.mode === 'planning') { bannerText.textContent = '📝 Planning Mode — say items to add, "done" to exit'; banner.classList.add('visible'); }
-                else if (data.mode === 'post_shopping') { bannerText.textContent = '🛒 Post-Shopping — say what you got, "done" to finish'; banner.classList.add('visible'); }
+                if (data.mode === 'planning') { bannerText.innerHTML = '<i class="icon-pencil-line"></i> Planning Mode — say items to add, "done" to exit'; banner.classList.add('visible'); }
+                else if (data.mode === 'post_shopping') { bannerText.innerHTML = '<i class="icon-shopping-cart"></i> Post-Shopping — say what you got, "done" to finish'; banner.classList.add('visible'); }
                 else { banner.classList.remove('visible'); }
                 return;
             }
@@ -376,26 +425,52 @@
 
         const esc = GlaDOS.esc;
 
+        // Theme switching
+        function setTheme(name) {
+            const link = document.getElementById('theme-css');
+            if (name === 'default' || !name) { link.href = ''; }
+            else { link.href = '/static/themes/' + name + '.css'; }
+            localStorage.setItem('glados_theme', name || 'default');
+            // Update meta theme-color to match
+            setTimeout(() => {
+                const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+                const meta = document.querySelector('meta[name="theme-color"]');
+                if (meta && accent) meta.content = accent;
+            }, 100);
+        }
+        GlaDOS.setTheme = setTheme;
+        GlaDOS.getTheme = () => localStorage.getItem('glados_theme') || 'default';
+
         // ── Mute controls ──────────────────────────────
         let ttsMuted = false;
         let micMuted = false;
+        function applyMuteState() {
+            const ttsBtn = document.getElementById('mute-tts-btn');
+            ttsBtn.classList.toggle('muted', ttsMuted);
+            ttsBtn.innerHTML = ttsMuted ? '<i class="icon-volume-x"></i>' : '<i class="icon-volume-2"></i>';
+            ttsBtn.title = ttsMuted ? 'Unmute speech' : 'Mute speech';
+            const micBtn = document.getElementById('mute-mic-btn');
+            micBtn.classList.toggle('muted', micMuted);
+            micBtn.innerHTML = micMuted ? '<i class="icon-mic-off"></i>' : '<i class="icon-mic"></i>';
+            micBtn.title = micMuted ? 'Unmute microphone' : 'Mute microphone';
+        }
         function toggleMuteTTS() {
             ttsMuted = !ttsMuted;
-            const btn = document.getElementById('mute-tts-btn');
-            btn.classList.toggle('muted', ttsMuted);
-            btn.innerHTML = ttsMuted ? '&#128263;' : '&#128264;';
-            btn.title = ttsMuted ? 'Unmute speech' : 'Mute speech';
+            applyMuteState();
             socket.emit('system_control', { action: ttsMuted ? 'mute_tts' : 'unmute_tts' });
             if (ttsMuted) socket.emit('interrupt');
         }
         function toggleMuteMic() {
             micMuted = !micMuted;
-            const btn = document.getElementById('mute-mic-btn');
-            btn.classList.toggle('muted', micMuted);
-            btn.innerHTML = micMuted ? '&#128263;' : '&#127908;';
-            btn.title = micMuted ? 'Unmute microphone' : 'Mute microphone';
+            applyMuteState();
             socket.emit('system_control', { action: micMuted ? 'mute_mic' : 'unmute_mic' });
         }
+        // Sync mute state from server on connect/refresh
+        socket.on('mute_state', (data) => {
+            ttsMuted = !!data.tts_muted;
+            micMuted = !!data.mic_muted;
+            applyMuteState();
+        });
 
         // ── Init ───────────────────────────────────────
         navigateTo('dashboard');
