@@ -12,7 +12,7 @@ GlaDOS.views.recipe = {
                     <input type="text" id="dash-recipe-search" placeholder="Search recipes..." onkeydown="if(event.key==='Enter') GlaDOS.views.recipe.dashSearch()">
                     <button onclick="GlaDOS.views.recipe.dashSearch()">&#128269;</button>
                 </div>
-                <button onclick="socket.emit('recipe_action',{action:'search_from_pantry'})" style="margin-top:6px;width:100%;padding:6px 0;background:rgba(255,102,0,0.12);color:#ff8c00;border:1px solid rgba(255,102,0,0.2);border-radius:6px;cursor:pointer;font-size:0.8rem">What can I make?</button>
+                <button onclick="socket.emit('recipe_action',{action:'search_from_pantry'})" style="margin-top:6px;width:100%;padding:6px 0;background:rgba(255,102,0,0.12);color:#ff8c00;border:1px solid rgba(255,102,0,0.2);border-radius:6px;cursor:pointer;font-size:0.8rem">&#127860; Use what's expiring</button>
             </div>`;
     },
     dashSearch() {
@@ -76,12 +76,26 @@ GlaDOS.views.recipe_search = {
                 const img = r.image_name
                     ? `<img class="rs-thumb" src="/recipe-images/${encodeURIComponent(r.image_name)}.jpg" onerror="this.style.display='none'">`
                     : '<div class="rs-thumb-placeholder">&#127859;</div>';
-                return `<div class="rs-item" onclick="socket.emit('recipe_action',{action:'select',recipe_name:'${GlaDOS.esc(r.title).replace(/'/g, "\\'")}'})">
+                let meta, metaCls = '';
+                if (r.have_count != null) {
+                    const pct = r.ingredient_count ? Math.round(r.have_count / r.ingredient_count * 100) : 0;
+                    metaCls = pct >= 80 ? ' rs-match-high' : pct >= 50 ? ' rs-match-mid' : ' rs-match-low';
+                    meta = `${r.have_count}/${r.ingredient_count} have`;
+                    if (r.missing_count > 0) meta += ` (need ${r.missing_count})`;
+                } else {
+                    meta = `${r.ingredient_count || '?'} ingredients`;
+                }
+                const safeTitle = GlaDOS.esc(r.title).replace(/'/g, "\\'");
+                const addBtn = r.missing_count > 0
+                    ? `<button class="rs-add-btn" onclick="event.stopPropagation();socket.emit('pantry_action',{action:'add_recipe_to_list',recipe_name:'${safeTitle}'})">+ List</button>`
+                    : '';
+                return `<div class="rs-item" onclick="socket.emit('recipe_action',{action:'select',recipe_name:'${safeTitle}'})">
                     ${img}
                     <div class="rs-info">
                         <div class="rs-title">${GlaDOS.esc(r.title)}</div>
-                        <div class="rs-meta">${r.ingredient_count || '?'} ingredients</div>
+                        <div class="rs-meta${metaCls}">${meta}</div>
                     </div>
+                    ${addBtn}
                 </div>`;
             }).join('');
             if (readyMeals.length) {

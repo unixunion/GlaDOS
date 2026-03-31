@@ -411,8 +411,8 @@ class CountdownTimer(RunnableMCPPlugin):
     def _check_timers(self, event: EventMessage):
         logger.debug("Checking timers")
 
-        # Publish live countdown to display while timers are active
-        if self.timers:
+        # Publish live countdown to display while timers are active or ringing
+        if self.timers or self._ringing_items:
             self._publish_timer_display()
 
         expired_timers = self.remove_expired_timers()

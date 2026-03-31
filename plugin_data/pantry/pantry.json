@@ -29,38 +29,14 @@
       "id": "spices",
       "name": "Spices",
       "type": "room_temp"
+    },
+    {
+      "id": "kitchen-island",
+      "name": "Kitchen Island",
+      "type": "room_temp"
     }
   ],
   "items": [
-    {
-      "id": "f5987ea2",
-      "name": "chicken cuts",
-      "location_id": "fridge",
-      "stored": "2026-03-28T15:51:30",
-      "expires": "2026-04-01",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
-      "id": "c01f7b83",
-      "name": "saussage",
-      "location_id": "fridge",
-      "stored": "2026-03-28T15:51:34",
-      "expires": "2026-04-01",
-      "notes": null,
-      "expiry_source": "estimated"
-    },
-    {
-      "id": "19808060",
-      "name": "milk",
-      "location_id": "fridge",
-      "stored": "2026-03-28T15:51:37",
-      "expires": "2026-04-03",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "user"
-    },
     {
       "id": "3a1ebfb0",
       "name": "garlic",
@@ -87,16 +63,6 @@
       "location_id": "fridge",
       "stored": "2026-03-28T15:52:07",
       "expires": "2026-04-08",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
-      "id": "6007ce92",
-      "name": "wraps",
-      "location_id": "dry-goods",
-      "stored": "2026-03-28T15:52:13",
-      "expires": "2026-04-02",
       "notes": null,
       "item_type": "ingredient",
       "expiry_source": "estimated"
@@ -222,26 +188,6 @@
       "expiry_source": "estimated"
     },
     {
-      "id": "b111fe1f",
-      "name": "chicken breast",
-      "location_id": "freezer-1",
-      "stored": "2026-03-28T15:53:29",
-      "expires": "2026-09-25",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
-      "id": "5fc2909c",
-      "name": "bread",
-      "location_id": "freezer-1",
-      "stored": "2026-03-28T15:53:33",
-      "expires": "2026-06-27",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
       "id": "2a79a6db",
       "name": "eel food",
       "location_id": "freezer-3",
@@ -312,50 +258,10 @@
       "expiry_source": "estimated"
     },
     {
-      "id": "e490bbc9",
-      "name": "salt",
-      "location_id": "spices",
-      "stored": "2026-03-28T15:57:19",
-      "expires": null,
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": null
-    },
-    {
-      "id": "a6487e0a",
-      "name": "pepper",
-      "location_id": "spices",
-      "stored": "2026-03-28T15:57:22",
-      "expires": null,
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "user"
-    },
-    {
-      "id": "72426e17",
-      "name": "paprika",
-      "location_id": "spices",
-      "stored": "2026-03-28T15:57:25",
-      "expires": "2027-03-29",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
       "id": "b12dd511",
       "name": "smoked paprika",
       "location_id": "spices",
       "stored": "2026-03-28T15:57:28",
-      "expires": "2027-03-29",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
-      "id": "e8956854",
-      "name": "cayenne pepper",
-      "location_id": "spices",
-      "stored": "2026-03-28T15:58:03",
       "expires": "2027-03-29",
       "notes": null,
       "item_type": "ingredient",
@@ -372,36 +278,6 @@
       "expiry_source": "estimated"
     },
     {
-      "id": "3d205551",
-      "name": "mince",
-      "location_id": "fridge",
-      "stored": "2026-03-28T16:33:27",
-      "expires": "2026-04-01",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
-      "id": "a5399995",
-      "name": "bread",
-      "location_id": "dry-goods",
-      "stored": "2026-03-29T11:56:08",
-      "expires": "2026-04-02",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
-      "id": "cd8ab151",
-      "name": "burger patties",
-      "location_id": "freezer-2",
-      "stored": "2026-03-29T11:56:22",
-      "expires": "2026-06-27",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
       "id": "2e2eab5c",
       "name": "lasagna",
       "location_id": "freezer-3",
@@ -410,7 +286,203 @@
       "notes": "2 portions",
       "item_type": "ready_meal",
       "expiry_source": "estimated"
+    },
+    {
+      "id": "a4585f83",
+      "name": "chickpeas",
+      "location_id": "dry-goods",
+      "stored": "2026-03-30T22:04:28",
+      "expires": null,
+      "expiry_source": null,
+      "notes": "1 can",
+      "item_type": "ingredient"
+    },
+    {
+      "id": "f4c01d4f",
+      "name": "lime",
+      "location_id": "fridge",
+      "stored": "2026-03-30T22:04:28",
+      "expires": "2026-04-06",
+      "expiry_source": "estimated",
+      "notes": "1",
+      "item_type": "ingredient"
+    },
+    {
+      "id": "077e45ae",
+      "name": "cilantro",
+      "location_id": "fridge",
+      "stored": "2026-03-30T22:04:28",
+      "expires": "2026-04-06",
+      "expiry_source": "estimated",
+      "notes": "8 sprigs",
+      "item_type": "ingredient"
+    },
+    {
+      "id": "90a1ba42",
+      "name": "chorizo",
+      "location_id": "fridge",
+      "stored": "2026-03-30T22:04:28",
+      "expires": "2026-04-06",
+      "expiry_source": "estimated",
+      "notes": "2",
+      "item_type": "ingredient"
+    },
+    {
+      "id": "ef1ff376",
+      "name": "bacon,",
+      "location_id": "freezer-1",
+      "stored": "2026-03-30T22:04:28",
+      "expires": "2026-09-26",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "8d55edfe",
+      "name": "chillies",
+      "location_id": "freezer-2",
+      "stored": "2026-03-30T22:04:28",
+      "expires": "2026-06-28",
+      "expiry_source": "estimated",
+      "notes": "1",
+      "item_type": "ingredient"
+    },
+    {
+      "id": "02903b1a",
+      "name": "pinto beans",
+      "location_id": null,
+      "stored": "2026-03-30T22:04:28",
+      "expires": null,
+      "expiry_source": null,
+      "notes": "1 can",
+      "item_type": "ingredient"
+    },
+    {
+      "id": "1aa439f1",
+      "name": "thick tortilla chips",
+      "location_id": null,
+      "stored": "2026-03-30T22:04:28",
+      "expires": null,
+      "expiry_source": null,
+      "notes": "8 cups",
+      "item_type": "ingredient"
+    },
+    {
+      "id": "96adb691",
+      "name": "parmesan",
+      "location_id": null,
+      "stored": "2026-03-30T22:04:28",
+      "expires": null,
+      "expiry_source": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "847acc30",
+      "name": "cilantro",
+      "location_id": null,
+      "stored": "2026-03-30T22:04:28",
+      "expires": null,
+      "expiry_source": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "ca7c2a03",
+      "name": "hot sauce",
+      "location_id": null,
+      "stored": "2026-03-30T22:04:28",
+      "expires": null,
+      "expiry_source": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "01b8c29f",
+      "name": "mayonnaise",
+      "location_id": null,
+      "stored": "2026-03-30T22:04:28",
+      "expires": null,
+      "expiry_source": null,
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "05f7806d",
+      "name": "cornstarch",
+      "location_id": null,
+      "stored": "2026-03-30T22:04:28",
+      "expires": null,
+      "expiry_source": null,
+      "notes": null,
+      "item_type": "ingredient"
     }
   ],
-  "shelf_life_config": {}
+  "shelf_life_config": {
+    "bakery": {
+      "fridge": 7,
+      "freezer": 90,
+      "room_temp": 4
+    },
+    "beverages": {
+      "fridge": 30,
+      "freezer": 180,
+      "room_temp": 30
+    },
+    "condiments": {
+      "fridge": 180,
+      "freezer": 365,
+      "room_temp": 90
+    },
+    "dairy": {
+      "fridge": 10,
+      "freezer": 90,
+      "room_temp": 1
+    },
+    "dry_goods": {
+      "fridge": 365,
+      "freezer": 365,
+      "room_temp": 365
+    },
+    "frozen": {
+      "fridge": 3,
+      "freezer": 180,
+      "room_temp": 1
+    },
+    "meat": {
+      "fridge": 3,
+      "freezer": 180,
+      "room_temp": 0
+    },
+    "other": {
+      "fridge": 7,
+      "freezer": 90,
+      "room_temp": 14
+    },
+    "produce": {
+      "fridge": 7,
+      "freezer": 180,
+      "room_temp": 3
+    },
+    "ready_meal": {
+      "fridge": 3,
+      "freezer": 90,
+      "room_temp": 1
+    },
+    "seafood": {
+      "fridge": 2,
+      "freezer": 180,
+      "room_temp": 0
+    },
+    "snacks": {
+      "fridge": 30,
+      "freezer": 90,
+      "room_temp": 30
+    },
+    "spices": {
+      "fridge": 365,
+      "freezer": 365,
+      "room_temp": 365
+    }
+  }
 }

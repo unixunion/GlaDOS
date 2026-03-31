@@ -231,6 +231,10 @@ class WhisperVoiceDetectionModule:
             return
         # Wait briefly for speaker audio to die down so we don't transcribe our own TTS
         time.sleep(0.5)
+        # Check if new TTS started during the sleep — if so, don't enable listening
+        if self.speaking_lock and self.speaking_lock.is_set():
+            logger.info("TTS started again during settle delay — skipping listen_for_response.")
+            return
         self._play_listen_beep()
         # Reset VAD state but keep the pre-wake buffer — flushing it causes
         # the start of the user's speech to be clipped when VAD triggers

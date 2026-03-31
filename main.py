@@ -19,18 +19,60 @@ logger.remove()
 def _log_colorizer(record):
     """Colorize log messages by subsystem based on module path."""
     name = record["name"]
+    _ts = "<cyan>{time:HH:mm:ss.SSS}</cyan>"
+
+    # Speech / TTS / voice detection — green
+    if "speech_detection" in name or "whisper" in name or "wakeword" in name or "openwakeword" in name:
+        return f"{_ts} | <green>{{level:<8}}</green> | <green>{{name}}:{{function}}:{{line}}</green> - {{message}}\n{{exception}}"
+    if "voice_core" in name or "speech_module" in name or "kokoro" in name:
+        return f"{_ts} | <light-green>{{level:<8}}</light-green> | <light-green>{{name}}:{{function}}:{{line}}</light-green> - {{message}}\n{{exception}}"
+
+    # LLM core — yellow
+    if "chat_client" in name or "queue_processor" in name or "event_handler" in name:
+        return f"{_ts} | <yellow>{{level:<8}}</yellow> | <yellow>{{name}}:{{function}}:{{line}}</yellow> - {{message}}\n{{exception}}"
+    if "stream_handler" in name or "response_processor" in name or "message_manager" in name:
+        return f"{_ts} | <light-yellow>{{level:<8}}</light-yellow> | <light-yellow>{{name}}:{{function}}:{{line}}</light-yellow> - {{message}}\n{{exception}}"
+    if "backend" in name or "tool_executor" in name:
+        return f"{_ts} | <yellow>{{level:<8}}</yellow> | <yellow>{{name}}:{{function}}:{{line}}</yellow> - {{message}}\n{{exception}}"
+
+    # NLP / intent classification — magenta
+    if "nlp" in name or "dispatcher" in name or "intent_classifier" in name:
+        return f"{_ts} | <magenta>{{level:<8}}</magenta> | <magenta>{{name}}:{{function}}:{{line}}</magenta> - {{message}}\n{{exception}}"
+
+    # Knowledge / RAG — light blue
+    if "knowledge" in name or "rag" in name or "conversation_rag" in name:
+        return f"{_ts} | <light-blue>{{level:<8}}</light-blue> | <light-blue>{{name}}:{{function}}:{{line}}</light-blue> - {{message}}\n{{exception}}"
+
+    # Memory — light cyan
+    if "memory" in name:
+        return f"{_ts} | <light-cyan>{{level:<8}}</light-cyan> | <light-cyan>{{name}}:{{function}}:{{line}}</light-cyan> - {{message}}\n{{exception}}"
+
+    # Display / UI — white
+    if "display" in name:
+        return f"{_ts} | <white>{{level:<8}}</white> | <white>{{name}}:{{function}}:{{line}}</white> - {{message}}\n{{exception}}"
+
+    # Music — light magenta
+    if "music" in name or "spotify" in name:
+        return f"{_ts} | <light-magenta>{{level:<8}}</light-magenta> | <light-magenta>{{name}}:{{function}}:{{line}}</light-magenta> - {{message}}\n{{exception}}"
+
+    # Pantry / shopping — cyan
+    if "pantry" in name or "shopping" in name:
+        return f"{_ts} | <cyan>{{level:<8}}</cyan> | <cyan>{{name}}:{{function}}:{{line}}</cyan> - {{message}}\n{{exception}}"
+
+    # Recipes — light red (orange-ish)
+    if "recipe" in name:
+        return f"{_ts} | <light-red>{{level:<8}}</light-red> | <light-red>{{name}}:{{function}}:{{line}}</light-red> - {{message}}\n{{exception}}"
+
+    # Other plugins (timer, alarm, chores, vision, personality, etc.) — blue
     if "plugin" in name or "cores" in name:
-        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | <blue>{level:<8}</blue> | <cyan>{name}:{function}:{line}</cyan> - {message}\n{exception}"
-    elif "llm" in name or "chat_client" in name or "stream" in name or "response" in name:
-        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | <yellow>{level:<8}</yellow> | <yellow>{name}:{function}:{line}</yellow> - {message}\n{exception}"
-    elif "nlp" in name or "dispatcher" in name or "intent" in name:
-        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | <magenta>{level:<8}</magenta> | <magenta>{name}:{function}:{line}</magenta> - {message}\n{exception}"
-    elif "speech" in name or "whisper" in name or "wakeword" in name or "voice" in name:
-        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | <green>{level:<8}</green> | <green>{name}:{function}:{line}</green> - {message}\n{exception}"
-    elif "display" in name or "event" in name:
-        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | <white>{level:<8}</white> | <white>{name}:{function}:{line}</white> - {message}\n{exception}"
-    else:
-        return "<cyan>{time:HH:mm:ss.SSS}</cyan> | {level:<8} | {name}:{function}:{line} - {message}\n{exception}"
+        return f"{_ts} | <blue>{{level:<8}}</blue> | <blue>{{name}}:{{function}}:{{line}}</blue> - {{message}}\n{{exception}}"
+
+    # System / event system — dim
+    if "event_system" in name or "system" in name:
+        return f"{_ts} | {{level:<8}} | {{name}}:{{function}}:{{line}} - {{message}}\n{{exception}}"
+
+    # Default
+    return f"{_ts} | {{level:<8}} | {{name}}:{{function}}:{{line}} - {{message}}\n{{exception}}"
 
 logger.add(sys.stderr, level="INFO", format=_log_colorizer)
 

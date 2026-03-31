@@ -280,6 +280,27 @@ def safe_parse_list(serialized_list: Any) -> list:
         return []
 
 
+def _get_pantry_names() -> list[str]:
+    """Get lowercased pantry item names for ingredient cross-reference."""
+    try:
+        from plugins.pantry.pantry_plugin import PantryPlugin
+        return [i["name"].lower() for i in PantryPlugin()._pantry["items"]]
+    except Exception:
+        return []
+
+
+def _count_pantry_matches(ingredients: list[str], pantry_names: list[str]) -> tuple[int, int]:
+    """Count how many ingredients are in the pantry. Returns (have, missing)."""
+    have = 0
+    for ing in ingredients:
+        ing_lower = ing.lower()
+        # Extract the core ingredient name (strip quantities, modifiers)
+        # Simple approach: check if any pantry item appears in the ingredient line
+        if any(fuzz.partial_ratio(pn, ing_lower) >= 75 for pn in pantry_names):
+            have += 1
+    return have, len(ingredients) - have
+
+
 # Last search results for positional selection ("select the first one")
 _last_search_results = []
 
@@ -333,6 +354,7 @@ def search_recipes(query: str) -> dict:
         logger.warning(f"No recipes found for: {query}")
         return "No recipes found matching the enquiry was found in the recipe search API."
 
+    pantry_names = _get_pantry_names()
     result_data = []
     display_results = []
     for score, recipe in matches[:10]:
@@ -340,6 +362,7 @@ def search_recipes(query: str) -> dict:
             parsed_ingredients = safe_parse_list(recipe["ingredients"])
             ingredients_list = ", ".join(format_ingredient_for_speech(ing) for ing in parsed_ingredients[:8])
 
+            have, missing = _count_pantry_matches(parsed_ingredients, pantry_names)
             structured_recipe = (
                 f"Title: {recipe['title']}, score: {score}, Ingredients: {ingredients_list}\n\n"
             )
@@ -348,6 +371,8 @@ def search_recipes(query: str) -> dict:
                 "title": recipe["title"],
                 "image_name": recipe.get("image_name"),
                 "ingredient_count": len(parsed_ingredients),
+                "have_count": have,
+                "missing_count": missing,
             })
         except Exception as e:
             logger.debug(f"Skipping recipe: {e}")
@@ -570,10 +595,11 @@ def _on_recipe_action(event):
             # No TTS — the user clicked it in the UI, they can see the result
     elif action == "search_from_pantry":
         # Call pantry plugin's suggest_meals_from_pantry directly — no TTS for UI actions
+        expiring_items = data.get("expiring_items")
         try:
             from plugins.pantry.pantry_plugin import PantryPlugin
             pp = PantryPlugin()
-            pp.suggest_meals_from_pantry()
+            pp.suggest_meals_from_pantry(expiring_items=expiring_items)
         except Exception as e:
             logger.warning(f"[Recipe] Pantry search failed: {e}")
 

@@ -260,6 +260,10 @@ class ChatClient:
             )
             ChatHookRegistry().run_hooks(ChatPipelinePhase.PRE_LLM, ctx)
             if ctx.handled:
+                # Add a placeholder so the LLM context doesn't have a bare user message
+                self.message_manager.add_message_to_current_context(
+                    "assistant", "[Handled by system]"
+                )
                 return
             memory_context = ctx.memory_context
             self._chat_ctx = ctx
@@ -273,6 +277,10 @@ class ChatClient:
                 self.config.hybrid_nlp_threshold,
             )
             if result.handled:
+                # Add a placeholder so the LLM context doesn't have a bare user message
+                self.message_manager.add_message_to_current_context(
+                    "assistant", "[Handled by system]"
+                )
                 return
             if result.tool_result is not None:
                 self.message_manager.add_message_to_current_context(

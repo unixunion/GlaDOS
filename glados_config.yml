@@ -220,6 +220,7 @@ Glados:
     - name: pantry_plugin
       config:
         shopping_mode_timeout: 120
+        auto_estimate_expiry: true
     - name: personality_core
       config:
         enabled: true

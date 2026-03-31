@@ -364,41 +364,99 @@ class MusicPlayer(RunnableMCPPlugin):
             logger.warning(f"Could not get Spotify devices: {e}")
             return None
 
+    # Genre/mood keywords that clearly indicate a playlist search
+    _GENRE_KEYWORDS = {
+        "jazz", "rock", "pop", "metal", "classical", "electronic", "ambient",
+        "synthwave", "darkwave", "gothic", "industrial", "punk rock", "hip hop",
+        "rap", "r&b", "soul", "funk", "blues", "country", "reggae", "ska",
+        "techno", "house", "trance", "drum and bass", "dnb", "lo-fi", "lofi",
+        "chill", "relaxing", "workout", "party", "study", "sleep", "focus",
+        "80s", "90s", "70s", "60s", "2000s", "retro", "indie", "alternative",
+        "post-punk", "shoegaze", "goth", "neofolk", "witch house", "vaporwave",
+        "trip-hop", "trip hop", "downtempo", "chillwave", "dream pop",
+    }
+
+    def _classify_music_query(self, query: str) -> dict:
+        """Classify a music query into type and structured fields using pattern matching.
+
+        Returns dict with: type (artist|album|track|playlist), query, artist (optional).
+        """
+        q = query.strip()
+
+        # "X by Y" pattern → track or album with artist filter
+        by_match = re.match(r"^(.+?)\s+by\s+(.+)$", q, re.IGNORECASE)
+        if by_match:
+            title = by_match.group(1).strip()
+            artist = by_match.group(2).strip()
+            logger.info(f"[Music] Classified '{q}' as track (by-pattern): title='{title}', artist='{artist}'")
+            return {"type": "track", "query": title, "artist": artist}
+
+        # Check for genre/mood keywords → playlist
+        q_lower = q.lower()
+        # "some X", "X music", or query is/contains a genre keyword
+        genre_indicators = ["some ", "music", "playlist", "mix", "vibes"]
+        if any(ind in q_lower for ind in genre_indicators):
+            clean = re.sub(r"\b(some|music|playlist|mix|vibes)\b", "", q_lower).strip()
+            logger.info(f"[Music] Classified '{q}' as playlist (genre indicator): '{clean}'")
+            return {"type": "playlist", "query": clean or q}
+
+        for genre in self._GENRE_KEYWORDS:
+            if re.search(r'\b' + re.escape(genre) + r'\b', q_lower):
+                logger.info(f"[Music] Classified '{q}' as playlist (genre match: '{genre}')")
+                return {"type": "playlist", "query": q}
+
+        # Default: search all types and let Spotify decide — return "auto"
+        # which _search_and_play handles by trying playlist → artist → album → tracks
+        logger.info(f"[Music] Classified '{q}' as auto (no clear pattern)")
+        return {"type": "auto", "query": q, "artist": ""}
+
     def _search_and_play(self, query: str) -> dict:
         try:
-            results = self.sp.search(q=query, type="track", limit=5)
-            tracks = results.get("tracks", {}).get("items", [])
+            device_id = self._get_active_device()
+            if not device_id:
+                return {"status": "error", "message": "No active Spotify device found. Open Spotify on a device first."}
 
-            if tracks:
-                track = tracks[0]
-                track_name = track["name"]
-                artist = track["artists"][0]["name"]
-                uri = track["uri"]
-                device_id = self._get_active_device()
-                if not device_id:
-                    return {"status": "error", "message": "No active Spotify device found. Open Spotify on a device first."}
-                self.sp.start_playback(device_id=device_id, uris=[uri])
-                return {"status": "playing", "track": track_name, "artist": artist}
+            classified = self._classify_music_query(query)
+            qtype = classified["type"]
+            search_q = classified.get("query", query)
+            artist_filter = classified.get("artist", "")
 
-            results = self.sp.search(q=query, type="artist", limit=3)
-            artists = results.get("artists", {}).get("items", [])
-            if artists:
-                artist = artists[0]
-                device_id = self._get_active_device()
-                if not device_id:
-                    return {"status": "error", "message": "No active Spotify device found. Open Spotify on a device first."}
-                self.sp.start_playback(device_id=device_id, context_uri=artist["uri"])
-                return {"status": "playing", "artist": artist["name"]}
+            # Build search query with artist filter if available
+            full_query = f"{search_q} {artist_filter}".strip() if artist_filter else search_q
 
-            results = self.sp.search(q=query, type="playlist", limit=3)
-            playlists = results.get("playlists", {}).get("items", [])
-            if playlists:
-                playlist = playlists[0]
-                device_id = self._get_active_device()
-                if not device_id:
-                    return {"status": "error", "message": "No active Spotify device found. Open Spotify on a device first."}
-                self.sp.start_playback(device_id=device_id, context_uri=playlist["uri"])
-                return {"status": "playing", "playlist": playlist["name"]}
+            # Search the classified type first, then fall back
+            if qtype == "artist":
+                result = self._try_play_artist(full_query, device_id)
+                if result:
+                    return result
+
+            elif qtype == "album":
+                result = self._try_play_album(full_query, device_id)
+                if result:
+                    return result
+
+            elif qtype == "track":
+                result = self._try_play_track(search_q, artist_filter, device_id)
+                if result:
+                    return result
+
+            elif qtype == "playlist":
+                result = self._try_play_playlist(full_query, device_id)
+                if result:
+                    return result
+
+            # "auto" or fallback: try artist → playlist → album → tracks
+            if qtype == "auto" or True:
+                for try_fn in [self._try_play_artist, self._try_play_playlist,
+                               self._try_play_album]:
+                    result = try_fn(full_query, device_id)
+                    if result:
+                        return result
+
+                # Last resort: queue multiple tracks
+                result = self._try_play_track(full_query, "", device_id)
+                if result:
+                    return result
 
             return {"status": "error", "message": f"No results found for '{query}'."}
 
@@ -409,7 +467,70 @@ class MusicPlayer(RunnableMCPPlugin):
             logger.error(f"Spotify search error: {e}")
             return {"status": "error", "message": str(e)}
 
+    def _try_play_playlist(self, query: str, device_id: str) -> Optional[dict]:
+        results = self.sp.search(q=query, type="playlist", limit=3)
+        playlists = results.get("playlists", {}).get("items", [])
+        if playlists:
+            playlist = playlists[0]
+            self.sp.start_playback(device_id=device_id, context_uri=playlist["uri"])
+            self.sp.shuffle(True, device_id=device_id)
+            return {"status": "playing", "playlist": playlist["name"]}
+        return None
+
+    def _try_play_artist(self, query: str, device_id: str) -> Optional[dict]:
+        results = self.sp.search(q=query, type="artist", limit=3)
+        artists = results.get("artists", {}).get("items", [])
+        if artists:
+            artist = artists[0]
+            self.sp.start_playback(device_id=device_id, context_uri=artist["uri"])
+            self.sp.shuffle(True, device_id=device_id)
+            return {"status": "playing", "artist": artist["name"]}
+        return None
+
+    def _try_play_album(self, query: str, device_id: str) -> Optional[dict]:
+        results = self.sp.search(q=query, type="album", limit=3)
+        albums = results.get("albums", {}).get("items", [])
+        if albums:
+            album = albums[0]
+            self.sp.start_playback(device_id=device_id, context_uri=album["uri"])
+            return {"status": "playing", "album": album["name"], "artist": album["artists"][0]["name"]}
+        return None
+
+    def _try_play_track(self, query: str, artist: str, device_id: str) -> Optional[dict]:
+        search_q = f"{query} artist:{artist}" if artist else query
+        results = self.sp.search(q=search_q, type="track", limit=20)
+        tracks = results.get("tracks", {}).get("items", [])
+        if tracks:
+            # Play the matched track first, then queue related tracks for continuous play
+            self.sp.start_playback(device_id=device_id, uris=[t["uri"] for t in tracks])
+            return {"status": "playing", "track": tracks[0]["name"], "artist": tracks[0]["artists"][0]["name"]}
+        return None
+
+    def _try_reconnect_spotify(self):
+        """Attempt to reconnect Spotify if the client is not initialized (e.g., offline at boot)."""
+        cache_path = os.path.join(os.getcwd(), ".spotify_cache")
+        if not os.path.exists(cache_path) or not os.environ.get("SPOTIFY_CLIENT_ID"):
+            return False
+        try:
+            self.sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+                client_id=os.environ.get("SPOTIFY_CLIENT_ID", ""),
+                client_secret=os.environ.get("SPOTIFY_CLIENT_SECRET", ""),
+                redirect_uri=os.environ.get("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:5001/spotify/callback"),
+                scope=SPOTIFY_SCOPES,
+                cache_path=cache_path,
+                open_browser=False,
+            ))
+            self.sp.current_playback()
+            logger.success("Spotify client reconnected successfully.")
+            return True
+        except Exception as e:
+            logger.debug(f"Spotify reconnect failed: {e}")
+            self.sp = None
+            return False
+
     def play_music(self, action: str, query: str = None) -> dict:
+        if not self.sp:
+            self._try_reconnect_spotify()
         if not self.sp:
             return {"status": "error", "message": "Spotify is not configured. Set SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, and SPOTIFY_REDIRECT_URI."}
 

@@ -178,7 +178,7 @@
 
     <div class="footer-bar">
         <span class="progress" id="progress">0 of 0</span>
-        <button class="done-btn" id="done-btn" onclick="doneShopping()" disabled>Done Shopping</button>
+        <button class="done-btn" id="done-btn" onclick="doneShopping()" disabled>Done Shopping &#10004;</button>
     </div>
 
     <script src="/static/socket.io.min.js"></script>
@@ -233,11 +233,12 @@
         }
 
         // --- Rendering ---
-        const categoryOrder = ['dairy', 'produce', 'meat', 'seafood', 'bakery', 'frozen', 'dry_goods', 'beverages', 'condiments', 'snacks', 'other'];
+        const categoryOrder = ['produce', 'meat', 'seafood', 'dairy', 'bakery', 'frozen', 'dry_goods', 'beverages', 'condiments', 'spices', 'snacks', 'other'];
         const categoryLabels = {
-            dairy: 'Dairy & Eggs', produce: 'Produce', meat: 'Meat', seafood: 'Seafood',
-            bakery: 'Bakery', frozen: 'Frozen', dry_goods: 'Dry Goods',
-            beverages: 'Beverages', condiments: 'Condiments', snacks: 'Snacks', other: 'Other'
+            produce: '🥦 Fresh Produce', meat: '🥩 Butchery & Meat', seafood: '🐟 Seafood', dairy: '🥛 Dairy & Eggs',
+            bakery: '🍞 Bakery', frozen: '🧊 Frozen', dry_goods: '🏠 Pantry & Dry Goods',
+            beverages: '🥤 Beverages', condiments: '🧈 Condiments & Sauces', spices: '🧂 Spices',
+            snacks: '🍪 Snacks', other: '🛒 Other'
         };
 
         function render() {
@@ -247,7 +248,9 @@
 
             document.getElementById('item-count').textContent = `${total} item${total !== 1 ? 's' : ''}`;
             document.getElementById('progress').textContent = `${gotCount} of ${total}`;
-            document.getElementById('done-btn').disabled = gotCount === 0;
+            const doneBtn = document.getElementById('done-btn');
+            doneBtn.disabled = gotCount === 0;
+            doneBtn.textContent = gotCount > 0 ? `Done Shopping (${gotCount}) \u2714` : 'Done Shopping \u2714';
 
             if (total === 0) {
                 container.innerHTML = '<div class="empty-state">Shopping list is empty</div>';
@@ -335,8 +338,17 @@
         }
 
         function doneShopping() {
+            const gotCount = items.filter(i => i.got).length;
+            const remaining = items.length - gotCount;
+            let msg = `Move ${gotCount} checked item${gotCount !== 1 ? 's' : ''} to pantry?`;
+            if (remaining > 0) msg += ` (${remaining} unchecked will stay on the list)`;
+            if (!confirm(msg)) return;
+
             if (connected) {
                 socket.emit('shopping_list_action', { action: 'complete' });
+                // Show brief confirmation
+                const container = document.getElementById('list-container');
+                container.innerHTML = '<div class="empty-state">Shopping complete! Put items away on the main display.</div>';
             }
         }
 

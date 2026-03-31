@@ -331,6 +331,22 @@ class KnowledgeRAG(RunnableMCPPlugin):
             logger.debug("[KnowledgeRAG] Not ready yet (background init in progress), skipping")
             return
 
+        # Skip if intent classifier is confident this is a tool command
+        try:
+            from glados.system.intent_classifier import IntentClassifier
+            from glados.system.plugin import PluginSystem
+            classifier = IntentClassifier()
+            if classifier.model:
+                predicted, confidence = classifier.predict_intent(ctx.user_text)
+                if predicted and not predicted.startswith("_"):
+                    # Use per-tool threshold (same as stream_handler uses for tool_choice)
+                    threshold = PluginSystem().get_nlp_threshold(predicted, default=0.7)
+                    if confidence >= threshold:
+                        logger.info(f"[KnowledgeRAG] Skipping — likely tool command: {predicted} ({confidence:.2f} >= {threshold:.2f})")
+                        return
+        except Exception:
+            pass
+
         search_query = self._get_search_query(ctx)
         logger.info(f"[KnowledgeRAG] Searching for: '{search_query[:80]}' (mode={self.query_mode})")
         t_start = time.perf_counter()

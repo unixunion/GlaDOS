@@ -127,6 +127,23 @@ DEFAULT_SHELF_LIFE = {
     "ready_meal": {"fridge": 3,   "freezer": 90,  "room_temp": 1},
 }
 
+# Suggested storage type per category — used for "put away" flow
+CATEGORY_LOCATION_SUGGESTION = {
+    "dairy": "fridge",
+    "produce": "fridge",
+    "meat": "fridge",
+    "seafood": "fridge",
+    "frozen": "freezer",
+    "bakery": "room_temp",
+    "dry_goods": "room_temp",
+    "beverages": "fridge",
+    "condiments": "fridge",
+    "spices": "room_temp",
+    "snacks": "room_temp",
+    "ready_meal": "fridge",
+    "other": "fridge",
+}
+
 # Keywords in location names used to infer storage type
 LOCATION_TYPE_HINTS = {
     "fridge": "fridge",
@@ -567,6 +584,7 @@ class PantryPlugin(RunnableMCPPlugin):
         self.register_view("shopping_list", "plugins/pantry/views/shopping.js", dashboard_card=True)
         self.register_view("pantry", "plugins/pantry/views/pantry.js", dashboard_card=True)
         self.register_view("pantry_shelf_life", "plugins/pantry/views/pantry.js")
+        self.register_view("pantry_put_away", "plugins/pantry/views/pantry.js")
 
         list_count = len(self._shopping_list["items"])
         pantry_count = len(self._pantry["items"])
@@ -697,14 +715,18 @@ class PantryPlugin(RunnableMCPPlugin):
     # -----------------------------------------------------------------------
 
     def _find_shopping_item(self, name: str) -> Optional[dict]:
-        """Find a shopping list item by fuzzy name match."""
+        """Find a shopping list item by fuzzy name match.
+
+        Uses partial_ratio so "chicken" matches "chicken breasts" and
+        "milk" matches "full cream milk".
+        """
         name_lower = name.lower()
         best, best_score = None, 0
         for item in self._shopping_list["items"]:
-            score = fuzz.ratio(name_lower, item["name"].lower())
+            score = fuzz.partial_ratio(name_lower, item["name"].lower())
             if score > best_score:
                 best, best_score = item, score
-        return best if best_score >= 70 else None
+        return best if best_score >= 80 else None
 
     def _find_pantry_items(self, name: str) -> list[dict]:
         """Find pantry items by fuzzy name match. Returns all matches above threshold."""
@@ -1240,7 +1262,7 @@ class PantryPlugin(RunnableMCPPlugin):
             ),
         }
 
-    def suggest_meals_from_pantry(self, use_expiring_first: bool = True) -> dict:
+    def suggest_meals_from_pantry(self, use_expiring_first: bool = True, expiring_items: list = None) -> dict:
         """Suggest recipes based on pantry contents, prioritizing expiring items."""
         if not self._pantry["items"]:
             return {"status": "empty", "message": "The pantry is empty. Nothing to suggest."}
@@ -1259,9 +1281,13 @@ class PantryPlugin(RunnableMCPPlugin):
             else:
                 ingredient_items.append(item)
 
-        # Prioritize expiring ingredients
+        # Prioritize specific expiring items if provided, otherwise auto-detect
         expiring = []
-        if use_expiring_first:
+        if expiring_items:
+            expiring = list(expiring_items)
+            others = [i["name"] for i in ingredient_items if i["name"] not in expiring_items]
+            query_items = expiring + others
+        elif use_expiring_first:
             today = date.today()
             others = []
             for item in ingredient_items:
@@ -1288,14 +1314,19 @@ class PantryPlugin(RunnableMCPPlugin):
             top = matches[:10]
 
             # Push results to display as recipe search view
-            display_results = [
-                {
+            from plugins.recipes.recipe_api import _count_pantry_matches
+            pantry_names = [i["name"].lower() for i in self._pantry["items"]]
+            display_results = []
+            for m in top:
+                ings = m.get("ingredients", [])
+                have, missing = _count_pantry_matches(ings, pantry_names) if ings else (0, 0)
+                display_results.append({
                     "title": m["title"],
                     "image_name": m.get("image_name"),
-                    "ingredient_count": len(m.get("ingredients", [])),
-                }
-                for m in top
-            ]
+                    "ingredient_count": len(ings),
+                    "have_count": have,
+                    "missing_count": missing,
+                })
             self.event_system.publish(EventMessage(
                 role="display", name="recipe_search",
                 content={
@@ -1492,6 +1523,40 @@ class PantryPlugin(RunnableMCPPlugin):
         self._publish_shopping_list_display()
         logger.info(f"[Pantry] Added '{item}' to shopping list (category: {new_item['category']})")
 
+        # If category is "other", try LLM classification in background
+        if new_item["category"] == "other":
+            import threading
+            def _bg_classify():
+                try:
+                    client, model = self._get_llm_classifier()
+                    if not client:
+                        return
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": (
+                                "Classify this grocery item into exactly one category. "
+                                "Reply with ONLY the category name.\n"
+                                "Categories: dairy, produce, meat, seafood, bakery, frozen, "
+                                "dry_goods, beverages, condiments, spices, snacks, other"
+                            )},
+                            {"role": "user", "content": item},
+                        ],
+                        max_tokens=10,
+                        temperature=0,
+                    )
+                    cat = response.choices[0].message.content.strip().lower().replace(" ", "_")
+                    valid = {"dairy", "produce", "meat", "seafood", "bakery", "frozen",
+                             "dry_goods", "beverages", "condiments", "spices", "snacks"}
+                    if cat in valid:
+                        new_item["category"] = cat
+                        self._save_shopping_list()
+                        self._publish_shopping_list_display()
+                        logger.info(f"[Pantry] LLM reclassified shopping item '{item}' → {cat}")
+                except Exception as e:
+                    logger.debug(f"[Pantry] Shopping item LLM classify failed: {e}")
+            threading.Thread(target=_bg_classify, daemon=True).start()
+
         return {
             "status": "added", "item": item, "category": new_item["category"],
             "recurring_days": recurring_days,
@@ -1521,19 +1586,26 @@ class PantryPlugin(RunnableMCPPlugin):
         }
 
     def complete_shopping(self, except_items: str = None) -> dict:
-        """Complete shopping — move bought items to pantry."""
+        """Complete shopping — move bought (checked) items to pantry.
+
+        Items marked as 'got' are moved. Unchecked items stay on the list.
+        The except_items parameter (from voice) explicitly keeps named items.
+        """
         except_names = []
         if except_items:
             except_names = [n.strip().lower() for n in re.split(r"\s*,\s*", except_items)]
 
         moved = []
         remaining = []
+        # If no items are checked (voice command without UI interaction), move all
+        any_checked = any(i.get("got") for i in self._shopping_list["items"])
 
         for item in list(self._shopping_list["items"]):
             is_excepted = any(
-                fuzz.ratio(item["name"].lower(), exc) >= 70 for exc in except_names
+                fuzz.partial_ratio(item["name"].lower(), exc) >= 80 for exc in except_names
             )
-            if is_excepted:
+            is_unchecked = any_checked and not item.get("got", False)
+            if is_excepted or is_unchecked:
                 item["got"] = False
                 remaining.append(item)
             else:
@@ -1558,6 +1630,12 @@ class PantryPlugin(RunnableMCPPlugin):
         self._publish_shopping_list_display()
 
         logger.info(f"[Pantry] Shopping complete — moved {len(moved)}, {len(remaining)} remaining")
+
+        # Show put-away view if there are unassigned items
+        unassigned = [i for i in self._pantry["items"] if not i.get("location_id")]
+        if unassigned:
+            self._publish_put_away_display()
+
         return {
             "status": "success",
             "moved": len(moved),
@@ -1730,9 +1808,15 @@ class PantryPlugin(RunnableMCPPlugin):
         """Reclassify all pantry items. Uses LLM if available, otherwise keyword matching."""
         client, model = self._get_llm_classifier()
         use_llm = client is not None
+        total = len(self._pantry["items"])
+
+        # Publish start event for UI progress
+        self.event_system.publish(EventMessage(
+            "status", "reclassify_progress", {"current": 0, "total": total, "phase": "start"}
+        ))
 
         updated = 0
-        for item in self._pantry["items"]:
+        for idx, item in enumerate(self._pantry["items"]):
             old_type = item.get("item_type")
             if use_llm:
                 new_type = self._llm_classify_item(client, model, item["name"])
@@ -1743,13 +1827,24 @@ class PantryPlugin(RunnableMCPPlugin):
                 updated += 1
                 logger.info(f"[Pantry] Reclassified '{item['name']}': {old_type} -> {new_type}")
 
+            # Publish progress every item (LLM is slow, so each tick matters)
+            self.event_system.publish(EventMessage(
+                "status", "reclassify_progress",
+                {"current": idx + 1, "total": total, "item": item["name"], "phase": "running"}
+            ))
+
         if updated:
             self._save_pantry()
             self._publish_pantry_display()
 
         method = "LLM" if use_llm else "keyword"
-        total = len(self._pantry["items"])
         logger.info(f"[Pantry] Reclassification complete: {updated}/{total} changed ({method})")
+
+        self.event_system.publish(EventMessage(
+            "status", "reclassify_progress",
+            {"current": total, "total": total, "updated": updated, "phase": "done"}
+        ))
+
         return {
             "status": "success",
             "total": total,
@@ -1904,6 +1999,7 @@ class PantryPlugin(RunnableMCPPlugin):
         items = self._shopping_list["items"]
         got_count = sum(1 for i in items if i.get("got"))
         recurring_map = {r["item_name"].lower(): r.get("interval_days", 0) for r in self._shopping_list.get("recurring_rules", [])}
+        unassigned_count = sum(1 for i in self._pantry["items"] if not i.get("location_id"))
 
         self.event_system.publish(EventMessage(
             role="display",
@@ -1925,6 +2021,7 @@ class PantryPlugin(RunnableMCPPlugin):
                 ],
                 "total": len(items),
                 "got_count": got_count,
+                "unassigned_count": unassigned_count,
             },
             process_output=False,
         ))
@@ -1969,6 +2066,39 @@ class PantryPlugin(RunnableMCPPlugin):
                     "expiring": expiring,
                 },
             },
+            process_output=False,
+        ))
+
+    def _publish_put_away_display(self):
+        """Publish the put-away guided view for unassigned items."""
+        unassigned = [i for i in self._pantry["items"] if not i.get("location_id")]
+        if not unassigned:
+            return
+
+        locations = [{"id": l["id"], "name": l["name"], "type": l.get("type", "room_temp")}
+                     for l in self._pantry["locations"]]
+
+        items = []
+        for item in unassigned:
+            category = _categorize_item(item["name"])
+            suggested_type = CATEGORY_LOCATION_SUGGESTION.get(category, "fridge")
+            # Find the first location matching the suggested type
+            suggested_loc = next(
+                (l for l in self._pantry["locations"] if l.get("type") == suggested_type), None
+            )
+            items.append({
+                "id": item["id"],
+                "name": item["name"],
+                "category": category,
+                "item_type": item.get("item_type", "ingredient"),
+                "notes": item.get("notes"),
+                "suggested_location_id": suggested_loc["id"] if suggested_loc else None,
+                "suggested_location_name": suggested_loc["name"] if suggested_loc else None,
+            })
+
+        self.event_system.publish(EventMessage(
+            role="display", name="pantry_put_away",
+            content={"items": items, "locations": locations},
             process_output=False,
         ))
 
@@ -2032,6 +2162,7 @@ class PantryPlugin(RunnableMCPPlugin):
                     days_left = (exp - today).days
                     if days_left <= 3:
                         expiring_soon.append({
+                            "id": item["id"],
                             "name": item["name"],
                             "location": self._location_name(item["location_id"]),
                             "days_left": days_left,
@@ -2591,6 +2722,34 @@ class PantryPlugin(RunnableMCPPlugin):
                         break
                 self._save_pantry()
                 self._publish_pantry_display()
+
+        elif action == "assign_location":
+            # Put-away flow: assign a location to an unassigned item
+            item_id = data.get("item_id")
+            location_id = data.get("location_id")
+            if item_id and location_id:
+                item = next((i for i in self._pantry["items"] if i["id"] == item_id), None)
+                if item:
+                    item["location_id"] = location_id
+                    # Auto-estimate expiry now that we have a location
+                    if not item.get("expires") or item.get("expiry_source") != "user":
+                        est = self._estimate_expiry(item["name"], location_id)
+                        if est:
+                            item["expires"] = est
+                            item["expiry_source"] = "estimated"
+                    self._save_pantry()
+                    # Refresh put-away view (shows remaining unassigned items)
+                    unassigned = [i for i in self._pantry["items"] if not i.get("location_id")]
+                    if unassigned:
+                        self._publish_put_away_display()
+                    else:
+                        # All items assigned — switch to pantry view
+                        self._publish_pantry_display()
+                    loc = next((l for l in self._pantry["locations"] if l["id"] == location_id), None)
+                    logger.info(f"[Pantry] Put-away: '{item['name']}' → {loc['name'] if loc else location_id}")
+
+        elif action == "show_put_away":
+            self._publish_put_away_display()
 
     # -----------------------------------------------------------------------
     # Tick handler — recurring items + expiry warnings

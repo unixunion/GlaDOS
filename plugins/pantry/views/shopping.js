@@ -25,6 +25,7 @@ GlaDOS.views.shopping_list = {
         const items = data.items || [];
         const total = items.length;
         const gotCount = items.filter(i => i.got).length;
+        const unassignedCount = data.unassigned_count || 0;
         GlaDOS.dashboardData.shopping = { count: total, got: gotCount };
 
         let addForm = `<div class="shopping-add-form">
@@ -34,15 +35,15 @@ GlaDOS.views.shopping_list = {
         </div>`;
         if (!total) { container.innerHTML = `${addForm}<div style="text-align:center;color:#555;padding:40px">Shopping list is empty</div>`; return; }
 
-        const catOrder = ['dairy','produce','meat','seafood','bakery','frozen','dry_goods','beverages','condiments','snacks','other'];
-        const catLabels = {dairy:'Dairy & Eggs',produce:'Produce',meat:'Meat',seafood:'Seafood',bakery:'Bakery',frozen:'Frozen',dry_goods:'Dry Goods',beverages:'Beverages',condiments:'Condiments',snacks:'Snacks',other:'Other'};
+        const catOrder = ['produce','meat','seafood','dairy','bakery','frozen','dry_goods','beverages','condiments','spices','snacks','other'];
+        const catLabels = {produce:'&#x1F966; Fresh Produce',meat:'&#x1F969; Butchery & Meat',seafood:'&#x1F41F; Seafood',dairy:'&#x1F95B; Dairy & Eggs',bakery:'&#x1F35E; Bakery',frozen:'&#x1F9CA; Frozen',dry_goods:'&#x1F3E0; Pantry & Dry Goods',beverages:'&#x1F964; Beverages',condiments:'&#x1F9C8; Condiments & Sauces',spices:'&#x1F9C2; Spices',snacks:'&#x1F36A; Snacks',other:'&#x1F6D2; Other'};
         const groups = {};
         items.forEach(i => { const c = i.category||'other'; if(!groups[c]) groups[c]=[]; groups[c].push(i); });
 
         let html = '';
         catOrder.forEach(cat => {
             if (!groups[cat]) return;
-            html += `<div class="shopping-category-header">${GlaDOS.esc(catLabels[cat]||cat)}</div>`;
+            html += `<div class="shopping-category-header">${catLabels[cat]||GlaDOS.esc(cat)}</div>`;
             groups[cat].sort((a,b) => a.name.localeCompare(b.name));
             groups[cat].forEach(item => {
                 const gc = item.got ? ' got' : '';
@@ -58,11 +59,14 @@ GlaDOS.views.shopping_list = {
             });
         });
 
-        container.innerHTML = `${addForm}${html}
-            <div class="shopping-footer">
-                <span class="progress">${gotCount} of ${total} items</span>
-                ${gotCount > 0 ? '<button class="btn-primary" onclick="socket.emit(\'shopping_list_action\',{action:\'complete\'})">Done Shopping</button>' : ''}
-            </div>`;
+        const statusBar = `<div class="shopping-status-bar">
+            <span class="progress">${gotCount} of ${total} items</span>
+            ${gotCount > 0 ? `<button class="btn-primary" onclick="socket.emit('shopping_list_action',{action:'complete'})">Done Shopping (${gotCount})</button>` : ''}
+        </div>`;
+        const putAwayBanner = unassignedCount > 0
+            ? `<div class="shopping-put-away-banner" onclick="socket.emit('pantry_action',{action:'show_put_away'})">&#x1F4E6; ${unassignedCount} item${unassignedCount !== 1 ? 's' : ''} bought but not stored &mdash; <strong>Put Away</strong></div>`
+            : '';
+        container.innerHTML = `${addForm}${statusBar}${putAwayBanner}${html}`;
     },
 
     addItem() {

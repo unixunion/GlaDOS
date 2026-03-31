@@ -2,11 +2,24 @@
 GlaDOS.views.timer = {
     _minutes: 15,
     renderCard(container) {
+        const td = GlaDOS.dashboardData.timers || {};
+        const active = td.active || [];
+        let activeHtml = '';
+        if (active.length) {
+            activeHtml = active.slice(0, 3).map(t => {
+                const icon = t.type === 'alarm' ? '&#9200;' : (t.type === 'timer_done' || t.type === 'alarm_done') ? '&#9888;' : '&#9201;';
+                const isDone = t.type === 'timer_done' || t.type === 'alarm_done';
+                const cls = isDone ? ' style="color:#ff4444;font-weight:600"' : '';
+                return `<div${cls}>${icon} ${GlaDOS.esc(t.description||'Timer')} — ${GlaDOS.esc(t.expires_in||'done')}</div>`;
+            }).join('');
+        }
         container.innerHTML = `
             <div class="dash-card-header">
                 <span class="dash-card-icon">&#9201;</span> Timers
+                ${active.length ? '<span class="dash-card-badge' + (active.some(t=>t.type.includes('done'))?' urgent':'') + '">' + active.length + '</span>' : ''}
             </div>
             <div class="dash-card-body" id="dash-timers">
+                ${activeHtml || ''}
                 <div class="timer-quick-btns">
                     <button class="tq-btn" onclick="GlaDOS.views.timer.quickSelect(5)">5m</button>
                     <button class="tq-btn" onclick="GlaDOS.views.timer.quickSelect(10)">10m</button>
@@ -49,6 +62,12 @@ GlaDOS.views.timer = {
         document.getElementById('timer-adjust').style.display = 'none';
     },
     render(container, data) {
+        // Update dashboard data so the timer card shows live countdowns
+        GlaDOS.dashboardData.timers = { active: data.timers || [] };
+        // Re-render the timer dashboard card if visible
+        const cardEl = document.getElementById('dash-card-timer');
+        if (cardEl && GlaDOS.views.timer.renderCard) GlaDOS.views.timer.renderCard(cardEl);
+
         // Timer overlay uses a different container (timerOverlay, not viewContainer)
         const overlay = document.getElementById('timer-overlay');
         if (data.timers && data.timers.length > 0) {

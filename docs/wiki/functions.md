@@ -101,18 +101,17 @@ These commands only work in COOKING activity context, after a recipe has been se
 
 ## Music Player
 
-Controls music playback. Configure music directory in `glados_config.yml`:
-```yaml
-music_dir: ~/Music
-```
+Controls Spotify playback. Requires Spotify credentials — run `python3 spotify_auth.py` to authenticate.
 
 | Say this | What happens |
 |----------|-------------|
-| "play some music" | Play something |
-| "play bohemian rhapsody" | Fuzzy match and play a specific song |
-| "play the playlist chill vibes" | Play a playlist |
-| "put on some jazz" | Genre-based playback |
-| "play sugar by maroon 5" | Artist + song |
+| "play radiohead" | Plays the artist (shuffled catalog) |
+| "play californication" | Searches artist → playlist → album → tracks |
+| "play bohemian rhapsody by queen" | "X by Y" pattern → searches track with artist filter |
+| "play dummy by portishead" | Works for albums too — finds the best match |
+| "play some darkwave" | Genre keyword → searches playlists (shuffled) |
+| "play 80s synthwave" | Genre/era keyword → playlist search |
+| "play chill jazz music" | "music" keyword → playlist search |
 | "stop the music" | Stop playback |
 | "pause the music" / "pause" | Pause |
 | "resume the music" | Resume |
@@ -123,6 +122,29 @@ music_dir: ~/Music
 | "what am I listening to" | Alternate phrasing |
 | "list spotify devices" | Show available speakers |
 | "what speakers are connected" | Alternate phrasing |
+
+### Smart Query Classification
+
+The music player classifies queries to search the right Spotify type:
+
+| Pattern | Classification | Example |
+|---------|---------------|---------|
+| "X by Y" | Track with artist filter | "creep by radiohead" → track search for "creep" filtered to Radiohead |
+| Genre/mood keywords | Playlist search (shuffled) | "darkwave", "chill jazz", "80s synthwave" |
+| "some X" / "X music" / "X vibes" | Playlist search | "some trip-hop", "workout music" |
+| Everything else | Auto — tries artist → playlist → album → tracks | "the police", "lateralus" |
+
+The auto fallback chain ensures that even ambiguous names find the right thing — "the police" tries artist search first (finds The Police), "lateralus" tries artist (no match), then playlist, then album (finds Tool's album).
+
+### Continuous Playback
+
+- **Playlists and artists** start shuffled for variety
+- **Track searches** queue 20 related tracks so music doesn't stop after one song
+- **Albums** play in order (no shuffle)
+
+### Reconnection
+
+If GlaDOS starts while offline, Spotify is unavailable. Once internet returns, the next `play_music` call automatically attempts to reconnect — no restart needed.
 
 - Music is paused when an alarm fires and resumed after dismissal
 

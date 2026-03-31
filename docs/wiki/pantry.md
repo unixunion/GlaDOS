@@ -35,13 +35,26 @@ Data is stored as JSON in `plugin_data/pantry/` and survives restarts and contex
 
 | Say this | What happens |
 |----------|-------------|
-| "we did the shopping" | Moves ALL items to pantry |
+| "we did the shopping" | Moves checked items to pantry (or all if none checked) |
 | "shopping done" | Alternate phrasing |
-| "we got everything except eggs and butter" | Moves everything except named items to pantry |
-| "we bought everything except the milk" | Named items stay on list |
+| "we got everything" | Moves all items to pantry |
+| "we got everything except eggs and butter" | Moves everything except named items |
 
-- Bought items are moved to the pantry (location: unassigned — you can tell GlaDOS where you put things next)
+- Only **checked** items move to pantry — unchecked items stay on the list
+- If no items were checked (voice-only, no UI interaction), all items move
+- Fuzzy matching: "except the chicken" matches "chicken breasts" on the list
+- After completing, the **Put Away** guided view appears automatically
 - Excepted items stay on the list with unchecked status
+
+### Put Away Flow
+
+After completing shopping, a guided view walks you through assigning a location to each item:
+
+- Each item shows **quick-tap location buttons** (Fridge, Freezer Drawer 1, Dry Goods, etc.)
+- **Suggested locations are highlighted in green** based on the item category (meat → Fridge, ice cream → Freezer)
+- Tapping a location assigns the item, auto-estimates its expiry, and moves to the next item
+- Once all items are assigned, the view switches to the full pantry
+- If you skip it, a highlighted **"Put Away (3)"** button appears in the pantry toolbar whenever there are unassigned items
 
 ### Interactive Display
 
@@ -89,9 +102,66 @@ Recurring rules persist across shopping cycles — completing shopping doesn't r
 - The pantry display colour-codes items: red (expired/today), orange (1-3 days), yellow (4-7 days), green (ok)
 - An "Expiring Soon" warning banner appears at the top of the pantry view
 
+### Auto-Estimated Expiry (Shelf Life)
+
+When items are added **without** an explicit expiry date, the system auto-estimates how long they'll keep based on:
+
+1. **Item category** — meat (3d fridge / 180d freezer), dairy (10d fridge), produce (7d fridge), dry goods (365d), etc.
+2. **Storage location type** — each location is classified as `fridge`, `freezer`, or `room_temp`
+3. **Spice rack override** — items in a location with "spice" in the name get 365-day shelf life regardless of category
+
+Estimated dates show with a `~` prefix and italic style in the UI to distinguish them from user-set dates.
+
+**Key behaviors:**
+- User-set expiry dates are **never** overridden — clearing an expiry is also treated as a user decision
+- Moving an item between locations (e.g., fridge → freezer) **re-estimates** if the expiry was auto-estimated
+- User-set dates are preserved on move
+- Estimation only happens on add or move — no bulk re-estimation
+
+**Three-layer configuration:**
+1. Hardcoded defaults in `DEFAULT_SHELF_LIFE` (sensible out-of-the-box)
+2. Config file overrides in `glados_config.yml` under `pantry_plugin.config.shelf_life_overrides`
+3. UI overrides via the **Shelf Life** config panel (toolbar button in pantry view)
+
+```yaml
+# Example config override
+plugins:
+  - name: pantry_plugin
+    config:
+      auto_estimate_expiry: true  # set false to disable
+      shelf_life_overrides:
+        meat: {fridge: 4, freezer: 120}
+```
+
+### Moving Items
+
+| Say this | What happens |
+|----------|-------------|
+| "I moved the chicken to the freezer" | Updates location, re-estimates expiry if auto-estimated |
+| "transfer the bread to the fridge" | Same behavior |
+
+- Move is LLM-only (no NLP fast-path) — the LLM has context to distinguish "move existing item" from "store new item"
+- The UI also provides a move dropdown per item in the pantry view
+
+### Location Types
+
+Each storage location has a type that affects shelf life estimation:
+
+| Type | Icon | Examples |
+|------|------|----------|
+| `fridge` | ❄️ | Fridge |
+| `freezer` | 🧊 | Freezer Drawer 1-3 |
+| `room_temp` | 🏠 | Dry Goods Cupboard, Spices |
+
+- Types are auto-inferred from location names when created
+- Can be changed via the dropdown on each location header in the pantry UI
+
 ### Proactive Warnings
 
-Once per day, GlaDOS checks for items expiring within 2 days and proactively announces them via TTS: "Heads up — the bacon in the fridge expires tomorrow."
+Once per day, GlaDOS checks for items expiring within 2 days and proactively announces them via TTS.
+
+- **User-set expiry**: "Heads up — the bacon in the fridge expires tomorrow."
+- **Estimated expiry**: "Heads up — the chicken in the fridge might be getting old." (softer language)
 
 ### Finding Items
 
@@ -205,22 +275,50 @@ While in planning mode:
 |----------|-------------|
 | "back from shopping" | Enters post-shopping mode |
 | "we're back from shopping" | Alternate phrasing |
-| "unpack the shopping" | Alternate phrasing |
+| "unpack the shopping" / "lets put away the shopping" | Alternate phrasing |
+| "back from the store" / "post shopping" | Alternate phrasing |
 
 While in post-shopping mode:
-- "got the eggs" — marks item as bought
-- "didn't get milk" / "skip the butter" — keeps item on list
-- "put chicken in freezer drawer 2" — stores item (same as normal)
-- "chicken expires on the 24th" — sets expiry (same as normal)
-- "done" — completes shopping (moves bought items to pantry), exits mode
+
+| Say this | What happens |
+|----------|-------------|
+| "got the eggs" / "we got the eggs" | Marks item as bought (checked) |
+| "didn't get milk" / "skip the butter" | Keeps item on list (unchecked) |
+| "put the chicken in freezer drawer 2" | Stores in pantry with location + auto-estimated expiry |
+| "chicken expires on the 24th" | Sets expiry date |
+| "we got everything" | Marks all as bought, moves to pantry |
+| "we got everything except the milk" | Moves all except named items to pantry |
+| "done" / "finished" / "that's everything" | Completes shopping, exits mode |
+
+**What happens on completion:**
+- Only **checked** items move to pantry (unchecked stay on list)
+- If nothing was checked (pure voice, no UI), all items move (backward compatible)
+- The **Put Away** guided view appears on the display for assigning storage locations
+- Fuzzy matching: "chicken" matches "chicken breasts", "milk" matches "full cream milk"
+
+### Completing Shopping (without post-shopping mode)
+
+You don't have to use post-shopping mode. These voice commands work anytime:
+
+| Say this | What happens |
+|----------|-------------|
+| "we did the shopping" / "shopping done" | Moves checked items to pantry |
+| "we got everything on the list" | Moves all items to pantry |
+| "we got everything except eggs and butter" | Moves all except named items |
+| "the shopping is complete" | Alternate phrasing |
+
+The **"Done Shopping"** button is also available:
+- In the shopping list view (sticky bar at the top with checked count)
+- In the mobile shopping list (`/shopping`) footer
+- Only active when at least one item is checked
 
 ### How it works
 
-- A PRE_LLM hook intercepts commands at priority 5 (before memory, knowledge, NLP)
-- Short commands (add/remove/got/store) are handled instantly without the LLM
-- Unrecognized commands still go to the LLM but with a restricted tool set — only shopping/pantry tools are available
+- Short commands in either mode are handled instantly (~5ms) without the LLM
+- Unrecognized commands go to the LLM with a restricted tool set (only shopping/pantry tools)
 - The display shows a mode indicator: "Planning" or "Post-Shopping" in orange
-- Say "done", "exit", or "that's everything" to leave any mode
+- Modes auto-timeout after inactivity (configurable, default 120 seconds)
+- Say "done", "exit", "that's everything", "finished", or "cancel" to leave any mode
 
 ## Mobile Shopping List
 
@@ -249,13 +347,30 @@ Access the shopping list on your phone at `http://<glados-ip>:5001/shopping`.
 2. On iPhone: tap Share > Add to Home Screen
 3. On Android: tap the browser menu > Add to Home Screen
 
-## Data Storage
+---
+
+## Technical Details
+
+### Data Storage
 
 All data is stored as human-readable JSON in `plugin_data/pantry/`:
 
 - `shopping_list.json` — items + recurring rules
-- `pantry.json` — inventory items + storage locations
+- `pantry.json` — inventory items, storage locations, shelf life config
 
-## Configuration
+### Configuration
 
-No configuration needed — the plugin works out of the box with sensible defaults. Storage locations can be managed via voice or the display UI.
+Works out of the box with sensible defaults. Optional overrides:
+
+```yaml
+plugins:
+  - name: pantry_plugin
+    config:
+      shopping_mode_timeout: 120        # seconds before auto-exiting planning/post-shopping modes
+      auto_estimate_expiry: true        # set false to disable shelf life estimation
+      shelf_life_overrides:             # override default shelf life (days) per category
+        meat: {fridge: 4, freezer: 120}
+        dairy: {fridge: 14}
+```
+
+Storage locations, location types, and shelf life defaults can also be managed via the display UI.
