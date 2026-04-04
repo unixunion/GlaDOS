@@ -186,3 +186,30 @@ normalize_shopping_items: false
 ```
 
 When disabled, items are stored exactly as you say them. Autocomplete suggestions still work.
+
+## Metric Annotations
+
+Most recipes use imperial units (cups, tablespoons, °F). Enable metric annotations to show both:
+
+```
+2 cups flour (~475ml)
+1 pound chicken (~455g)
+Bake at 375°F (~190°C) for 25 minutes
+```
+
+The original measurement is preserved — metric is added as a hint in parentheses. This applies to:
+- Recipe ingredients (display + TTS)
+- Cooking directions (temperature conversions)
+- Shopping list quantities (when adding from recipes)
+
+Enable in `glados_config.yml`:
+```yaml
+metric_annotations: true
+```
+
+Supported conversions:
+- **Volume**: cups, tablespoons, teaspoons, fluid ounces, pints, quarts, gallons → ml/L
+- **Weight**: pounds, ounces → g/kg
+- **Temperature**: °F → °C
+
+Units like "pinch", "dash", "can", "package" are left as-is — they don't have meaningful metric equivalents.

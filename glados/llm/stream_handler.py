@@ -30,6 +30,7 @@ class StreamHandler:
         query: str = None,
         confidence_threshold: float = 0.5,
         memory_context: str = None,
+        token_budget=None,
     ) -> Iterator[StreamChunk]:
         """Stream a response from the LLM via the backend.
 
@@ -63,4 +64,5 @@ class StreamHandler:
             tool_choice=tool_choice if tools else "none",
             max_tokens=self.max_response_tokens,
             memory_context=memory_context,
+            token_budget=token_budget,
         )

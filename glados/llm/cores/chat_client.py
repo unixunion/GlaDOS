@@ -251,12 +251,18 @@ class ChatClient:
         memory_context = None
         if content and not _recursive:
             from glados.llm.chat_hooks import ChatHookRegistry, ChatPipelinePhase, ChatContext
+            from glados.llm.token_budget import TokenBudget
+            budget = TokenBudget(
+                max_tokens=getattr(self.config, "max_context_tokens", 4096),
+                response_reserve=getattr(self.config, "max_response_tokens", 500),
+            )
             ctx = ChatContext(
                 user_text=str(content),
                 activity=self.message_manager.current_context,
                 session_id=self._session_id,
                 tts_queue=self.tts_queue,
                 message_manager=self.message_manager,
+                token_budget=budget,
             )
             ChatHookRegistry().run_hooks(ChatPipelinePhase.PRE_LLM, ctx)
             if ctx.handled:
@@ -266,6 +272,7 @@ class ChatClient:
                 )
                 return
             memory_context = ctx.memory_context
+            self._token_budget = ctx.token_budget
             self._chat_ctx = ctx
 
         # -- Hybrid NLP fast-path --
@@ -309,7 +316,9 @@ class ChatClient:
 
         try:
             response = self.stream_handler.stream_response(
-                relevant_tools or tools, model=self.model, query=content, memory_context=memory_context
+                relevant_tools or tools, model=self.model, query=content,
+                memory_context=memory_context,
+                token_budget=getattr(self, '_token_budget', None),
             )
 
             pending_tool_calls = self._consume_stream(response, _depth, _called_tools)

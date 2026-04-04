@@ -30,6 +30,7 @@ class ChatContext:
     message_manager: Any = None  # MessageManager instance for conversation history
     memory_context: str | None = None
     handled: bool = False
+    token_budget: Any = None  # TokenBudget instance for context window management
     extra: dict = field(default_factory=dict)
 
 

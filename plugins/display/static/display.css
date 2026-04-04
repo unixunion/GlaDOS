@@ -483,6 +483,23 @@
         .chat-bubble.tool-result .bubble-header { color: var(--chat-tool-result); font-size: 0.73rem; }
         .chat-bubble.async-event { background: rgba(255,193,7,0.1); border-left: 3px solid #ffc107; }
         .chat-bubble.async-event .bubble-header { color: var(--chat-async); }
+        /* Token budget bar */
+        .token-bar {
+            position: relative; height: 16px; background: rgba(0,0,0,0.3);
+            border-top: 1px solid rgba(255,255,255,0.05); overflow: hidden;
+        }
+        .token-fill {
+            position: absolute; top: 0; left: 0; height: 100%;
+            transition: width 0.3s;
+        }
+        .token-ok .token-fill { background: rgba(76, 175, 80, 0.3); }
+        .token-warn .token-fill { background: rgba(255, 152, 0, 0.3); }
+        .token-critical .token-fill { background: rgba(244, 67, 54, 0.3); }
+        .token-label {
+            position: relative; z-index: 1; font-size: 0.6rem; color: var(--text-secondary);
+            padding: 0 8px; line-height: 16px; white-space: nowrap; overflow: hidden;
+        }
+
         #chat-input-bar {
             display: flex; gap: 6px; padding: 10px 12px;
             background: rgba(0,0,0,0.3); border-top: 1px solid rgba(255,102,0,0.3);
@@ -504,6 +521,12 @@
         }
         #status-toast.visible { opacity: 1; }
         .status-speaking { color: var(--accent-light); }
+        .toast-stop-btn {
+            margin-left: 12px; padding: 4px 14px; background: rgba(244,67,54,0.2);
+            color: #ff6666; border: 1px solid rgba(244,67,54,0.5); border-radius: 6px;
+            cursor: pointer; font-size: 0.85rem; vertical-align: middle;
+        }
+        .toast-stop-btn:hover { background: rgba(244,67,54,0.4); }
 
         /* ── Mobile bottom nav ─────────────────────────── */
         #bottom-nav {

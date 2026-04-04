@@ -736,13 +736,22 @@ class PantryPlugin(RunnableMCPPlugin):
                 best, best_score = item, score
         return best if best_score >= 80 else None
 
-    def _find_pantry_items(self, name: str) -> list[dict]:
-        """Find pantry items by fuzzy name match. Returns all matches above threshold."""
+    def _find_pantry_items(self, name: str, strict: bool = False) -> list[dict]:
+        """Find pantry items by fuzzy name match. Returns all matches above threshold.
+
+        Args:
+            name: Item name to search for
+            strict: If True, use fuzz.ratio (full string similarity) instead of
+                    fuzz.partial_ratio (substring containment). Strict mode avoids
+                    false matches like "chicken thighs" matching "chicken breasts".
+        """
         name_lower = name.lower()
+        scorer = fuzz.ratio if strict else fuzz.partial_ratio
+        threshold = 80 if strict else 70
         matches = []
         for item in self._pantry["items"]:
-            score = fuzz.partial_ratio(name_lower, item["name"].lower())
-            if score >= 70:
+            score = scorer(name_lower, item["name"].lower())
+            if score >= threshold:
                 matches.append(item)
         return matches
 
@@ -1288,9 +1297,9 @@ class PantryPlugin(RunnableMCPPlugin):
             if _normalize:
                 core, conf = _normalize(ing)
                 if conf >= 0.85:
-                    found = bool(self._find_pantry_items(core))
+                    found = bool(self._find_pantry_items(core, strict=True))
             if not found:
-                found = bool(self._find_pantry_items(ing))
+                found = bool(self._find_pantry_items(ing, strict=True))
             if found:
                 have.append(ing)
             else:
@@ -1470,29 +1479,40 @@ class PantryPlugin(RunnableMCPPlugin):
         skipped = []
         for ing in parsed:
             item_name = ing["item"]
+            # Strip trailing prep instructions: "fennel seeds, lightly crushed with..." → "fennel seeds"
+            if "," in item_name:
+                item_name = item_name.split(",")[0].strip()
             quantity = ing["quantity"]
-            # Check if we already have it in the pantry
-            if self._find_pantry_items(item_name):
+            # Check if we already have it in the pantry (strict mode: "chicken thighs" ≠ "chicken breasts")
+            if self._find_pantry_items(item_name, strict=True):
                 skipped.append(item_name)
                 continue
             # Check if already on shopping list
             if self._find_shopping_item(item_name):
                 skipped.append(item_name)
                 continue
-            # Add to shopping list with parsed name and quantity
+            # Add to shopping list with parsed name and quantity (annotate metric if enabled)
+            if quantity:
+                try:
+                    from plugins.recipes.recipe_api import annotate_metric, _metric_annotations_enabled
+                    if _metric_annotations_enabled:
+                        quantity = annotate_metric(quantity)
+                except ImportError:
+                    pass
             self.add_to_shopping_list(item=item_name, quantity=quantity)
             added.append(item_name)
 
         self._publish_shopping_list_display()
         logger.info(f"[Pantry] Added {len(added)} recipe ingredients, skipped {len(skipped)}")
+        title = recipe_data.get("title", recipe_name)
         return {
             "status": "success",
-            "recipe": result.get("title", recipe_name),
+            "recipe": title,
             "added": len(added),
             "added_items": added,
             "skipped": len(skipped),
             "skipped_items": skipped,
-            "message": f"Added {len(added)} ingredients for {result.get('title', recipe_name)}. "
+            "message": f"Added {len(added)} ingredients for {title}. "
                        f"Skipped {len(skipped)} items you already have.",
         }
 

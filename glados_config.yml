@@ -12,7 +12,6 @@ Glados:
 #  vision_completion_url: "http://192.168.0.28:11434/v1" # openai client uses different url
   vision_completion_url: "http://localhost:1234/v1" # openai client uses different url
   vision_model: " qwen/qwen3-vl-8b"
-  announcement: "system initialized, ohh,, it's you again, how have you been?"
   tts_buffer_mode: "sentence"
   voice_core: "glados"  # "glados" (Piper/ONNX) or "kokoro" (Kokoro ONNX)
 #  voice_core: "kokoro"
@@ -200,6 +199,7 @@ Glados:
   # knowledge_rewrite_url: null     # separate API endpoint for rewrite (null = use main)
   recipe_qdrant_enabled: true
   recipe_classify_model: "google/gemma-3n-e4b"  # model for recipe categorization + ingredient extraction
+  metric_annotations: true  # annotate imperial measurements with metric equivalents in recipes
   memory_enabled: true
   memory_db_path: "data/memory_db"
   memory_top_k: 5

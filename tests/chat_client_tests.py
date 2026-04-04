@@ -23,7 +23,6 @@ class TestChatClient(unittest.TestCase):
                 {"user": "Hello!"}
             ],
             wake_word=None,
-            announcement="hello world",
             wake_word_sensitivity=0.5,
             interruptible=False
         )

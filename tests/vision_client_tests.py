@@ -22,7 +22,6 @@ class TestVisionClient(unittest.TestCase):
             ],
             api_key="test-api-key",
             wake_word=None,
-            announcement="hello world",
             wake_word_sensitivity=0.5,
             interruptible=False
         )

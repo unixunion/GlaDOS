@@ -17,7 +17,7 @@ GlaDOS.views.favorites = {
                 : '<div class="fav-thumb-placeholder"><i class="icon-chef-hat"></i></div>';
             const safeTitle = GlaDOS.esc(item.title).replace(/'/g, "\\'");
             const tags = (item.tags || []).map(t => `<span class="fav-tag">${GlaDOS.esc(t)}</span>`).join('');
-            html += `<div class="fav-card">
+            html += `<div class="fav-card" onclick="socket.emit('recipe_action',{action:'select',recipe_name:'${safeTitle}'})">
                 ${img}
                 <div class="fav-info">
                     <div class="fav-title">${GlaDOS.esc(item.title)}</div>

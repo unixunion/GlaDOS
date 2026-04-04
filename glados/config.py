@@ -147,7 +147,6 @@ class GladosConfig:
     model: str
     api_key: Optional[str]
     wake_word: Optional[str] = None
-    announcement: Optional[str] = None
     personality_preprompt: List[dict[str, str]] = field(default_factory=list)
     wake_word_sensitivity: float = 0.5
     client_type: ClientType.OPENAI = ClientType.OPENAI
@@ -167,12 +166,13 @@ class GladosConfig:
     max_response_tokens: int = 500
     max_response_time: int = 15
     max_tool_depth: int = 2
-    power_on_prompt: Optional[str] = "You have just been powered on. Greet the user in one sentence."
+    power_on_prompt: Optional[str] = "You have just been powered on. Say: oh, its you again, how have you been?"
     mcp_servers: Optional[List[dict]] = field(default_factory=list)
     normalize_shopping_items: bool = True  # Normalize ingredient names to match recipe data
     recipe_qdrant_enabled: bool = False   # Enable Qdrant-backed semantic recipe search
     recipe_classify_model: Optional[str] = None  # Model for recipe categorization/ingredient extraction (null = use main model)
     metric_annotations: bool = False  # Annotate imperial measurements with metric equivalents in recipes
+    max_context_tokens: int = 32000    # Total context window budget (increase for models with larger context)
 
     # Nested config groups
     memory: MemoryConfig = field(default_factory=MemoryConfig)

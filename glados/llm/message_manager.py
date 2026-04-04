@@ -86,6 +86,26 @@ class MessageManager:
                             f"({len(msgs)} -> {len(system_prefix) + len(rest) - trimmed})")
                 self._messages[activity] = system_prefix + rest[trimmed:]
 
+    def replace_last_display_state(self, content: str):
+        """Replace the most recent display_state system message instead of appending.
+
+        This prevents context bloat from rapid UI updates (e.g., toggling items
+        on the shopping list generates multiple display_state events per second).
+        """
+        with self._lock:
+            msgs = self._messages[self.current_context]
+            # Search backward for the last display_state message and replace it
+            for i in range(len(msgs) - 1, -1, -1):
+                msg = msgs[i]
+                if isinstance(msg, dict) and msg.get("role") == "system" and "<display_state>" in str(msg.get("content", "")):
+                    msgs[i] = {"role": "system", "content": content}
+                    logger.debug(f"Replaced display_state in context (position {i})")
+                    return
+            # No existing display_state — add as new
+            msgs.append({"role": "system", "content": content})
+            self._trim_context(self.current_context)
+            logger.debug(f"Added first display_state to context")
+
     def add_message_to_current_context(self, role, content, name=None, images=None, tool_call_id=None, tool_calls=None):
         """Helper to add messages to the current context."""
         self.add_message(role, content, name=name, images=images, tool_call_id=tool_call_id, tool_calls=tool_calls, activity=self.current_context)

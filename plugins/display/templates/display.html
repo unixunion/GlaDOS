@@ -65,6 +65,7 @@
             <button id="chat-close" onclick="toggleChat()"><i class="icon-x"></i></button>
         </div>
         <div id="chat-history"></div>
+        <div id="chat-token-bar"></div>
         <div id="chat-input-bar">
             <input type="text" id="chat-input" placeholder="Type a message..." autocomplete="off" />
             <button id="chat-send" onclick="sendChat()">Send</button>
@@ -360,7 +361,20 @@
             else if (role === 'tool_call') { lastResponseHadTool=true; finalizeStreaming(); const i=data.via==='nlp'?'<i class="icon-zap"></i>':'<i class="icon-wrench"></i>'; const v=data.via==='nlp'?' (NLP)':''; const a=JSON.stringify(data.args||{}); addCollapsibleBubble(data.via==='nlp'?'nlp-tool':'tool-call', `${i} ${data.tool}${v}${a!=='{}'?'('+a.substring(0,60)+')':''}`, null, data.content||''); }
             else if (role === 'tool_result') { addCollapsibleBubble('tool-result', `<i class="icon-clipboard"></i> ${data.tool} result`, null, (data.content||'').substring(0,500)); }
             else if (role === 'async_event') { addCollapsibleBubble('async-event', `<i class="icon-bell"></i> ${data.source}`, null, data.content||''); }
+            else if (role === 'context_usage') { updateTokenBar(data); }
         });
+
+        function updateTokenBar(data) {
+            const bar = document.getElementById('chat-token-bar');
+            if (!bar) return;
+            const used = data.used || 0, avail = data.available || 1;
+            const pct = Math.min(100, Math.round(used / avail * 100));
+            const cls = pct >= 90 ? 'token-critical' : pct >= 70 ? 'token-warn' : 'token-ok';
+            const layers = data.layers || {};
+            const parts = Object.entries(layers).filter(([,v]) => v > 0).map(([k,v]) => `${k}:${v}`).join(' ');
+            bar.className = `token-bar ${cls}`;
+            bar.innerHTML = `<div class="token-fill" style="width:${pct}%"></div><span class="token-label">${used}/${avail} tokens (${pct}%) ${parts}</span>`;
+        }
 
         function addBubble(type, text, isStreaming=false) {
             const el = document.createElement('div'); el.className = `chat-bubble ${type}`;
@@ -418,7 +432,11 @@
             if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null; }
             toastEl.className = 'visible' + (status === 'speaking' ? ' status-speaking' : '');
             toastEl.id = 'status-toast';
-            toastText.textContent = message;
+            if (status === 'speaking') {
+                toastText.innerHTML = message + ' <button class="toast-stop-btn" onclick="event.stopPropagation();socket.emit(\'interrupt\')">Stop</button>';
+            } else {
+                toastText.textContent = message;
+            }
             if (status === 'idle') toastHideTimer = setTimeout(() => toastEl.classList.remove('visible'), 2000);
             else if (status === 'user_speech') { toastText.textContent = '\u201C' + message + '\u201D'; toastHideTimer = setTimeout(() => toastEl.classList.remove('visible'), 5000); }
         });

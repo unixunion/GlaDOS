@@ -74,6 +74,7 @@ Alarms are for fixed times (use **timers** for durations like "5 minutes"). Best
 - **Browse** button on dashboard → category grid → recipe list with thumbnails
 - Integrates with [pantry](pantry.md), [shopping list](shopping.md), and [meal planner](meal-planner.md)
 - After selecting, use cooking step commands (see below)
+- Imperial measurements annotated with metric when `metric_annotations: true`
 - **Full guide: [Recipes & Cooking](recipes.md)**
 
 ### Cooking Steps (after selecting a recipe)

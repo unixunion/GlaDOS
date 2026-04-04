@@ -437,3 +437,44 @@ class TestStoreItemWithType:
     def test_auto_classify_ingredient(self, plugin):
         result = plugin.store_item("butter", "fridge")
         assert result["item_type"] == "ingredient"
+
+
+class TestFuzzyMatchingModes:
+    """Test strict vs loose pantry matching to avoid false positives like
+    'chicken thighs' matching 'chicken breasts'."""
+
+    def test_loose_match_chicken(self, plugin):
+        """Loose mode: 'chicken' should match 'chicken breasts' (substring)."""
+        plugin.store_item("chicken breasts", "fridge")
+        matches = plugin._find_pantry_items("chicken", strict=False)
+        assert len(matches) >= 1
+
+    def test_strict_no_match_different_cuts(self, plugin):
+        """Strict mode: 'chicken thighs' should NOT match 'chicken breasts'."""
+        plugin.store_item("chicken breasts", "fridge")
+        matches = plugin._find_pantry_items("chicken thighs", strict=True)
+        assert len(matches) == 0
+
+    def test_strict_match_same_item(self, plugin):
+        """Strict mode: 'chicken breasts' should match 'chicken breasts'."""
+        plugin.store_item("chicken breasts", "fridge")
+        matches = plugin._find_pantry_items("chicken breasts", strict=True)
+        assert len(matches) >= 1
+
+    def test_strict_no_match_butter_peanut_butter(self, plugin):
+        """Strict mode: 'butter' should NOT match 'peanut butter'."""
+        plugin.store_item("peanut butter", "dry-goods")
+        matches = plugin._find_pantry_items("butter", strict=True)
+        assert len(matches) == 0
+
+    def test_loose_match_butter_peanut_butter(self, plugin):
+        """Loose mode: 'butter' DOES match 'peanut butter' (substring)."""
+        plugin.store_item("peanut butter", "dry-goods")
+        matches = plugin._find_pantry_items("butter", strict=False)
+        assert len(matches) >= 1
+
+    def test_strict_close_spelling(self, plugin):
+        """Strict mode: 'chicken breast' should match 'chicken breasts' (close spelling)."""
+        plugin.store_item("chicken breasts", "fridge")
+        matches = plugin._find_pantry_items("chicken breast", strict=True)
+        assert len(matches) >= 1

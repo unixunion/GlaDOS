@@ -314,6 +314,7 @@ Each backend is in `glados/llm/backends/`. Adding a new provider = one file exte
   normalize_shopping_items: true    # normalize ingredient names to match recipe data (default: true)
   recipe_qdrant_enabled: false      # enable Qdrant-backed semantic recipe search (default: false)
   recipe_classify_model: "google/gemma-3n-e4b"  # model for recipe categorization + ingredient extraction (null = main model)
+  metric_annotations: true              # annotate imperial measurements with metric equivalents in recipes
 
   plugins:
     - name: pantry_plugin

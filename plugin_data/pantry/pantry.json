@@ -48,16 +48,6 @@
   ],
   "items": [
     {
-      "id": "3a1ebfb0",
-      "name": "garlic",
-      "location_id": "fridge",
-      "stored": "2026-03-28T15:51:58",
-      "expires": "2026-04-30",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "user"
-    },
-    {
       "id": "6f8e2767",
       "name": "eggs",
       "location_id": "fridge",
@@ -78,30 +68,10 @@
       "expiry_source": "estimated"
     },
     {
-      "id": "89aa4dd0",
-      "name": "sugar",
-      "location_id": "dry-goods",
-      "stored": "2026-03-28T15:52:18",
-      "expires": "2027-03-29",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
       "id": "1cb826f2",
       "name": "cornflour",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:52:23",
-      "expires": "2027-03-29",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
-      "id": "bd497066",
-      "name": "baking powder",
-      "location_id": "dry-goods",
-      "stored": "2026-03-28T15:52:28",
       "expires": "2027-03-29",
       "notes": null,
       "item_type": "ingredient",
@@ -238,41 +208,11 @@
       "expiry_source": "estimated"
     },
     {
-      "id": "2e2eab5c",
-      "name": "lasagna",
-      "location_id": "freezer-3",
-      "stored": "2026-03-29T14:59:39",
-      "expires": "2026-06-27",
-      "notes": "2 portions",
-      "item_type": "ready_meal",
-      "expiry_source": "estimated"
-    },
-    {
-      "id": "a4585f83",
-      "name": "chickpeas",
-      "location_id": "dry-goods",
-      "stored": "2026-03-30T22:04:28",
-      "expires": null,
-      "expiry_source": null,
-      "notes": "1 can",
-      "item_type": "ingredient"
-    },
-    {
       "id": "ef1ff376",
       "name": "bacon",
       "location_id": "freezer-1",
       "stored": "2026-03-30T22:04:28",
       "expires": "2026-09-26",
-      "expiry_source": "estimated",
-      "notes": null,
-      "item_type": "ingredient"
-    },
-    {
-      "id": "96adb691",
-      "name": "parmesan",
-      "location_id": "freezer-1",
-      "stored": "2026-03-30T22:04:28",
-      "expires": "2026-06-29",
       "expiry_source": "estimated",
       "notes": null,
       "item_type": "ingredient"
@@ -312,16 +252,6 @@
       "name": "paprika",
       "location_id": "spices",
       "stored": "2026-04-03T15:32:44",
-      "expires": "2027-04-03",
-      "expiry_source": "estimated",
-      "notes": null,
-      "item_type": "ingredient"
-    },
-    {
-      "id": "24f50dc2",
-      "name": "cayene pepper",
-      "location_id": "spices",
-      "stored": "2026-04-03T15:32:49",
       "expires": "2027-04-03",
       "expiry_source": "estimated",
       "notes": null,
@@ -418,26 +348,6 @@
       "item_type": "ingredient"
     },
     {
-      "id": "af0358ad",
-      "name": "mustard powder",
-      "location_id": "spices",
-      "stored": "2026-04-03T15:33:54",
-      "expires": "2027-04-03",
-      "expiry_source": "estimated",
-      "notes": null,
-      "item_type": "ingredient"
-    },
-    {
-      "id": "4d68e3d7",
-      "name": "tomato sauce / ketchup",
-      "location_id": "fridge",
-      "stored": "2026-04-03T15:34:07",
-      "expires": "2026-07-31",
-      "expiry_source": "user",
-      "notes": null,
-      "item_type": "ingredient"
-    },
-    {
       "id": "c12f0d41",
       "name": "mustard",
       "location_id": "fridge",
@@ -493,6 +403,36 @@
       "location_id": "fridge",
       "stored": "2026-04-04T07:13:55",
       "expires": "2026-04-11",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "141eacd1",
+      "name": "garlic powder",
+      "location_id": "spices",
+      "stored": "2026-04-04T10:01:03",
+      "expires": "2027-04-04",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "9d72bf8a",
+      "name": "oregano",
+      "location_id": "dry-goods",
+      "stored": "2026-04-04T10:01:55",
+      "expires": "2027-04-04",
+      "expiry_source": "estimated",
+      "notes": "¼ teaspoon",
+      "item_type": "ingredient"
+    },
+    {
+      "id": "c98d14da",
+      "name": "olive oil",
+      "location_id": "dry-goods",
+      "stored": "2026-04-04T10:02:50",
+      "expires": "2026-07-03",
       "expiry_source": "estimated",
       "notes": null,
       "item_type": "ingredient"

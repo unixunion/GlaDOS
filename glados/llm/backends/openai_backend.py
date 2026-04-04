@@ -75,6 +75,38 @@ class OpenAIBackend(LLMBackend):
                 "Do not narrate your thought process. Just respond directly to the user."
             )
 
+        # Measure and log token usage
+        token_budget = kwargs.get("token_budget")
+        if token_budget:
+            from glados.llm.token_budget import estimate_tokens
+            # Measure system prompts
+            sys_tokens = sum(estimate_tokens(str(m.get("content", "")))
+                            for m in messages if isinstance(m, dict) and m.get("role") == "system"
+                            and "<display_state>" not in str(m.get("content", "")))
+            token_budget.measure("system", "x" * (sys_tokens * 4))
+            # Memory context was already injected — measure it
+            if memory_context:
+                token_budget.measure("memory+rag", "x" * (estimate_tokens(memory_context) * 4))
+            # Display state
+            ds_tokens = sum(estimate_tokens(str(m.get("content", "")))
+                           for m in messages if isinstance(m, dict) and m.get("role") == "system"
+                           and "<display_state>" in str(m.get("content", "")))
+            if ds_tokens:
+                token_budget.measure("display", "x" * (ds_tokens * 4))
+            # History (non-system messages)
+            hist_tokens = sum(estimate_tokens(str(m.get("content", "")))
+                             for m in messages if isinstance(m, dict) and m.get("role") != "system")
+            token_budget.measure("history", "x" * (hist_tokens * 4))
+            token_budget.log_usage()
+            # Publish to chat UI
+            try:
+                from glados.system.event_system import EventSystem, EventMessage as _EM
+                summary = token_budget.summary()
+                summary["role"] = "context_usage"
+                EventSystem().publish(_EM("chat", "context_usage", summary, process_output=False))
+            except Exception:
+                pass
+
         # Log messages for diagnostics
         logger.info(f"Calling openai client")
         logger.info(f"Messages being sent to LLM ({len(messages)} messages): "

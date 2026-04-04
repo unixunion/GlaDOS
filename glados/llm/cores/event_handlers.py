@@ -92,8 +92,13 @@ class ChatEventHandlers:
                 logger.info(f"Processing tool event via LLM: {str(event.content)[:128]}")
                 self._cc.llm_queue.put(str(event.content))
         else:
-            logger.info(f"Adding tool event to history as system message: {str(event.content)[:128]}")
-            self._cc.message_manager.add_message("system", event.content)
+            content_str = str(event.content)
+            # Deduplicate display_state messages — replace previous instead of accumulating
+            if "<display_state>" in content_str:
+                self._cc.message_manager.replace_last_display_state(content_str)
+            else:
+                logger.debug(f"Adding tool event to history as system message: {content_str[:128]}")
+                self._cc.message_manager.add_message("system", event.content)
 
     def handle_tts_speak(self, event: EventMessage):
         """Handle tts.speak events — send text directly to TTS without LLM processing."""

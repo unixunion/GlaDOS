@@ -789,9 +789,119 @@ def convert_abbreviations(text: str) -> str:
     return " ".join([abbreviation_map.get(word.lower(), word) for word in words])
 
 
+# --- Metric annotation ---
+
+# Imperial → metric conversion factors: (unit_pattern, metric_unit, factor, rounding)
+_METRIC_CONVERSIONS = [
+    # Volume
+    (r"\bcups?\b", "ml", 237, 5),
+    (r"\btablespoons?\b", "ml", 15, 1),
+    (r"\bteaspoons?\b", "ml", 5, 1),
+    (r"\bfluid\s+ounces?\b", "ml", 30, 5),
+    (r"\bpints?\b", "ml", 473, 5),
+    (r"\bquarts?\b", "L", 0.946, 0.1),
+    (r"\bgallons?\b", "L", 3.785, 0.1),
+    # Weight
+    (r"\bpounds?\b", "g", 454, 5),
+    (r"\blbs?\b", "g", 454, 5),
+    (r"\bounces?\b", "g", 28.35, 1),
+    (r"\boz\b", "g", 28.35, 1),
+]
+
+# Temperature: match "350°F", "350 degrees F", "350 degrees fahrenheit"
+_TEMP_F_PATTERN = re.compile(
+    r"(\d+)\s*(?:°\s*F|degrees?\s+fahrenheit|degrees?\s+F)\b",
+    re.IGNORECASE,
+)
+
+# Number at start of measurement: "2 cups", "1/2 cup", "one and a half cups"
+_MEASUREMENT_PATTERN = re.compile(
+    r"([\d]+(?:\.\d+)?(?:\s+[\d/]+)?)\s+({unit})",
+    re.IGNORECASE,
+)
+
+
+def _round_to(value: float, step: float) -> float:
+    """Round to nearest step value."""
+    if step >= 1:
+        return round(value / step) * step
+    return round(value / step) * step
+
+
+def annotate_metric(text: str) -> str:
+    """Add metric annotations to imperial measurements in recipe text.
+
+    '2 cups flour' → '2 cups (~475ml) flour'
+    '350°F' → '350°F (~175°C)'
+    """
+    # Temperature conversion
+    def _convert_temp(m):
+        f = int(m.group(1))
+        c = round((f - 32) * 5 / 9 / 5) * 5  # Round to nearest 5°C
+        return f"{m.group(0)} (~{c}°C)"
+
+    text = _TEMP_F_PATTERN.sub(_convert_temp, text)
+
+    # Volume/weight conversions
+    for unit_pattern, metric_unit, factor, rounding in _METRIC_CONVERSIONS:
+        pattern = re.compile(
+            r"([\d]+(?:[./][\d]+)?(?:\s+[\d/]+)?)\s+(" + unit_pattern + r")",
+            re.IGNORECASE,
+        )
+
+        def _convert_measurement(m, _factor=factor, _unit=metric_unit, _round=rounding):
+            num_str = m.group(1).strip()
+            # Parse number: handle "1/2", "1 1/2", "2.5"
+            try:
+                if "/" in num_str:
+                    parts = num_str.split()
+                    if len(parts) == 2:  # "1 1/2"
+                        whole = float(parts[0])
+                        n, d = parts[1].split("/")
+                        num = whole + float(n) / float(d)
+                    else:  # "1/2"
+                        n, d = num_str.split("/")
+                        num = float(n) / float(d)
+                else:
+                    num = float(num_str)
+            except (ValueError, ZeroDivisionError):
+                return m.group(0)
+
+            metric_val = num * _factor
+            metric_val = _round_to(metric_val, _round)
+
+            # Format: use kg for >= 1000g, L for >= 1000ml
+            if _unit == "g" and metric_val >= 1000:
+                formatted = f"~{metric_val / 1000:.1f}kg"
+            elif _unit == "ml" and metric_val >= 1000:
+                formatted = f"~{metric_val / 1000:.1f}L"
+            elif metric_val == int(metric_val):
+                formatted = f"~{int(metric_val)}{_unit}"
+            else:
+                formatted = f"~{metric_val:.1f}{_unit}"
+
+            return f"{m.group(0)} ({formatted})"
+
+        text = pattern.sub(_convert_measurement, text)
+
+    return text
+
+
+# Load metric_annotations config once at module level
+_metric_annotations_enabled = False
+try:
+    from glados.config import GladosConfig as _GC
+    _metric_annotations_enabled = getattr(_GC.from_yaml("glados_config.yml"), "metric_annotations", False)
+except Exception:
+    pass
+
+
 def format_ingredient_for_speech(ingredient: str) -> str:
-    """Applies fraction conversion then abbreviation expansion to an ingredient string."""
-    return convert_abbreviations(convert_fractions(ingredient))
+    """Applies fraction conversion, abbreviation expansion, and optional metric annotations."""
+    result = convert_abbreviations(convert_fractions(ingredient))
+    if _metric_annotations_enabled:
+        result = annotate_metric(result)
+    return result
 
 
 def safe_parse_list(serialized_list: Any) -> list:
