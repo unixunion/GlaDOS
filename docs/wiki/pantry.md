@@ -1,83 +1,12 @@
-# Shopping List & Pantry
+# Pantry & Inventory
 
-A durable shopping list and pantry inventory system with voice commands, interactive display views, expiry tracking, and recipe integration.
+Track what's in your pantry — storage locations, expiry dates, and shelf life estimation.
 
-Data is stored as JSON in `plugin_data/pantry/` and survives restarts and context wipes.
+Data is stored as JSON in `plugin_data/pantry/pantry.json` and survives restarts.
 
-## Shopping List
+**Related pages**: [Shopping List](shopping.md) | [Recipes & Cooking](recipes.md) | [Meal Planning](meal-planner.md)
 
-### Adding Items
-
-| Say this | What happens |
-|----------|-------------|
-| "add eggs to the shopping list" | Adds eggs (auto-categorized as dairy) |
-| "put milk on the list" | Alternate phrasing |
-| "we need butter" | Natural phrasing |
-| "we're out of bread" | Adds to list + removes from pantry |
-| "we're running low on rice" | Adds to list |
-| "we buy eggs every two weeks" | Recurring item — auto re-adds every 14 days |
-
-- Items are auto-categorized (dairy, produce, meat, bakery, dry goods, etc.) for grouped display
-- Saying "we're out of X" also removes the item from the pantry if present
-- Duplicate items are detected by fuzzy matching
-
-### Viewing & Managing
-
-| Say this | What happens |
-|----------|-------------|
-| "what's on the shopping list" | Shows interactive list on display + LLM summarizes |
-| "show the shopping list" | Alternate phrasing |
-| "what do we need to buy" | Alternate phrasing |
-| "remove milk from the list" | Removes by fuzzy name match |
-| "take eggs off the list" | Alternate phrasing |
-
-### Post-Shopping
-
-| Say this | What happens |
-|----------|-------------|
-| "we did the shopping" | Moves checked items to pantry (or all if none checked) |
-| "shopping done" | Alternate phrasing |
-| "we got everything" | Moves all items to pantry |
-| "we got everything except eggs and butter" | Moves everything except named items |
-
-- Only **checked** items move to pantry — unchecked items stay on the list
-- If no items were checked (voice-only, no UI interaction), all items move
-- Fuzzy matching: "except the chicken" matches "chicken breasts" on the list
-- After completing, the **Put Away** guided view appears automatically
-- Excepted items stay on the list with unchecked status
-
-### Put Away Flow
-
-After completing shopping, a guided view walks you through assigning a location to each item:
-
-- Each item shows **quick-tap location buttons** (Fridge, Freezer Drawer 1, Dry Goods, etc.)
-- **Suggested locations are highlighted in green** based on the item category (meat → Fridge, ice cream → Freezer)
-- Tapping a location assigns the item, auto-estimates its expiry, and moves to the next item
-- Once all items are assigned, the view switches to the full pantry
-- If you skip it, a highlighted **"Put Away (3)"** button appears in the pantry toolbar whenever there are unassigned items
-
-### Interactive Display
-
-The shopping list view on the display (`http://<host>:5001`) shows:
-
-- **Add item form** at the top — type name + optional quantity, hit Enter or click Add
-- Items grouped by category (Dairy, Produce, Meat, etc.)
-- Checkboxes to mark items as got/not-got (tap to toggle)
-- Quantity badges
-- **Recurring dropdown** per item — select Off, 3d, 7d, 10d, 14d, or 30d to set a recurring interval
-- Remove button (X) per item
-- "Done Shopping" button — moves checked items to pantry, keeps unchecked
-- Progress indicator ("3 of 7 items")
-
-### Recurring Items
-
-Set recurring via the dropdown on each item in the display, or by voice ("we buy eggs every two weeks"). A recurring rule is created that auto-adds the item back to the shopping list on schedule.
-
-Recurring rules persist across shopping cycles — completing shopping doesn't remove the rule. Removing the item from the list also removes its recurring rule.
-
-## Pantry Inventory
-
-### Storing Items
+## Storing Items
 
 | Say this | What happens |
 |----------|-------------|
@@ -88,7 +17,7 @@ Recurring rules persist across shopping cycles — completing shopping doesn't r
 - Location matching is fuzzy — "freezer 2" matches "Freezer Drawer 2"
 - If the item is on the shopping list, it's automatically removed
 
-### Expiry Tracking
+## Expiry Tracking
 
 | Say this | What happens |
 |----------|-------------|
@@ -133,7 +62,7 @@ plugins:
         meat: {fridge: 4, freezer: 120}
 ```
 
-### Moving Items
+## Moving Items
 
 | Say this | What happens |
 |----------|-------------|
@@ -143,57 +72,15 @@ plugins:
 - Move is LLM-only (no NLP fast-path) — the LLM has context to distinguish "move existing item" from "store new item"
 - The UI also provides a move dropdown per item in the pantry view
 
-### Location Types
+## Storage Locations
 
 Each storage location has a type that affects shelf life estimation:
 
 | Type | Icon | Examples |
 |------|------|----------|
-| `fridge` | ❄️ | Fridge |
-| `freezer` | 🧊 | Freezer Drawer 1-3 |
-| `room_temp` | 🏠 | Dry Goods Cupboard, Spices |
-
-- Types are auto-inferred from location names when created
-- Can be changed via the dropdown on each location header in the pantry UI
-
-### Proactive Warnings
-
-Once per day, GlaDOS checks for items expiring within 2 days and proactively announces them via TTS.
-
-- **User-set expiry**: "Heads up — the bacon in the fridge expires tomorrow."
-- **Estimated expiry**: "Heads up — the chicken in the fridge might be getting old." (softer language)
-
-### Finding Items
-
-| Say this | What happens |
-|----------|-------------|
-| "where is the flour" | Reports location and expiry if set |
-| "do we have eggs" | Checks pantry, notes if on shopping list |
-| "where did I put the chicken" | Alternate phrasing |
-| "is there any butter" | Alternate phrasing |
-
-### Viewing Pantry
-
-| Say this | What happens |
-|----------|-------------|
-| "show me what's in the pantry" | Full pantry view on display |
-| "what's in the fridge" | Filtered to fridge only |
-| "what's in freezer drawer 1" | Filtered to specific location |
-| "what food do we have" | Alternate phrasing |
-
-### Interactive Display
-
-The pantry view on the display shows:
-
-- Collapsible location sections (tap to expand/collapse)
-- **Per-location add item form** — type name, notes, and pick an expiry date directly
-- Item name, notes, and **inline date picker** for expiry with colour coding (red/orange/yellow/green)
-- Click any expiry date to change it; items without expiry show a date picker to set one
-- Remove button (X) per item
-- "Add Location" input at the bottom for managing locations
-- "Expiring Soon" warning banner when items are within 3 days of expiry
-
-### Managing Locations
+| `fridge` | cold | Fridge |
+| `freezer` | frozen | Freezer Drawer 1-3 |
+| `room_temp` | ambient | Dry Goods Cupboard, Spices |
 
 Default locations: Fridge, Freezer Drawer 1-3, Dry Goods Cupboard.
 
@@ -203,7 +90,9 @@ Default locations: Fridge, Freezer Drawer 1-3, Dry Goods Cupboard.
 | "remove the dry goods cupboard location" | Removes (items become unassigned) |
 | "rename freezer drawer 1 to top freezer" | Renames |
 
-Locations can also be added via the display UI.
+- Types are auto-inferred from location names when created
+- Can be changed via the dropdown on each location header in the pantry UI
+- Locations can also be added via the display UI
 
 ## Ready Meals vs Ingredients
 
@@ -220,157 +109,74 @@ When an item is stored, it's classified by keyword matching:
 | Say this | What happens |
 |----------|-------------|
 | "store the lasagna as a meal in the freezer" | Stored as ready_meal |
-| "put the chicken tikka as a meal in the fridge" | Explicit ready_meal |
 | "mark the chicken as a ready meal" | Reclassify existing item |
 | "that's an ingredient not a meal" | Reclassify |
 
 ### LLM Classification
 
-In hybrid/LLM mode, a fast lightweight model (same one used for knowledge query rewriting) runs a background classification after each store. This catches ambiguous items like "chicken tikka" that keyword matching might miss.
+In hybrid/LLM mode, a fast lightweight model runs a background classification after each store. This catches ambiguous items like "chicken tikka" that keyword matching might miss.
 
-### How It Affects Suggestions
-
-"What can we make?" now returns two sections:
-1. **Ready to eat** — dishes already in the pantry (lasagna, frozen pizza)
-2. **Recipes you can make** — recipe suggestions from ingredients
-
-## Recipe Integration
+## Finding Items
 
 | Say this | What happens |
 |----------|-------------|
-| "what can I make with what's in the pantry" | Ready meals + recipe suggestions from ingredients |
-| "what can I make before things expire" | Prioritizes expiring ingredients |
-| "suggest a meal" | General meal suggestion from pantry |
-| "add the ingredients for that to the shopping list" | Adds missing recipe ingredients |
-| "do we have the ingredients" | Checks pantry against active recipe |
-| "what ingredients are we missing" | Lists what to buy |
+| "where is the flour" | Reports location and expiry if set |
+| "do we have eggs" | Checks pantry, notes if on shopping list |
+| "where did I put the chicken" | Alternate phrasing |
+| "is there any butter" | Alternate phrasing |
 
-- `suggest_meals_from_pantry` separates ready meals from ingredients, shows both sections
-- Expiring items are prioritized in recipe suggestions
-- `add_recipe_ingredients_to_list` checks what you already have and only adds missing ingredients
-- `check_recipe_ingredients` compares the active recipe against pantry contents
-
-## Shopping Modes (Sub-Contexts)
-
-Voice-activated modes that lock GlaDOS into shopping-focused commands for faster batch operations.
-
-### Planning Mode
+## Viewing Pantry
 
 | Say this | What happens |
 |----------|-------------|
-| "lets plan the shopping" | Enters planning mode |
-| "lets plan shopping" | Alternate phrasing |
-| "planning mode" | Short form |
+| "show me what's in the pantry" | Full pantry view on display |
+| "what's in the fridge" | Filtered to fridge only |
+| "what's in freezer drawer 1" | Filtered to specific location |
+| "what food do we have" | Alternate phrasing |
 
-While in planning mode:
-- Just say the item name to add it — no need for "add X to the shopping list"
-- "remove eggs" — removes item
-- "3 of those" / "make that 5" — updates quantity of last-added item
-- "show the list" — displays current list
-- "done" / "that's everything" — exits planning mode
+## Interactive Display
 
-### Post-Shopping Mode
+The pantry view on the display shows:
 
-| Say this | What happens |
-|----------|-------------|
-| "back from shopping" | Enters post-shopping mode |
-| "we're back from shopping" | Alternate phrasing |
-| "unpack the shopping" / "lets put away the shopping" | Alternate phrasing |
-| "back from the store" / "post shopping" | Alternate phrasing |
+- Collapsible location sections (tap to expand/collapse)
+- **Per-location add item form** — type name, notes, and pick an expiry date directly
+- Item name, notes, and **inline date picker** for expiry with colour coding (red/orange/yellow/green)
+- Click any expiry date to change it; items without expiry show a date picker to set one
+- Remove button (X) per item
+- "Add Location" input at the bottom for managing locations
+- "Expiring Soon" warning banner when items are within 3 days of expiry
 
-While in post-shopping mode:
+## Catalog Mode (Inventory Stocktake)
 
-| Say this | What happens |
-|----------|-------------|
-| "got the eggs" / "we got the eggs" | Marks item as bought (checked) |
-| "didn't get milk" / "skip the butter" | Keeps item on list (unchecked) |
-| "put the chicken in freezer drawer 2" | Stores in pantry with location + auto-estimated expiry |
-| "chicken expires on the 24th" | Sets expiry date |
-| "we got everything" | Marks all as bought, moves to pantry |
-| "we got everything except the milk" | Moves all except named items to pantry |
-| "done" / "finished" / "that's everything" | Completes shopping, exits mode |
-
-**What happens on completion:**
-- Only **checked** items move to pantry (unchecked stay on list)
-- If nothing was checked (pure voice, no UI), all items move (backward compatible)
-- The **Put Away** guided view appears on the display for assigning storage locations
-- Fuzzy matching: "chicken" matches "chicken breasts", "milk" matches "full cream milk"
-
-### Completing Shopping (without post-shopping mode)
-
-You don't have to use post-shopping mode. These voice commands work anytime:
+Open a fridge, freezer, or cupboard and call out what you see. GlaDOS updates the inventory idempotently — existing items get updated, new items get added with auto-estimated expiry, and items you don't mention can be flagged for removal.
 
 | Say this | What happens |
 |----------|-------------|
-| "we did the shopping" / "shopping done" | Moves checked items to pantry |
-| "we got everything on the list" | Moves all items to pantry |
-| "we got everything except eggs and butter" | Moves all except named items |
-| "the shopping is complete" | Alternate phrasing |
+| "catalog the fridge" | Enters catalog mode for the fridge |
+| "inventory freezer drawer 3" | Works with any location (fuzzy matched) |
+| "stocktake the dry goods" | Alternate phrasing |
 
-The **"Done Shopping"** button is also available:
-- In the shopping list view (sticky bar at the top with checked count)
-- In the mobile shopping list (`/shopping`) footer
-- Only active when at least one item is checked
+While in catalog mode:
 
-### How it works
+| Say this | What happens |
+|----------|-------------|
+| "eggs" | Updates existing eggs (confirms they're still there) |
+| "5 eggs" | Updates with quantity 5 |
+| "two chicken sausages" | Adds new item with auto-estimated expiry |
+| "no butter" / "remove the milk" | Removes item from location |
+| "done" | Exits with reconciliation |
 
-- Short commands in either mode are handled instantly (~5ms) without the LLM
-- Unrecognized commands go to the LLM with a restricted tool set (only shopping/pantry tools)
-- The display shows a mode indicator: "Planning" or "Post-Shopping" in orange
-- Modes auto-timeout after inactivity (configurable, default 120 seconds)
-- Say "done", "exit", "that's everything", "finished", or "cancel" to leave any mode
+On exit, GlaDOS asks about items that were listed but you didn't mention — "I still have butter and cream cheese listed but you didn't mention them. Should I remove them?" Say yes to remove, no to keep.
 
-## Mobile Shopping List
+- Word numbers work: "two", "three" etc. are converted to digits
+- Location names are fuzzy-matched: "freezer 3" matches "Freezer Drawer 3", "freezer drawer three" also works
+- Existing items are matched by fuzzy name — "chicken" matches "chicken breast"
+- New items get auto-estimated expiry based on location type and food category
+- The display shows the location's contents and updates live as you call out items
 
-Access the shopping list on your phone at `http://<glados-ip>:5001/shopping`.
+## Proactive Warnings
 
-### Features
+Once per day, GlaDOS checks for items expiring within 2 days and proactively announces them via TTS.
 
-- Mobile-optimized standalone page (not the full GlaDOS display)
-- Add items with name + quantity
-- Check items off as you shop (checkboxes)
-- Grouped by category (Dairy, Produce, Meat, etc.)
-- "Done Shopping" button
-- **PWA** — add to home screen on iPhone/Android for app-like experience
-
-### Offline Support
-
-- **localStorage** caches the list — survives page refreshes and going offline
-- **Service worker** caches the page itself — loads even without WiFi
-- **SocketIO** syncs live when connected to home WiFi
-- If you go offline at the store, the cached list stays visible and checkable
-- When you reconnect at home, changes sync back to GlaDOS
-
-### Setup
-
-1. Open `http://<glados-ip>:5001/shopping` on your phone
-2. On iPhone: tap Share > Add to Home Screen
-3. On Android: tap the browser menu > Add to Home Screen
-
----
-
-## Technical Details
-
-### Data Storage
-
-All data is stored as human-readable JSON in `plugin_data/pantry/`:
-
-- `shopping_list.json` — items + recurring rules
-- `pantry.json` — inventory items, storage locations, shelf life config
-
-### Configuration
-
-Works out of the box with sensible defaults. Optional overrides:
-
-```yaml
-plugins:
-  - name: pantry_plugin
-    config:
-      shopping_mode_timeout: 120        # seconds before auto-exiting planning/post-shopping modes
-      auto_estimate_expiry: true        # set false to disable shelf life estimation
-      shelf_life_overrides:             # override default shelf life (days) per category
-        meat: {fridge: 4, freezer: 120}
-        dairy: {fridge: 14}
-```
-
-Storage locations, location types, and shelf life defaults can also be managed via the display UI.
+- **User-set expiry**: "Heads up — the bacon in the fridge expires tomorrow."
+- **Estimated expiry**: "Heads up — the chicken in the fridge might be getting old." (softer language)

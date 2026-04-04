@@ -126,6 +126,63 @@ python tests/benchmark_knowledge.py --all-models
 
 10 test cases covering direct questions, conversational follow-ups, pronoun references, and topic continuations. Reports hit rate and latency per mode/model. Results saved to `tests/benchmark_results/`.
 
+### Ingredient Extraction Benchmark (`tests/benchmark_ingredient_extraction.py`)
+
+Tests LLM accuracy at extracting core ingredient names from recipe ingredient strings. 51 ground-truth cases covering simple items ("salt"), quantities ("tablespoons olive oil"), qualifiers ("skinless, boneless chicken breasts"), and edge cases ("nonstick vegetable oil spray").
+
+```bash
+# Auto-detect and test all loaded models
+python tests/benchmark_ingredient_extraction.py
+
+# Test specific models
+python tests/benchmark_ingredient_extraction.py --models qwen/qwen3-4b-2507 liquid/lfm2.5-1.2b
+
+# Custom LLM server URL
+python tests/benchmark_ingredient_extraction.py --url http://localhost:1234/v1
+```
+
+**Requires:** Running LLM server (LM Studio, Ollama, etc.)
+
+Reports accuracy, average latency, and specific failures per model. Used to select the best model for the ingredient map backfill (`tools/extract_core_ingredients.py`).
+
+### Recipe Qdrant Ingestion (`tools/ingest_recipes_qdrant.py`)
+
+Batch embeds all recipes into the `recipe_ingredients` Qdrant collection for semantic search.
+
+```bash
+# Build/rebuild the collection
+python tools/ingest_recipes_qdrant.py
+
+# Check collection status
+python tools/ingest_recipes_qdrant.py --stats
+
+# Custom Qdrant URL
+python tools/ingest_recipes_qdrant.py --url http://localhost:6333
+```
+
+**Requires:** Running Qdrant server, sentence-transformers installed.
+
+The collection auto-rebuilds at GlaDOS startup if `recipe_qdrant_enabled: true`, but the offline tool is faster for initial setup (~2 min for 13.5K recipes).
+
+### Recipe Categorization (`tools/categorize_recipes.py`)
+
+Classifies all recipes by cuisine and type using a local LLM. Each recipe's title + top ingredients are sent to the model for classification into 22 categories (including Mediterranean, Asian, Indian, Mexican & Latin, Middle Eastern, American Comfort).
+
+```bash
+# Full run
+python tools/categorize_recipes.py --model qwen/qwen3-4b-2507
+
+# Resume from checkpoint
+python tools/categorize_recipes.py --resume
+
+# View category distribution
+python tools/categorize_recipes.py --stats
+```
+
+**Requires:** Running LLM server (LM Studio, Ollama, etc.)
+
+Output: `plugin_data/recipes/recipe_categories.json`. Applied automatically at startup — overrides the built-in keyword-based categories. The browse view shows all LLM-inferred categories.
+
 ### Model Benchmarks (`tests/benchmark_models.py`)
 
 Benchmarking tool for comparing LLM models on tool-calling tasks.

@@ -34,6 +34,16 @@
       "id": "kitchen-island",
       "name": "Kitchen Island",
       "type": "room_temp"
+    },
+    {
+      "id": "cupboard-above-stove",
+      "name": "cupboard above stove",
+      "type": "room_temp"
+    },
+    {
+      "id": "vegetable-oil",
+      "name": "vegetable oil",
+      "type": "room_temp"
     }
   ],
   "items": [
@@ -48,24 +58,14 @@
       "expiry_source": "user"
     },
     {
-      "id": "71cd740a",
-      "name": "lettuce",
-      "location_id": "fridge",
-      "stored": "2026-03-28T15:52:02",
-      "expires": "2026-04-03",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "user"
-    },
-    {
       "id": "6f8e2767",
       "name": "eggs",
       "location_id": "fridge",
-      "stored": "2026-03-28T15:52:07",
-      "expires": "2026-04-08",
-      "notes": null,
+      "stored": "2026-04-04T07:13:17",
+      "expires": "2026-05-31",
+      "notes": "12",
       "item_type": "ingredient",
-      "expiry_source": "estimated"
+      "expiry_source": "user"
     },
     {
       "id": "42195fd8",
@@ -178,16 +178,6 @@
       "expiry_source": "user"
     },
     {
-      "id": "9fc87ccd",
-      "name": "yoghurt",
-      "location_id": "fridge",
-      "stored": "2026-03-28T15:53:21",
-      "expires": "2026-04-08",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
       "id": "2a79a6db",
       "name": "eel food",
       "location_id": "freezer-3",
@@ -208,16 +198,6 @@
       "expiry_source": "estimated"
     },
     {
-      "id": "3ebe3b87",
-      "name": "whole pealed tomatoes canned",
-      "location_id": "dry-goods",
-      "stored": "2026-03-28T15:55:03",
-      "expires": "2027-03-29",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
       "id": "044b03cb",
       "name": "spaghetti",
       "location_id": "dry-goods",
@@ -232,26 +212,6 @@
       "name": "tagliatelle",
       "location_id": "dry-goods",
       "stored": "2026-03-28T15:55:19",
-      "expires": "2027-03-29",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
-      "id": "a4fb20ab",
-      "name": "lasagne tiles",
-      "location_id": "dry-goods",
-      "stored": "2026-03-28T15:55:25",
-      "expires": "2027-03-29",
-      "notes": null,
-      "item_type": "ingredient",
-      "expiry_source": "estimated"
-    },
-    {
-      "id": "a2b49e04",
-      "name": "noodles",
-      "location_id": "dry-goods",
-      "stored": "2026-03-28T15:55:38",
       "expires": "2027-03-29",
       "notes": null,
       "item_type": "ingredient",
@@ -298,73 +258,13 @@
       "item_type": "ingredient"
     },
     {
-      "id": "f4c01d4f",
-      "name": "lime",
-      "location_id": "fridge",
-      "stored": "2026-03-30T22:04:28",
-      "expires": "2026-04-06",
-      "expiry_source": "estimated",
-      "notes": "1",
-      "item_type": "ingredient"
-    },
-    {
-      "id": "077e45ae",
-      "name": "cilantro",
-      "location_id": "fridge",
-      "stored": "2026-03-30T22:04:28",
-      "expires": "2026-04-06",
-      "expiry_source": "estimated",
-      "notes": "8 sprigs",
-      "item_type": "ingredient"
-    },
-    {
-      "id": "90a1ba42",
-      "name": "chorizo",
-      "location_id": "fridge",
-      "stored": "2026-03-30T22:04:28",
-      "expires": "2026-04-06",
-      "expiry_source": "estimated",
-      "notes": "2",
-      "item_type": "ingredient"
-    },
-    {
       "id": "ef1ff376",
-      "name": "bacon,",
+      "name": "bacon",
       "location_id": "freezer-1",
       "stored": "2026-03-30T22:04:28",
       "expires": "2026-09-26",
       "expiry_source": "estimated",
       "notes": null,
-      "item_type": "ingredient"
-    },
-    {
-      "id": "8d55edfe",
-      "name": "chillies",
-      "location_id": "freezer-2",
-      "stored": "2026-03-30T22:04:28",
-      "expires": "2026-06-28",
-      "expiry_source": "estimated",
-      "notes": "1",
-      "item_type": "ingredient"
-    },
-    {
-      "id": "02903b1a",
-      "name": "pinto beans",
-      "location_id": "fridge",
-      "stored": "2026-03-30T22:04:28",
-      "expires": "2026-04-07",
-      "expiry_source": "estimated",
-      "notes": "1 can",
-      "item_type": "ingredient"
-    },
-    {
-      "id": "1aa439f1",
-      "name": "thick tortilla chips",
-      "location_id": "dry-goods",
-      "stored": "2026-03-30T22:04:28",
-      "expires": "2026-04-04",
-      "expiry_source": "estimated",
-      "notes": "8 cups",
       "item_type": "ingredient"
     },
     {
@@ -379,7 +279,7 @@
     },
     {
       "id": "847acc30",
-      "name": "cilantro",
+      "name": "basel",
       "location_id": "kitchen-island",
       "stored": "2026-03-30T22:04:28",
       "expires": "2026-04-14",
@@ -398,16 +298,6 @@
       "item_type": "ingredient"
     },
     {
-      "id": "01b8c29f",
-      "name": "mayonnaise",
-      "location_id": "fridge",
-      "stored": "2026-03-30T22:04:28",
-      "expires": "2026-09-27",
-      "expiry_source": "estimated",
-      "notes": null,
-      "item_type": "ingredient"
-    },
-    {
       "id": "05f7806d",
       "name": "cornstarch",
       "location_id": "dry-goods",
@@ -418,32 +308,192 @@
       "item_type": "ingredient"
     },
     {
-      "id": "d2c6b0e6",
-      "name": "hamburger patties",
-      "location_id": "fridge",
-      "stored": "2026-03-31T13:04:40",
-      "expires": "2026-04-03",
+      "id": "25b85a65",
+      "name": "paprika",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:32:44",
+      "expires": "2027-04-03",
       "expiry_source": "estimated",
       "notes": null,
       "item_type": "ingredient"
     },
     {
-      "id": "a526f2a6",
-      "name": "frozen chicken breasts",
-      "location_id": null,
-      "stored": "2026-03-31T13:04:40",
-      "expires": null,
-      "expiry_source": null,
+      "id": "24f50dc2",
+      "name": "cayene pepper",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:32:49",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
       "notes": null,
       "item_type": "ingredient"
     },
     {
-      "id": "4918f883",
+      "id": "eca78bbd",
+      "name": "rosmarie",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:32:54",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "46cf2add",
+      "name": "nutmeg",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:33:01",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "1b840645",
+      "name": "curry leaves",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:33:06",
+      "expires": "2027-02-28",
+      "expiry_source": "user",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "0fc13b5e",
+      "name": "garam masala",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:33:10",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "3b0b1b3f",
+      "name": "tabasco sauce",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:33:18",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "f5be44d2",
+      "name": "worcestershire sauce",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:33:24",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "c1708291",
+      "name": "soy sauce",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:33:30",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "8601b5ca",
+      "name": "vinager",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:33:42",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "576aaa5e",
+      "name": "apple cider vinegar",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:33:48",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "af0358ad",
+      "name": "mustard powder",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:33:54",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "4d68e3d7",
+      "name": "tomato sauce / ketchup",
+      "location_id": "fridge",
+      "stored": "2026-04-03T15:34:07",
+      "expires": "2026-07-31",
+      "expiry_source": "user",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "c12f0d41",
+      "name": "mustard",
+      "location_id": "fridge",
+      "stored": "2026-04-03T15:34:10",
+      "expires": "2026-09-30",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "2b88168b",
+      "name": "cheese",
+      "location_id": "fridge",
+      "stored": "2026-04-03T15:34:16",
+      "expires": "2026-04-13",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "50b7455d",
       "name": "salt",
-      "location_id": null,
-      "stored": "2026-03-31T13:04:40",
-      "expires": null,
-      "expiry_source": null,
+      "location_id": "spices",
+      "stored": "2026-04-03T15:43:32",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "8d3980b0",
+      "name": "coriander",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:50:45",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "a36d408b",
+      "name": "cinnamon",
+      "location_id": "spices",
+      "stored": "2026-04-03T15:51:07",
+      "expires": "2027-04-03",
+      "expiry_source": "estimated",
+      "notes": null,
+      "item_type": "ingredient"
+    },
+    {
+      "id": "f6a82123",
+      "name": "lettuce",
+      "location_id": "fridge",
+      "stored": "2026-04-04T07:13:55",
+      "expires": "2026-04-11",
+      "expiry_source": "estimated",
       "notes": null,
       "item_type": "ingredient"
     }

@@ -12,6 +12,10 @@ GlaDOS.views.recipe = {
                     <input type="text" id="dash-recipe-search" placeholder="Search recipes..." onkeydown="if(event.key==='Enter') GlaDOS.views.recipe.dashSearch()">
                     <button onclick="GlaDOS.views.recipe.dashSearch()"><i class="icon-search"></i></button>
                 </div>
+                <div style="display:flex;gap:6px;margin-top:6px">
+                    <button class="btn-accent-outline" onclick="socket.emit('recipe_action',{action:'browse'})" style="flex:1;padding:6px 0;font-size:0.8rem"><i class="icon-grid"></i> Browse</button>
+                    <button class="btn-accent-outline" onclick="socket.emit('recipe_action',{action:'random_recipe',pantry_aware:true})" style="flex:1;padding:6px 0;font-size:0.8rem"><i class="icon-chef-hat"></i> Surprise Me</button>
+                </div>
                 <button class="btn-accent-outline" onclick="socket.emit('recipe_action',{action:'search_from_pantry'})" style="margin-top:6px;width:100%;padding:6px 0;font-size:0.8rem"><i class="icon-utensils"></i> Use what's expiring</button>
             </div>`;
     },
@@ -24,9 +28,11 @@ GlaDOS.views.recipe = {
         let img = '';
         if (data.image_name) img = `<img class="recipe-image" src="/recipe-images/${encodeURIComponent(data.image_name)}.jpg" onerror="this.style.display='none'" alt="${GlaDOS.esc(title)}">`;
         const safeTitle = GlaDOS.esc(title).replace(/'/g, "\\'");
-        const actions = `<div style="display:flex;gap:8px;margin:12px 0">
+        const actions = `<div style="display:flex;gap:8px;margin:12px 0;align-items:center">
+            <button class="btn-fav" data-recipe-name="${safeTitle}" onclick="event.stopPropagation();socket.emit('meal_planner_action',{action:'toggle_favorite',recipe_name:'${safeTitle}'})">&hearts;</button>
             <button class="btn-primary" style="font-size:0.85rem;padding:8px 16px" onclick="socket.emit('pantry_action',{action:'check_recipe',recipe_name:'${safeTitle}'})">Check Pantry</button>
             <button class="btn-primary btn-secondary" style="font-size:0.85rem;padding:8px 16px" onclick="socket.emit('pantry_action',{action:'add_recipe_to_list',recipe_name:'${safeTitle}'})">Add Missing to List</button>
+            <button class="btn-accent-outline" style="font-size:0.85rem;padding:8px 16px" onclick="socket.emit('meal_planner_action',{action:'plan_meal',recipe_name:'${safeTitle}'})">+ Plan</button>
         </div>`;
         if (data.ingredients && data.directions) {
             const ings = (Array.isArray(data.ingredients) ? data.ingredients : data.ingredients.split('\n')).map(i => i.replace(/^[-\s]*/, '').trim()).filter(Boolean).map(i => `<li>${GlaDOS.esc(i)}</li>`).join('');
@@ -43,7 +49,9 @@ GlaDOS.views.recipe_search = {
         const results = data.results || [];
         const readyMeals = data.ready_meals || [];
         const query = data.query || '';
-        let html = `<div class="view-title">${GlaDOS.esc(data.title || 'Recipe Search')}</div>`;
+        const searchMethod = data.search_method || '';
+        const methodLabel = searchMethod === 'semantic' ? 'semantic search' : searchMethod === 'fuzzy' ? 'basic matching' : '';
+        let html = `<div class="view-title">${GlaDOS.esc(data.title || 'Recipe Search')}${methodLabel ? `<span class="rs-method">${methodLabel}</span>` : ''}</div>`;
 
         // Ready meals section — complete dishes ready to eat/heat
         if (readyMeals.length) {
@@ -99,6 +107,7 @@ GlaDOS.views.recipe_search = {
                         <div class="rs-meta${metaCls}">${meta}</div>
                         ${expMatch}
                     </div>
+                    <button class="rs-fav-btn" data-recipe-name="${safeTitle}" onclick="event.stopPropagation();socket.emit('meal_planner_action',{action:'toggle_favorite',recipe_name:'${safeTitle}'})" title="Favorite">&hearts;</button>
                     ${addBtn}
                 </div>`;
             }).join('');

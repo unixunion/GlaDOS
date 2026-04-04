@@ -45,7 +45,7 @@ def get_current_time() -> str:
     Returns the current date and time
     """
     now = datetime.now()
-    formatted = now.strftime("%H:%M:%S")
+    formatted = now.strftime("%H:%M")
     t = json.dumps({"time": formatted})
     logger.info(f"Get Current Date: {t}")
     return t

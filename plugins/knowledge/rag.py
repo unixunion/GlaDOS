@@ -52,7 +52,11 @@ class KnowledgeRAG(RunnableMCPPlugin):
                 "- If the passages don't answer the question, answer from your own knowledge or say you're not sure.\n"
                 "- Use information naturally — do NOT say 'according to the knowledge base' or 'the passage states'.\n"
                 "- If you use a fact from a passage, you can briefly mention the source (e.g. 'According to Wikipedia').\n"
-                "- NEVER fabricate information by mixing unrelated passages together."
+                "- NEVER fabricate information by mixing unrelated passages together.\n"
+                "- For passages from 'glados_manual': these are YOUR OWN documentation. Summarize the information "
+                "in natural spoken language — do NOT read markdown, tables, code blocks, or command syntax verbatim. "
+                "Instead, explain what the user can do in plain conversational English. For example, if the docs say "
+                "'| \"add eggs\" | Adds eggs |', say 'You can say add eggs to put it on the list.'"
             )
 
     def _init_clients(self) -> bool:
@@ -106,6 +110,12 @@ class KnowledgeRAG(RunnableMCPPlugin):
             logger.info("[KnowledgeRAG] Background init starting...")
             if self._init_clients():
                 logger.success("[KnowledgeRAG] Background init complete — ready")
+                # Auto-index wiki docs into glados_manual collection
+                try:
+                    from plugins.knowledge.wiki_indexer import ensure_wiki_indexed
+                    ensure_wiki_indexed(self._qdrant, self._embed_model)
+                except Exception as e:
+                    logger.debug(f"[KnowledgeRAG] Wiki indexing skipped: {e}")
             else:
                 logger.warning("[KnowledgeRAG] Background init failed — RAG will be unavailable")
         threading.Thread(target=_bg_init, daemon=True, name="rag-init").start()

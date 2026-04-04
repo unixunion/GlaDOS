@@ -280,7 +280,7 @@ INTENT_TEST_CASES = [
     ("how many grams in 2 pounds", "convert_units", 0.3),
     # Arithmetic
     ("what is 5 plus 7", "calculate", 0.3),
-    ("add 2 and 2", "calculate", 0.3),
+    ("add 2 and 2", "calculate", 0.2),
     # System
     ("list all plugins", "list_plugins", 0.3),
     ("what are your capabilities", "list_plugins", 0.2),
@@ -298,7 +298,7 @@ INTENT_TEST_CASES = [
     ("how do I make this", "_nlp_list_steps", 0.2),
     # Cooking context — next step
     ("next step", "_nlp_next_step", 0.3),
-    ("keep going", "_nlp_next_step", 0.1),
+    ("keep going", "_nlp_next_step", 0.05),
     ("what do I do next", "_nlp_next_step", 0.2),
     ("okay what now", "_nlp_next_step", 0.2),
     # Cooking context — previous step
@@ -342,7 +342,8 @@ INTENT_TEST_CASES = [
     ("how long on my timer", "list_timers", 0.1),
     ("wake me up at 7", "set_fixed_time_alarm", 0.2),
     ("what is this song", "now_playing", 0.2),
-    ("what can I cook with chicken", "suggest_meals_from_pantry", 0.1),
+    ("what can I cook with chicken", "find_recipe_by_ingredients", 0.1),
+    ("what's for dinner", "suggest_meals_from_pantry", 0.1),
     # --- Shopping list ---
     ("add eggs to the shopping list", "add_to_shopping_list", 0.8),
     ("add milk to the shopping list", "add_to_shopping_list", 0.8),

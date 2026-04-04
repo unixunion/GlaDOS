@@ -34,7 +34,7 @@ CATEGORY_MAP = {
         "paprika", "cayenne", "thyme", "oregano", "cumin", "cinnamon", "turmeric",
         "chilli powder", "chili powder", "nutmeg", "coriander", "basil", "rosemary",
         "bay leaves", "cloves", "cardamom", "fennel seed",
-        "black pepper", "white pepper", "ground pepper", "peppercorn",
+        "black pepper", "white pepper", "ground pepper", "peppercorn"
     ],
     "meat": [
         "chicken", "beef", "pork", "bacon", "sausage", "mince", "steak", "lamb",
@@ -57,9 +57,15 @@ CATEGORY_MAP = {
 def _categorize_item(name: str) -> str:
     """Auto-assign a shopping category based on item name."""
     name_lower = name.lower()
+    # Exact substring match first (avoids fuzzy false positives like "salami" matching "salt")
     for category, keywords in CATEGORY_MAP.items():
         for keyword in keywords:
-            if keyword in name_lower or fuzz.partial_ratio(keyword, name_lower) >= 85:
+            if keyword in name_lower:
+                return category
+    # Fuzzy fallback for misspellings (ratio not partial_ratio — measures spelling similarity)
+    for category, keywords in CATEGORY_MAP.items():
+        for keyword in keywords:
+            if fuzz.ratio(keyword, name_lower) >= 85:
                 return category
     return "other"
 
@@ -229,11 +235,12 @@ def _parse_expiry_date(text: str) -> Optional[str]:
 # NLP extract/response functions (module-level, per countdown_timer pattern)
 # ---------------------------------------------------------------------------
 
-_WORD_NUMBERS = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "eleven": 11, "twelve": 12,
-}
+from glados.nlp.extractors import (
+    word_to_number, CANCEL_WORDS, ALL_EXIT_WORDS, CONFIRM_WORDS, DENY_WORDS,
+    _ONES as _WORD_NUMBERS_FULL,
+)
+# Backward-compat alias used by NLP extract functions
+_WORD_NUMBERS = _WORD_NUMBERS_FULL
 
 
 def _add_to_list_nlp_extract(text: str) -> dict:
@@ -556,6 +563,7 @@ class PantryPlugin(RunnableMCPPlugin):
         self._expiry_warned_today = False
         self._startup_time = datetime.now()
         self._shopping_mode = None  # None, "planning", or "post_shopping"
+        self._catalog_mode = None    # None or {"location_id": str, "location_name": str, "mentioned": set(), "added": int, "updated": int, "removed": int}
         self._last_added_item = None  # for "make that 3" / quantity update commands
         self._shopping_mode_last_activity = None  # timestamp of last handled command in mode
         self._shopping_mode_timeout = self.plugin_config.get(
@@ -581,7 +589,7 @@ class PantryPlugin(RunnableMCPPlugin):
         self.register_ui_action("pantry_action", self._on_pantry_action)
 
         # Register display views
-        self.register_view("shopping_list", "plugins/pantry/views/shopping.js", dashboard_card=True)
+        self.register_view("shopping_list", "plugins/pantry/views/shopping.js", css_path="plugins/pantry/views/shopping.css", dashboard_card=True)
         self.register_view("pantry", "plugins/pantry/views/pantry.js", dashboard_card=True)
         self.register_view("pantry_shelf_life", "plugins/pantry/views/pantry.js")
         self.register_view("pantry_put_away", "plugins/pantry/views/pantry.js")
@@ -827,6 +835,35 @@ class PantryPlugin(RunnableMCPPlugin):
             activity=[Activity.GENERAL, Activity.COOKING],
             nlp_extract_fn=_remove_from_list_nlp_extract,
             nlp_response=_remove_from_list_nlp_response,
+        )
+
+        self.register_tool(
+            handler=self.rename_last_shopping_item,
+            description=(
+                "Rename the last item added to the shopping list. "
+                "Use when the user says the name is wrong or wants to use a different name. "
+                "If no new_name is provided, reverts to the original name before normalization."
+            ),
+            parameters={
+                "new_name": {
+                    "type": "string",
+                    "description": "The new name for the item. Omit to revert to the original name.",
+                },
+            },
+            required=[],
+            intents=[
+                "that's wrong",
+                "that's not right",
+                "I said chicken not chicken breast",
+                "use the name I said",
+                "rename that",
+                "change the name",
+                "rename the last item",
+                "that's not what I said",
+                "no I meant chicken",
+            ],
+            process_output=False,
+            activity=[Activity.GENERAL, Activity.COOKING],
         )
 
         self.register_tool(
@@ -1122,23 +1159,20 @@ class PantryPlugin(RunnableMCPPlugin):
             intents=[
                 "what can I make with what's in the pantry",
                 "what can I make with the contents of the pantry",
-                "what can I make with whats in the pantry",
                 "what can I cook with what we have",
-                "what can I cook with the pantry contents",
                 "what can I make before things expire",
                 "suggest a meal from the pantry",
                 "suggest a meal from what we have",
                 "suggest meals from pantry",
                 "recipe suggestions from pantry",
-                "recipe suggestions from what we have",
                 "suggest a meal",
                 "what meals can I make",
-                "what recipes can I make with what I have",
                 "what do we have to eat",
                 "what's for dinner",
                 "do we have any left overs",
                 "is anything ready to eat",
-                "I'm starving"
+                "I'm starving",
+                "what's to eat",
             ],
             process_output=True,
             activity=[Activity.GENERAL, Activity.COOKING],
@@ -1239,10 +1273,25 @@ class PantryPlugin(RunnableMCPPlugin):
             if line.strip()
         ]
 
+        # Normalize ingredient names for better pantry matching
+        try:
+            from plugins.recipes.recipe_api import normalize_ingredient
+            _normalize = normalize_ingredient
+        except ImportError:
+            _normalize = None
+
         have = []
         missing = []
         for ing in ingredient_lines:
-            if self._find_pantry_items(ing):
+            # Try normalized name first, then original
+            found = False
+            if _normalize:
+                core, conf = _normalize(ing)
+                if conf >= 0.85:
+                    found = bool(self._find_pantry_items(core))
+            if not found:
+                found = bool(self._find_pantry_items(ing))
+            if found:
                 have.append(ing)
             else:
                 missing.append(ing)
@@ -1306,9 +1355,14 @@ class PantryPlugin(RunnableMCPPlugin):
 
         # Use the recipe plugin's ingredient search
         try:
-            from plugins.recipes.recipe_api import search_by_ingredients, safe_parse_list
+            from plugins.recipes.recipe_api import search_by_ingredients, safe_parse_list, normalize_ingredient
             import plugins.recipes.recipe_api as _recipe_mod
-            matches = search_by_ingredients(query_items[:15]) if query_items else []
+            # Normalize pantry item names for better recipe matching
+            normalized_query = []
+            for q in query_items[:15]:
+                norm, conf = normalize_ingredient(q)
+                normalized_query.append(norm if conf >= 0.85 else q)
+            matches = search_by_ingredients(normalized_query) if normalized_query else []
             logger.info(f"[Pantry] Recipe suggestion: {len(matches)} matches from {len(query_items)} ingredients, {len(ready_meals)} ready meals")
 
             top = matches[:10]
@@ -1331,6 +1385,11 @@ class PantryPlugin(RunnableMCPPlugin):
                     "missing_count": missing,
                     "matched_expiring": matched_expiring,
                 })
+            # Detect search method from results (semantic vs fuzzy)
+            search_method = ""
+            if top:
+                search_method = top[0].get("search_method", "fuzzy")
+
             self.event_system.publish(EventMessage(
                 role="display", name="recipe_search",
                 content={
@@ -1338,6 +1397,7 @@ class PantryPlugin(RunnableMCPPlugin):
                     "query": "pantry ingredients",
                     "results": display_results,
                     "ready_meals": ready_meals,
+                    "search_method": search_method,
                 },
                 process_output=False,
             ))
@@ -1480,10 +1540,34 @@ class PantryPlugin(RunnableMCPPlugin):
     # Shopping list tools
     # -----------------------------------------------------------------------
 
+    def _try_normalize_ingredient(self, item: str) -> tuple[str, str | None]:
+        """Normalize an ingredient name if config allows. Returns (name, original_name_or_None)."""
+        try:
+            from glados.config import GladosConfig
+            config = getattr(self, '_config', None)
+            if config and not getattr(config, 'normalize_shopping_items', True):
+                return item, None
+        except Exception:
+            pass
+
+        try:
+            from plugins.recipes.recipe_api import normalize_ingredient
+            normalized, confidence = normalize_ingredient(item)
+            if confidence >= 0.85 and normalized != item.lower().strip():
+                return normalized, item
+        except ImportError:
+            pass
+        return item, None
+
     def add_to_shopping_list(self, item: str, quantity: str = None, recurring_days: int = None) -> dict:
         """Add an item to the shopping list."""
-        # Check if already on the list
-        existing = self._find_shopping_item(item)
+        # Normalize ingredient name for better recipe matching
+        normalized_name, original_name = self._try_normalize_ingredient(item)
+
+        # Check if already on the list (check both original and normalized)
+        existing = self._find_shopping_item(normalized_name) or (
+            self._find_shopping_item(item) if original_name else None
+        )
         if existing:
             if quantity:
                 existing["quantity"] = quantity
@@ -1493,12 +1577,14 @@ class PantryPlugin(RunnableMCPPlugin):
 
         new_item = {
             "id": uuid.uuid4().hex[:8],
-            "name": item,
+            "name": normalized_name,
             "quantity": quantity,
-            "category": _categorize_item(item),
+            "category": _categorize_item(normalized_name),
             "added": datetime.now().isoformat(timespec="seconds"),
             "got": False,
         }
+        if original_name:
+            new_item["original_name"] = original_name
         self._shopping_list["items"].append(new_item)
 
         # Set up recurring rule if requested
@@ -1506,26 +1592,32 @@ class PantryPlugin(RunnableMCPPlugin):
             # Remove existing rule for this item
             self._shopping_list["recurring_rules"] = [
                 r for r in self._shopping_list["recurring_rules"]
-                if r["item_name"].lower() != item.lower()
+                if r["item_name"].lower() != normalized_name.lower()
             ]
             self._shopping_list["recurring_rules"].append({
-                "item_name": item,
+                "item_name": normalized_name,
                 "quantity": quantity,
                 "interval_days": recurring_days,
                 "next_due": (date.today() + timedelta(days=recurring_days)).isoformat(),
             })
 
         # If item is in pantry, remove it (they said they're out)
-        pantry_matches = self._find_pantry_items(item)
+        pantry_matches = self._find_pantry_items(normalized_name)
+        if not pantry_matches and original_name:
+            pantry_matches = self._find_pantry_items(item)
         if pantry_matches:
             for pm in pantry_matches:
                 self._pantry["items"].remove(pm)
             self._save_pantry()
-            logger.info(f"[Pantry] Removed {len(pantry_matches)} pantry entries for '{item}' (user is out)")
+            logger.info(f"[Pantry] Removed {len(pantry_matches)} pantry entries for '{normalized_name}' (user is out)")
 
         self._save_shopping_list()
         self._publish_shopping_list_display()
-        logger.info(f"[Pantry] Added '{item}' to shopping list (category: {new_item['category']})")
+        self._last_added_item = new_item
+        if original_name:
+            logger.info(f"[Pantry] Added '{normalized_name}' (normalized from '{item}') to shopping list (category: {new_item['category']})")
+        else:
+            logger.info(f"[Pantry] Added '{normalized_name}' to shopping list (category: {new_item['category']})")
 
         # If category is "other", try LLM classification in background
         if new_item["category"] == "other":
@@ -1561,10 +1653,43 @@ class PantryPlugin(RunnableMCPPlugin):
                     logger.debug(f"[Pantry] Shopping item LLM classify failed: {e}")
             threading.Thread(target=_bg_classify, daemon=True).start()
 
-        return {
-            "status": "added", "item": item, "category": new_item["category"],
+        result = {
+            "status": "added", "item": normalized_name, "category": new_item["category"],
             "recurring_days": recurring_days,
             "count": len(self._shopping_list["items"]),
+        }
+        if original_name:
+            result["original_name"] = original_name
+            result["message"] = f"Added {normalized_name} to the shopping list."
+        return result
+
+    def rename_last_shopping_item(self, new_name: str = None) -> dict:
+        """Rename the last added shopping list item, or revert to the original name."""
+        if not self._last_added_item:
+            return {"status": "error", "message": "No recently added item to rename."}
+
+        item = self._last_added_item
+        old_name = item["name"]
+
+        if not new_name:
+            # Revert to original name if available
+            original = item.get("original_name")
+            if original:
+                new_name = original
+            else:
+                return {"status": "error", "message": "No original name to revert to."}
+
+        item["name"] = new_name
+        item["category"] = _categorize_item(new_name)
+        item.pop("original_name", None)
+        self._save_shopping_list()
+        self._publish_shopping_list_display()
+        logger.info(f"[Pantry] Renamed shopping item '{old_name}' → '{new_name}'")
+        return {
+            "status": "success",
+            "old_name": old_name,
+            "new_name": new_name,
+            "message": f"Renamed {old_name} to {new_name} on the shopping list.",
         }
 
     def remove_from_shopping_list(self, item: str) -> dict:
@@ -2005,6 +2130,13 @@ class PantryPlugin(RunnableMCPPlugin):
         recurring_map = {r["item_name"].lower(): r.get("interval_days", 0) for r in self._shopping_list.get("recurring_rules", [])}
         unassigned_count = sum(1 for i in self._pantry["items"] if not i.get("location_id"))
 
+        # Include core ingredient names for client-side autocomplete
+        try:
+            from plugins.recipes.recipe_api import _core_ingredient_list
+            known_ingredients = _core_ingredient_list
+        except ImportError:
+            known_ingredients = []
+
         self.event_system.publish(EventMessage(
             role="display",
             name="shopping_list",
@@ -2026,6 +2158,7 @@ class PantryPlugin(RunnableMCPPlugin):
                 "total": len(items),
                 "got_count": got_count,
                 "unassigned_count": unassigned_count,
+                "known_ingredients": known_ingredients,
             },
             process_output=False,
         ))
@@ -2211,14 +2344,7 @@ class PantryPlugin(RunnableMCPPlugin):
         "post shopping", "lets put away the shopping", "unpack the shopping",
         "post shopping mode", "back from the store",
     ]
-    _EXIT_TRIGGERS = [
-        "done", "that's everything", "finished", "exit", "done planning",
-        "stop planning", "all done", "that's it", "that's all", "exit mode",
-        "leave mode", "stop", "end planning mode", "end planning",
-        "exit planning mode", "exit planning", "end mode",
-        "cancel", "cancelled", "cancel that", "never mind", "nevermind",
-        "stop it", "quit", "close", "end", "that is cancelled",
-    ]
+    _EXIT_TRIGGERS = ALL_EXIT_WORDS
 
     # Tool names allowed in each mode (for LLM tool_override)
     _PLANNING_TOOLS = [
@@ -2229,6 +2355,11 @@ class PantryPlugin(RunnableMCPPlugin):
         "complete_shopping", "store_item", "set_expiry", "find_item",
         "show_pantry", "show_shopping_list",
     ]
+    _CATALOG_TRIGGERS = [
+        "catalog the", "catalogue the", "inventory the", "stocktake the",
+        "catalog mode", "catalogue mode", "stocktake mode",
+    ]
+    _CATALOG_TOOLS = ["store_item", "find_item", "show_pantry"]
 
     @staticmethod
     def _clean_voice_text(text: str) -> str:
@@ -2242,7 +2373,40 @@ class PantryPlugin(RunnableMCPPlugin):
         """PRE_LLM hook: intercept commands when in a shopping sub-context."""
         text = self._clean_voice_text(ctx.user_text)
 
-        # --- Check for mode entry ---
+        # --- Handle active catalog mode (checked first, independent of shopping_mode) ---
+        if self._catalog_mode:
+            # Handle reconciliation yes/no
+            if self._catalog_mode.get("awaiting_reconciliation"):
+                text_lower = text.lower().strip()
+                if text_lower in CONFIRM_WORDS or text_lower == "remove them":
+                    ids_to_remove = self._catalog_mode["unmentioned_ids"]
+                    self._pantry["items"] = [i for i in self._pantry["items"] if i["id"] not in ids_to_remove]
+                    self._save_pantry()
+                    self._finish_catalog_exit(ctx, self._catalog_mode["added"],
+                                              self._catalog_mode["updated"],
+                                              self._catalog_mode["removed"], len(ids_to_remove))
+                else:
+                    self._finish_catalog_exit(ctx, self._catalog_mode["added"],
+                                              self._catalog_mode["updated"],
+                                              self._catalog_mode["removed"], 0)
+                return
+
+            if any(text == t or text.startswith(t) or fuzz.ratio(text, t) >= 80 for t in self._EXIT_TRIGGERS):
+                # "cancel"/"abort" = exit without reconciliation, "done"/"finished" = exit with reconciliation
+                is_cancel = any(text.startswith(w) or text == w for w in CANCEL_WORDS)
+                if is_cancel:
+                    added = self._catalog_mode["added"]
+                    updated = self._catalog_mode["updated"]
+                    removed = self._catalog_mode["removed"]
+                    self._finish_catalog_exit(ctx, added, updated, removed, 0)
+                else:
+                    self._exit_catalog_mode(ctx)
+                return
+            self._handle_catalog_command(text, ctx)
+            self._shopping_mode_last_activity = datetime.now()
+            return
+
+        # --- Check for mode entry (shopping/catalog) ---
         if not self._shopping_mode:
             if any(text.startswith(t) or text == t for t in self._PLANNING_TRIGGERS):
                 self._shopping_mode = "planning"
@@ -2270,7 +2434,11 @@ class PantryPlugin(RunnableMCPPlugin):
                 logger.info("[Pantry] Entered post-shopping mode")
                 return
 
-            return  # Not in a mode, let normal processing handle it
+            if any(text.startswith(t) for t in self._CATALOG_TRIGGERS):
+                self._enter_catalog_mode(text, ctx)
+                return
+
+            return  # Not in any mode
 
         # --- Check for mode exit ---
         if any(text == t or text.startswith(t) or fuzz.ratio(text, t) >= 80 for t in self._EXIT_TRIGGERS):
@@ -2462,6 +2630,200 @@ class PantryPlugin(RunnableMCPPlugin):
             return True
 
         return False  # Not handled — pass to LLM with restricted tools
+
+    # -----------------------------------------------------------------------
+    # Catalog mode (inventory stocktake)
+    # -----------------------------------------------------------------------
+
+    def _enter_catalog_mode(self, text: str, ctx):
+        """Enter catalog mode for a specific location."""
+        # Extract location name from trigger text
+        loc_text = text
+        for trigger in self._CATALOG_TRIGGERS:
+            if text.startswith(trigger):
+                loc_text = text[len(trigger):].strip()
+                break
+
+        # Normalize word numbers: "freezer drawer three" → "freezer drawer 3"
+        for word, num in _WORD_NUMBERS.items():
+            loc_text = re.sub(rf'\b{word}\b', str(num), loc_text, flags=re.IGNORECASE)
+
+        loc = self._find_location(loc_text) if loc_text else None
+        if not loc:
+            ctx.tts_queue.put(f"I don't know a location called {loc_text}. Try again with a specific location like fridge or freezer drawer 1.")
+            ctx.tts_queue.put("<EOS>")
+            ctx.handled = True
+            return
+
+        # Get existing items in this location for reference
+        existing_ids = {i["id"] for i in self._pantry["items"] if i.get("location_id") == loc["id"]}
+
+        self._catalog_mode = {
+            "location_id": loc["id"],
+            "location_name": loc["name"],
+            "mentioned": set(),
+            "pre_existing": existing_ids,
+            "added": 0,
+            "updated": 0,
+            "removed": 0,
+        }
+        self._shopping_mode_last_activity = datetime.now()
+
+        # Show location contents
+        self._publish_pantry_display(location_filter=loc["id"])
+        self.event_system.publish(EventMessage(
+            "status", "shopping_mode", {"mode": "catalog", "location": loc["name"]}
+        ))
+        existing_count = len(existing_ids)
+        ctx.tts_queue.put(f"Cataloging the {loc['name']}. {existing_count} items currently listed. Call out what you see.")
+        ctx.tts_queue.put("<EOS>")
+        ctx.handled = True
+        logger.info(f"[Pantry] Entered catalog mode for {loc['name']} ({existing_count} existing items)")
+
+    def _handle_catalog_command(self, text: str, ctx):
+        """Handle a single item callout in catalog mode."""
+        ctx.handled = True
+        loc_id = self._catalog_mode["location_id"]
+        loc_name = self._catalog_mode["location_name"]
+
+        # Check for removal: "no X" / "remove X" / "remove the X"
+        remove_match = re.match(r"^(?:no|remove|remove the|none|take out|take out the)\s+(.+)$", text, re.IGNORECASE)
+        if remove_match:
+            item_name = remove_match.group(1).strip()
+            removed = 0
+            for item in list(self._pantry["items"]):
+                if item.get("location_id") == loc_id and fuzz.partial_ratio(item_name, item["name"].lower()) >= 70:
+                    self._pantry["items"].remove(item)
+                    removed += 1
+            if removed:
+                self._catalog_mode["removed"] += removed
+                self._save_pantry()
+                self._publish_pantry_display(location_filter=loc_id)
+                ctx.tts_queue.put(f"Removed {item_name}.")
+            else:
+                ctx.tts_queue.put(f"{item_name} not found.")
+            ctx.tts_queue.put("<EOS>")
+            return
+
+        # Parse quantity + item: "5 eggs", "two chicken sausages", "eggs"
+        quantity = None
+        item_name = text.strip()
+
+        # Check for leading word number: "two eggs", "three packs of butter"
+        for word, num in _WORD_NUMBERS.items():
+            pattern = rf'^{word}\s+(.+)$'
+            m = re.match(pattern, item_name, re.IGNORECASE)
+            if m:
+                quantity = str(num)
+                item_name = m.group(1).strip()
+                break
+
+        # Check for leading digit: "5 eggs", "12 cans"
+        if not quantity:
+            m = re.match(r'^(\d+)\s+(.+)$', item_name)
+            if m:
+                quantity = m.group(1)
+                item_name = m.group(2).strip()
+
+        # Strip articles
+        item_name = re.sub(r'^(?:a|an|some|the)\s+', '', item_name, flags=re.IGNORECASE).strip()
+
+        if not item_name or len(item_name) < 2:
+            return
+
+        # Check for existing item in this location
+        existing = [i for i in self._pantry["items"]
+                    if i.get("location_id") == loc_id
+                    and fuzz.partial_ratio(item_name, i["name"].lower()) >= 70]
+
+        if existing:
+            # Update existing item
+            item = existing[0]
+            if quantity:
+                item["notes"] = quantity
+            item["stored"] = datetime.now().isoformat(timespec="seconds")
+            self._catalog_mode["mentioned"].add(item["id"])
+            self._catalog_mode["updated"] += 1
+            self._save_pantry()
+            label = f"{item['name']}, {quantity}" if quantity else item["name"]
+            ctx.tts_queue.put(label)
+        else:
+            # Add new item
+            notes = quantity if quantity else None
+            result = self.store_item(item=item_name, location=loc_name, notes=notes)
+            if result.get("status") == "success":
+                # Find the newly added item to track its ID
+                new_items = [i for i in self._pantry["items"]
+                             if i["name"].lower() == item_name.lower() and i.get("location_id") == loc_id]
+                if new_items:
+                    self._catalog_mode["mentioned"].add(new_items[-1]["id"])
+                self._catalog_mode["added"] += 1
+                label = f"Added {item_name}" + (f", {quantity}" if quantity else "")
+                ctx.tts_queue.put(label)
+            else:
+                ctx.tts_queue.put(f"Could not add {item_name}")
+
+        ctx.tts_queue.put("<EOS>")
+        self._publish_pantry_display(location_filter=loc_id)
+
+    def _exit_catalog_mode(self, ctx):
+        """Exit catalog mode with reconciliation."""
+        loc_id = self._catalog_mode["location_id"]
+        loc_name = self._catalog_mode["location_name"]
+        mentioned = self._catalog_mode["mentioned"]
+        added = self._catalog_mode["added"]
+        updated = self._catalog_mode["updated"]
+        removed = self._catalog_mode["removed"]
+
+        # Find items that existed before but weren't mentioned
+        unmentioned = [
+            i for i in self._pantry["items"]
+            if i.get("location_id") == loc_id
+            and i["id"] in self._catalog_mode["pre_existing"]
+            and i["id"] not in mentioned
+        ]
+
+        if unmentioned:
+            names = ", ".join(i["name"] for i in unmentioned[:5])
+            extra = f" and {len(unmentioned) - 5} more" if len(unmentioned) > 5 else ""
+            ctx.tts_queue.put(
+                f"I still have {names}{extra} listed in the {loc_name} but you didn't mention them. "
+                f"Say yes to remove them, or no to keep them."
+            )
+            ctx.tts_queue.put("<EOS>")
+            ctx.handled = True
+
+            # Store unmentioned items for follow-up yes/no handling
+            self._catalog_mode["awaiting_reconciliation"] = True
+            self._catalog_mode["unmentioned_ids"] = [i["id"] for i in unmentioned]
+            return
+
+        self._finish_catalog_exit(ctx, added, updated, removed, 0)
+
+    def _finish_catalog_exit(self, ctx, added, updated, removed, reconciled):
+        """Finalize catalog mode exit with summary."""
+        loc_name = self._catalog_mode["location_name"]
+        total = len([i for i in self._pantry["items"] if i.get("location_id") == self._catalog_mode["location_id"]])
+
+        parts = []
+        if added:
+            parts.append(f"{added} added")
+        if updated:
+            parts.append(f"{updated} updated")
+        if removed + reconciled:
+            parts.append(f"{removed + reconciled} removed")
+
+        summary = ", ".join(parts) if parts else "no changes"
+        ctx.tts_queue.put(f"{loc_name} cataloged. {total} items total. {summary}.")
+        ctx.tts_queue.put("<EOS>")
+        ctx.handled = True
+
+        self.event_system.publish(EventMessage(
+            "status", "shopping_mode", {"mode": None}
+        ))
+        logger.info(f"[Pantry] Exited catalog mode for {loc_name}: {summary}")
+        self._catalog_mode = None
+        self._publish_pantry_display()
 
     # -----------------------------------------------------------------------
     # UI event handlers

@@ -169,6 +169,10 @@ class GladosConfig:
     max_tool_depth: int = 2
     power_on_prompt: Optional[str] = "You have just been powered on. Greet the user in one sentence."
     mcp_servers: Optional[List[dict]] = field(default_factory=list)
+    normalize_shopping_items: bool = True  # Normalize ingredient names to match recipe data
+    recipe_qdrant_enabled: bool = False   # Enable Qdrant-backed semantic recipe search
+    recipe_classify_model: Optional[str] = None  # Model for recipe categorization/ingredient extraction (null = use main model)
+    metric_annotations: bool = False  # Annotate imperial measurements with metric equivalents in recipes
 
     # Nested config groups
     memory: MemoryConfig = field(default_factory=MemoryConfig)

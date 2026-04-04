@@ -1,0 +1,88 @@
+/* Search method indicator */
+.rs-method {
+    font-size: 0.65rem;
+    font-weight: 400;
+    color: var(--text-secondary, #888);
+    margin-left: 10px;
+    padding: 2px 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    vertical-align: middle;
+    letter-spacing: 0.02em;
+}
+
+/* Browse view */
+.rb-toolbar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.rb-toolbar button { font-size: 0.8rem; padding: 8px 14px; }
+.rb-total { font-size: 0.7rem; font-weight: 400; color: var(--text-secondary, #888); margin-left: 8px; }
+
+/* Section titles */
+.rb-section-title {
+    font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text-secondary, #888); padding: 14px 0 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.05); margin-bottom: 8px;
+}
+
+/* Category grid */
+.rb-cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.rb-cat-tile {
+    background: var(--bg-card, #1e1e2e); border-radius: 12px; padding: 16px 12px;
+    text-align: center; cursor: pointer; transition: transform 0.15s, background 0.15s;
+}
+.rb-cat-tile:hover { background: var(--bg-hover, #2a2a3e); transform: scale(1.02); }
+.rb-cat-tile i { font-size: 1.5rem; display: block; margin-bottom: 6px; color: var(--accent, #ff6600); }
+.rb-cat-name { font-weight: 500; text-transform: capitalize; font-size: 0.9rem; color: var(--text-primary, #e0e0e0); }
+.rb-cat-count { font-size: 0.7rem; color: var(--text-secondary, #888); margin-top: 2px; }
+.rb-cat-favorites { border: 1px solid rgba(255,68,68,0.3); }
+.rb-cat-favorites i { color: #ff4444; }
+
+/* Recipe list in browse */
+.rb-recipe-grid { display: flex; flex-direction: column; gap: 8px; }
+.rb-recipe-card {
+    display: flex; align-items: center; gap: 12px; padding: 10px;
+    background: var(--bg-card, #1e1e2e); border-radius: 10px; cursor: pointer;
+}
+.rb-recipe-card:hover { background: var(--bg-hover, #2a2a3e); }
+.rb-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; }
+.rb-thumb-placeholder {
+    width: 56px; height: 56px; border-radius: 8px; background: rgba(255,255,255,0.05);
+    display: flex; align-items: center; justify-content: center; color: var(--text-secondary);
+}
+.rb-recipe-info { flex: 1; min-width: 0; }
+.rb-recipe-title { font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rb-recipe-meta { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; }
+.rb-recipe-card .rs-fav-btn { flex-shrink: 0; }
+
+/* Pagination */
+.rb-pagination { text-align: center; padding: 16px 0; }
+.rb-pagination button { font-size: 0.85rem; }
+
+/* Add recipe form */
+.ra-form { max-width: 600px; }
+.ra-label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-primary); margin: 14px 0 4px; }
+.ra-hint { font-weight: 400; color: var(--text-secondary, #888); font-size: 0.7rem; }
+.ra-input {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    background: var(--bg-card, #1e1e2e); border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-primary); font-size: 0.9rem;
+}
+.ra-input:focus, .ra-textarea:focus { border-color: var(--accent); outline: none; }
+.ra-textarea {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    background: var(--bg-card, #1e1e2e); border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-primary); font-size: 0.9rem; font-family: inherit;
+    resize: vertical; min-height: 80px;
+}
+.ra-extras { margin-top: 8px; }
+.ra-extras-btn { font-size: 0.75rem !important; padding: 4px 12px !important; }
+.ra-extras-fields { display: none; }
+.ra-extras-fields.visible { display: block; }
+.ra-actions { display: flex; gap: 10px; margin-top: 20px; }
+.ra-actions button { padding: 10px 20px; }
+.ra-toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px);
+    background: var(--bg-card, #1e1e2e); color: var(--text-primary); padding: 12px 24px;
+    border-radius: 10px; border: 1px solid var(--accent); font-size: 0.9rem;
+    transition: transform 0.3s; z-index: 100;
+}
+.ra-toast.visible { transform: translateX(-50%) translateY(0); }

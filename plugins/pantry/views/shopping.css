@@ -1,0 +1,27 @@
+/* Autocomplete suggestions dropdown */
+.sl-suggestions-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 80px;
+    background: var(--bg-card, #1e1e2e);
+    border: 1px solid var(--accent, #ff6600);
+    border-radius: 0 0 8px 8px;
+    z-index: 100;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.sl-sug-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    color: var(--text-primary, #e0e0e0);
+    font-size: 0.9rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.sl-sug-item:hover, .sl-sug-item.selected {
+    background: rgba(255, 102, 0, 0.15);
+    color: #fff;
+}
+.sl-sug-item:last-child {
+    border-bottom: none;
+}

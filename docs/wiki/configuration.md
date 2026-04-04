@@ -311,11 +311,38 @@ Each backend is in `glados/llm/backends/`. Adding a new provider = one file exte
 ## Pantry & Shopping List
 
 ```yaml
+  normalize_shopping_items: true    # normalize ingredient names to match recipe data (default: true)
+  recipe_qdrant_enabled: false      # enable Qdrant-backed semantic recipe search (default: false)
+  recipe_classify_model: "google/gemma-3n-e4b"  # model for recipe categorization + ingredient extraction (null = main model)
+
   plugins:
     - name: pantry_plugin
       config:
         shopping_mode_timeout: 60   # seconds of inactivity before auto-exiting planning/post-shopping mode
 ```
+
+### Ingredient Normalization
+
+When `normalize_shopping_items: true` (default), items added to the shopping list are matched against known recipe ingredient names. "Chicken" becomes "chicken breast", "butter" stays "butter" (already a core name). This improves recipe-matching accuracy significantly.
+
+- **Voice**: GlaDOS confirms the normalized name ("Added chicken breast"). Say "that's wrong" or "use the name I said" to revert.
+- **Display UI**: Autocomplete suggestions appear as you type, showing matching ingredient names from the recipe database.
+- **Graceful degradation**: If the ingredient map hasn't been generated yet, items are stored verbatim.
+
+Set `normalize_shopping_items: false` to disable all normalization. Autocomplete suggestions still appear in the UI.
+
+See [Shopping List & Pantry — Ingredient Normalization](pantry.md#ingredient-normalization) for setup and backfill instructions.
+
+### Semantic Recipe Search (Qdrant)
+
+When `recipe_qdrant_enabled: true`, recipes are embedded into a Qdrant collection (`recipe_ingredients`) for semantic ingredient matching. "What can I make with chicken and rice" uses vector similarity instead of keyword matching.
+
+- Requires Qdrant running (same instance as knowledge RAG, at `qdrant_url`)
+- Collection auto-builds on first startup (~2 min for 13.5K recipes)
+- Falls back to fuzzy matching if Qdrant is unavailable
+- The recipe search UI shows which method was used ("semantic search" or "basic matching")
+
+Build the collection offline (faster): `python tools/ingest_recipes_qdrant.py`
 
 No other config needed — pantry works out of the box with default storage locations. Locations are managed via voice or the display UI.
 

@@ -1,7 +1,45 @@
-"""Shared extraction utilities for NLP mode parameter parsing."""
+"""Shared extraction utilities for NLP mode parameter parsing.
+
+Contains word lists and parsing functions used across plugins for
+voice command interpretation.
+"""
 
 import re
 from typing import Optional
+
+# ---- Shared voice command word lists ----
+
+# Words that signal the user wants to cancel/abort the current operation
+CANCEL_WORDS = frozenset([
+    "cancel", "abort", "never mind", "nevermind", "stop", "quit",
+    "cancel that", "cancelled", "forget it",
+])
+
+# Words that signal the user is done with a mode/session (not cancelling — completing)
+EXIT_WORDS = frozenset([
+    "done", "finished", "that's everything", "that's it", "that's all",
+    "all done", "exit", "close", "end",
+])
+
+# Combined: any word that exits a mode (cancel or done)
+ALL_EXIT_WORDS = CANCEL_WORDS | EXIT_WORDS | frozenset([
+    "done planning", "stop planning", "exit mode", "leave mode",
+    "end planning mode", "end planning", "exit planning mode",
+    "exit planning", "end mode", "stop it",
+])
+
+# Words that confirm a yes/no prompt
+CONFIRM_WORDS = frozenset([
+    "yes", "yeah", "yep", "sure", "do it", "go ahead", "ok", "okay",
+    "affirmative", "correct", "right", "absolutely",
+])
+
+DENY_WORDS = frozenset([
+    "no", "nope", "nah", "don't", "negative", "no thanks", "leave it",
+    "keep them", "keep it",
+])
+
+# ---- Word-to-number maps ----
 
 # Word-to-number map for 0-99
 _ONES = {

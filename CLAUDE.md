@@ -33,9 +33,9 @@ glados/                    # Core application code
 plugins/                   # Auto-discovered plugins (walked recursively on startup)
   basic/                   # clock, timers, alarms, unit converter
     views/                 # Timer display view (timer.js)
-  recipes/                 # Recipe search and selection (13.5K recipes with images)
-    views/                 # Recipe display views (recipe.js)
-  pantry/                  # Shopping list + pantry inventory, expiry tracking
+  recipes/                 # Recipe search, browsing, categories (13.5K recipes, 15 categories)
+    views/                 # Recipe views (recipe.js, browse.js)
+  pantry/                  # Shopping list + pantry inventory, expiry tracking, catalog mode
     views/                 # Pantry + shopping display views (pantry.js, shopping.js)
   music/                   # Spotify playback control
   display/                 # Flask+SocketIO web display framework
@@ -45,6 +45,8 @@ plugins/                   # Auto-discovered plugins (walked recursively on star
   chores/                  # Vacuum control
   vision/                  # Camera/vision model integration (POC)
   system/                  # list_plugins, get_logs, loop_guard, log_analyzer
+  meal_planner/            # Favorites, weekly meal planning, smart shopping list generation
+    views/                 # Meal plan + favorites views (meal_plan.js, favorites.js)
   cores/                   # personality cores (sarcasm, memory, three laws, personality quips)
   knowledge/               # RAG retrieval plugin (Qdrant)
 
@@ -52,7 +54,7 @@ models/                    # TTS model files (glados.onnx, kokoro-82m-onnx/)
 data/recipes/              # Recipe dataset CSV + images (data/recipes/img/Food Images/)
 data/memory_db/            # ChromaDB persistent storage (auto-created)
 data/glados_quotes/        # Themed GLaDOS personality quotes for PersonalityCore
-plugin_data/               # Plugin persistence (pantry JSON, timer JSON, log reports)
+plugin_data/               # Plugin persistence (pantry JSON, timer JSON, log reports, meal plans)
 docs/wiki/                 # Wiki documentation (served in-app + browsable on GitHub)
 tools/                     # Offline utilities (ingest_zim.py for Qdrant ingestion)
 tests/                     # NLP tests, pantry tests, model benchmarks, knowledge benchmarks
@@ -80,6 +82,20 @@ The memory system in `glados/llm/memory/store.py` uses ChromaDB PersistentClient
 - **Intent detection**: `MemoryCore` (`plugins/cores/memory_core.py`) registers intents and handles all memory logic via a PRE_LLM chat pipeline hook. Remember/recall/forget/debug intents are detected by the IntentClassifier, then executed directly (store fact, search, clear, or dump to log).
 - **Regex role**: only used for fact *extraction* (pulling "I prefer celsius" from "remember that I prefer celsius"), not for intent detection. Falls back to the full utterance if no pattern matches.
 - **Plugin** (`plugins/cores/memory_core.py`): registers intents, provides a system prompt explaining memory to the LLM, and handles all memory operations via chat hook. No LLM tools registered — memory ops are entirely pre-LLM.
+
+## Ingredient Normalization
+
+Bridges the gap between user-provided item names ("chicken") and recipe ingredients ("boneless, skinless chicken thighs").
+
+- **Offline backfill**: `tools/extract_core_ingredients.py` processes all unique `cleaned_ingredients` through a local LLM to extract canonical core names. Output: `plugin_data/recipes/ingredient_map.json` (cleaned → core mapping, e.g. "boneless, skinless chicken thighs" → "chicken thigh").
+- **Recipe cache**: Each recipe stores `core_ingredients` (mapped from `cleaned_ingredients` via the map). The word index is built on core ingredients. Cache version: `cache_v3.pkl` — auto-rebuilds when the ingredient map hash changes.
+- **`normalize_ingredient(name)`** in `recipe_api.py`: public function returning `(normalized_name, confidence)`. Resolution: exact map lookup → exact core set match → fuzzy match via `rapidfuzz.process.extractOne` (≥85 threshold).
+- **Shopping list integration**: `add_to_shopping_list()` normalizes names (stores `original_name` for override). The `rename_last_shopping_item` tool lets users revert ("that's wrong", "use the name I said").
+- **Config**: `normalize_shopping_items: true` in `glados_config.yml` (default on). Set to `false` to store items verbatim.
+- **UI autocomplete**: Shopping list input gets client-side autocomplete from `known_ingredients` (the core ingredient set, sent with display data).
+- **Qdrant semantic search** (optional): `plugins/recipes/recipe_qdrant.py` embeds each recipe's ingredient list into Qdrant (`recipe_ingredients` collection). `search_by_ingredients()` tries Qdrant first, falls back to fuzzy. Config: `recipe_qdrant_enabled: true`. Auto-builds collection on startup if stale. Listens for `tool.recipe_added` events for future user-added recipes.
+- **Recipe categories**: Keyword-based inference at cache build time (15 built-in categories). Optionally overridden by LLM-generated categories from `plugin_data/recipes/recipe_categories.json` (22 categories including cuisine types). Run `tools/categorize_recipes.py` to generate. Applied automatically at startup.
+- **Meal planner** (`plugins/meal_planner/`): favorites system, weekly meal plans, household setup (adults + kids), smart shopping list generation via greedy set-cover optimization (`optimizer.py`). Suggests staple ingredients that unlock the most additional recipes. Proactive planning prompt on configured day.
 
 ## Standards
 
@@ -174,6 +190,29 @@ python main.py --no-speech
 make test                     # fast unit tests
 make test-all                 # unit + browser tests
 make test-knowledge           # knowledge RAG benchmark (needs Qdrant)
+
+# Backfill ingredient normalization map (requires local LLM server running)
+# Processes all unique recipe ingredients through an LLM to extract canonical names.
+# Output: plugin_data/recipes/ingredient_map.json
+# The recipe cache (cache_v3.pkl) auto-rebuilds on next startup when the map changes.
+python tools/extract_core_ingredients.py --model qwen/qwen3-4b-2507
+python tools/extract_core_ingredients.py --resume    # continue from last checkpoint
+python tools/extract_core_ingredients.py --stats      # show stats from existing map
+
+# Benchmark ingredient extraction accuracy across LLM models
+python tests/benchmark_ingredient_extraction.py
+python tests/benchmark_ingredient_extraction.py --models model1 model2
+
+# Categorize recipes by cuisine/type via LLM (requires local LLM server)
+# Output: plugin_data/recipes/recipe_categories.json
+# Applied automatically at startup if present — overrides keyword-based categories.
+python tools/categorize_recipes.py --model qwen/qwen3-4b-2507
+python tools/categorize_recipes.py --resume       # continue from checkpoint
+python tools/categorize_recipes.py --stats         # show category distribution
+
+# Build/rebuild Qdrant recipe collection (requires Qdrant running)
+python tools/ingest_recipes_qdrant.py
+python tools/ingest_recipes_qdrant.py --stats
 ```
 
 ## Notes

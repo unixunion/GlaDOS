@@ -192,11 +192,14 @@ Glados:
   qdrant_url: "http://localhost:6333"
   knowledge_collections:
     - wikipedia
+    - glados_manual
   knowledge_top_k: 3          # passages to retrieve per query
   knowledge_threshold: 0.50    # minimum similarity score
   knowledge_query_mode: "rewrite"  # "raw", "context", or "rewrite"
   knowledge_rewrite_model: "liquid/lfm2.5-1.2b"   # model for rewrite mode (null = use main model)
   # knowledge_rewrite_url: null     # separate API endpoint for rewrite (null = use main)
+  recipe_qdrant_enabled: true
+  recipe_classify_model: "google/gemma-3n-e4b"  # model for recipe categorization + ingredient extraction
   memory_enabled: true
   memory_db_path: "data/memory_db"
   memory_top_k: 5

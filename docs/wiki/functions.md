@@ -61,24 +61,20 @@ Alarms are for fixed times (use **timers** for durations like "5 minutes"). Best
 
 ## Recipes
 
-Recipe dataset with ~13,500 recipes and images at `data/recipes/dataset.csv`. Images in `data/recipes/img/Food Images/`.
+~13,500 recipes across 15 categories with images. Browse, search, or let GlaDOS surprise you.
 
 | Say this | What happens |
 |----------|-------------|
-| "find me a recipe for bread" | Search by keyword, returns a list |
-| "search recipes for pizza" | Alternate search phrasing |
-| "look up a recipe for cookies" | Another variant |
-| "I need a recipe" | Vague search (may ask for specifics) |
+| "find me a recipe for bread" | Search by keyword |
 | "what can I cook with chicken" | Ingredient-based search |
-| "lets make apple pie" | Select and activate a recipe for cooking |
-| "select the pizza recipe" | Select from previous search results |
-| "choose the lasagna recipe" | Alternate selection phrasing |
-| "lets cook spaghetti" | Natural cooking intent |
+| "surprise me" | Random recipe weighted by pantry match |
+| "random recipe" | Pure random from full dataset |
+| "lets make apple pie" | Select and start cooking |
 
-- Selected recipes are automatically displayed on screen with image, ingredients, and steps
-- Ingredient search uses fuzzy matching — "chicken" matches "chicken breast", "whole chicken", etc.
-- Integrates with the [pantry system](pantry.md) — suggest meals from pantry contents, add recipe ingredients to shopping list
+- **Browse** button on dashboard → category grid → recipe list with thumbnails
+- Integrates with [pantry](pantry.md), [shopping list](shopping.md), and [meal planner](meal-planner.md)
 - After selecting, use cooking step commands (see below)
+- **Full guide: [Recipes & Cooking](recipes.md)**
 
 ### Cooking Steps (after selecting a recipe)
 
@@ -154,17 +150,12 @@ If GlaDOS starts while offline, Spotify is unavailable. Once internet returns, t
 |----------|-------------|
 | "add eggs to the shopping list" | Adds item (auto-categorized) |
 | "we're out of butter" | Adds to list + removes from pantry |
-| "we buy milk every two weeks" | Recurring item |
 | "what's on the shopping list" | Shows interactive list on display |
 | "remove milk from the list" | Removes item |
-| "we got everything except eggs" | Post-shopping: moves bought items to pantry |
-| "shopping done" | Moves all items to pantry |
-| **"lets plan shopping"** | Enters planning mode — short commands like "eggs", "remove milk" |
-| **"back from shopping"** | Enters post-shopping mode — "got eggs", "put X in fridge" |
+| "shopping done" | Moves bought items to pantry |
+| "lets plan shopping" | Enters planning mode |
 
-- Interactive display with checkboxes, category grouping, and "Done Shopping" button
-- Mobile shopping list at `/shopping` — add to home screen on phone, works offline
-- See [Shopping List & Pantry](pantry.md) for full details
+Mobile PWA at `/shopping`, planning mode, recurring items, autocomplete. **Full guide: [Shopping List](shopping.md)**
 
 ## Pantry
 
@@ -173,15 +164,21 @@ If GlaDOS starts while offline, Spotify is unavailable. Once internet returns, t
 | "I put the chicken in freezer drawer 2" | Records storage location |
 | "the bacon expires on the 24th" | Sets expiry date |
 | "where is the flour" | Finds item location |
-| "do we have eggs" | Checks pantry inventory |
-| "what's expiring soon" | Lists items expiring within 7 days |
-| "what's in the fridge" | Shows filtered pantry view |
-| "what can I make with what's in the pantry" | Recipe suggestions from pantry contents |
-| "add the ingredients for that to the list" | Adds missing recipe ingredients to shopping list |
+| "what's expiring soon" | Lists expiring items |
+| "catalog the fridge" | Rapid-fire inventory mode — call out what you see |
 
-- Expiry colour coding on display: red (expired), orange (1-3 days), yellow (4-7 days)
-- Proactive TTS warnings for items expiring within 2 days
-- See [Shopping List & Pantry](pantry.md) for full details
+Expiry tracking, shelf life estimation, location management, catalog mode. **Full guide: [Pantry & Inventory](pantry.md)**
+
+## Meal Planning
+
+| Say this | What happens |
+|----------|-------------|
+| "save this recipe" | Save to favorites |
+| "plan lasagna for monday" | Add to weekly meal plan |
+| "generate a shopping list" | Auto-generate from meal plan |
+| "suggest meals for the week" | AI-powered meal suggestions |
+
+Favorites, weekly plan, smart shopping list, household scaling. **Full guide: [Meal Planning](meal-planner.md)**
 
 ## Display
 
