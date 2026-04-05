@@ -176,11 +176,17 @@ class LogAnalyzer(RunnableMCPPlugin):
                 "save logs for debugging",
                 "export the logs",
                 "save error report",
+                "save the logs",
+                "log this error",
+                "log that bug",
+                "report a bug",
+                "something went wrong save it",
             ],
-            process_output=True,
+            process_output=False,  # Don't need LLM to process — just confirm via NLP response
             activity=[Activity.SYSTEM, Activity.GENERAL],
             nlp_extract_fn=_save_report_nlp_extract,
             nlp_response=_save_report_nlp_response,
+            nlp_threshold=0.5,  # Fast-path — skip LLM entirely for log saves
         )
 
         logger.success(f"[LogAnalyzer] Active — buffer size {self._buffer.size}, saving to {self._data_dir}")
@@ -228,18 +234,77 @@ class LogAnalyzer(RunnableMCPPlugin):
             "total_buffered": self._buffer.size,
         }
 
+    def _get_conversation_context(self) -> dict:
+        """Capture full conversation history for the report.
+
+        Uses the MessageManager's _history ring buffer which keeps the last 200
+        messages across all contexts — never trimmed by the LLM sliding window.
+        Also includes the current (trimmed) LLM context for comparison.
+        """
+        try:
+            from glados.context.activity import Activity
+            mm = None
+            try:
+                from glados.llm.cores.chat_client import _active_instance
+                if _active_instance:
+                    mm = _active_instance.message_manager
+            except Exception:
+                pass
+
+            if not mm:
+                return {"error": "MessageManager not available"}
+
+            # Full history (never trimmed — the important one)
+            full_history = list(mm._history) if hasattr(mm, '_history') else []
+
+            # Current LLM context per activity (trimmed — what the LLM sees now)
+            current_context = {}
+            for activity in Activity:
+                msgs = mm._messages.get(activity, [])
+                if msgs:
+                    serialized = []
+                    for m in msgs[-20:]:
+                        if isinstance(m, dict):
+                            entry = {
+                                "role": m.get("role"),
+                                "content": str(m.get("content", ""))[:500],
+                            }
+                            if m.get("tool_calls"):
+                                entry["tool_calls"] = [
+                                    {"name": tc.get("function", {}).get("name", "?"),
+                                     "args": str(tc.get("function", {}).get("arguments", ""))[:200]}
+                                    for tc in m["tool_calls"]
+                                ]
+                            if m.get("name"):
+                                entry["name"] = m["name"]
+                            serialized.append(entry)
+                    current_context[activity.name] = serialized
+
+            return {
+                "current_activity": mm.current_context.name,
+                "full_history": full_history,
+                "current_llm_context": current_context,
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
     def save_log_report(self, description: str = "") -> dict:
-        """Save a structured JSON log report to disk."""
+        """Save a structured JSON log report to disk with logs + conversation context."""
         if not self._buffer:
             return {"status": "error", "message": "Log buffer not available."}
 
-        errors = self._buffer.get_errors(50)
-        warnings = self._buffer.get_warnings_and_errors(100)
-        all_recent = self._buffer.get_recent(200)
+        errors = self._buffer.get_errors(100)
+        warnings = self._buffer.get_warnings_and_errors(200)
+        # Get recent logs but filter out DEBUG event_system noise
+        all_entries = self._buffer.get_recent(500)
+        all_recent = [e for e in all_entries
+                      if not (e["level"] == "DEBUG" and e["module"] == "event_system")][-300:]
+        conversation = self._get_conversation_context()
 
         report = {
             "timestamp": datetime.now().isoformat(),
             "description": description,
+            "conversation": conversation,
             "errors": errors,
             "warnings": [w for w in warnings if w["level"] == "WARNING"],
             "context": all_recent,

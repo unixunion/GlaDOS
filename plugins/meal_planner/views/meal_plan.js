@@ -10,7 +10,7 @@ GlaDOS.views.meal_plan = {
         container.innerHTML = `
             <div class="dash-card-header" onclick="socket.emit('meal_planner_action',{action:'show_meal_plan'})">
                 <span class="dash-card-icon"><i class="icon-calendar"></i></span> Meal Plan
-                <span class="dash-card-badge">${planned}/7</span>
+                <span class="dash-card-badge">${planned}</span>
             </div>
             <div class="dash-card-body">
                 ${planned ? planned + ' meals planned' : 'No meals planned'}
@@ -25,7 +25,6 @@ GlaDOS.views.meal_plan = {
     render(container, data) {
         const meals = data.meals || [];
         const suggestions = data.suggestions || [];
-        const week = data.week || '';
         const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
         const dayLabels = {monday:'Mon',tuesday:'Tue',wednesday:'Wed',thursday:'Thu',friday:'Fri',saturday:'Sat',sunday:'Sun'};
 
@@ -64,24 +63,35 @@ GlaDOS.views.meal_plan = {
             html += '<div class="mp-section-title">This Week</div>';
             html += '<div class="mp-week">';
             days.forEach(day => {
-                const meal = meals.find(m => m.day === day);
-                if (meal) {
-                    const img = meal.image_name
-                        ? `<img class="mp-day-thumb" src="/recipe-images/${encodeURIComponent(meal.image_name)}.jpg" onerror="this.style.display='none'">`
-                        : '';
-                    const safeTitle = GlaDOS.esc(meal.recipe_title).replace(/'/g, "\\'");
-                    html += `<div class="mp-day filled">
-                        <span class="mp-day-label">${dayLabels[day]}</span>
-                        ${img}
-                        <span class="mp-day-recipe" onclick="socket.emit('recipe_action',{action:'select',recipe_name:'${safeTitle}'})">${GlaDOS.esc(meal.recipe_title)}</span>
-                        <button class="mp-day-remove" onclick="event.stopPropagation();socket.emit('meal_planner_action',{action:'remove_planned_meal',day:'${day}'})" title="Remove"><i class="icon-x"></i></button>
-                    </div>`;
-                } else {
-                    html += `<div class="mp-day empty">
-                        <span class="mp-day-label">${dayLabels[day]}</span>
-                        <span class="mp-day-empty">—</span>
-                    </div>`;
+                const dayMeals = meals.filter(m => m.day === day);
+                html += `<div class="mp-day ${dayMeals.length ? 'filled' : 'empty'}">
+                    <span class="mp-day-label">${dayLabels[day]}</span>
+                    <div class="mp-day-meals">`;
+
+                if (dayMeals.length) {
+                    dayMeals.forEach(meal => {
+                        const img = meal.image_name
+                            ? `<img class="mp-day-thumb" src="/recipe-images/${encodeURIComponent(meal.image_name)}.jpg" onerror="this.style.display='none'">`
+                            : '';
+                        const safeTitle = GlaDOS.esc(meal.recipe_title).replace(/'/g, "\\'");
+                        html += `<div class="mp-day-meal">
+                            ${img}
+                            <span class="mp-day-recipe" onclick="socket.emit('recipe_action',{action:'select',recipe_name:'${safeTitle}'})">${GlaDOS.esc(meal.recipe_title)}</span>
+                            <button class="mp-day-remove" onclick="event.stopPropagation();socket.emit('meal_planner_action',{action:'remove_planned_meal',meal_id:'${meal.id}'})" title="Remove"><i class="icon-x"></i></button>
+                        </div>`;
+                    });
                 }
+
+                // Add button — always show for adding more meals
+                html += `<div class="mp-day-add">
+                    <button class="mp-add-btn" onclick="event.stopPropagation();GlaDOS.views.meal_plan.showAddInput('${day}')" title="Add meal"><i class="icon-plus"></i></button>
+                    <div class="mp-add-input" id="mp-add-${day}" style="display:none">
+                        <input type="text" placeholder="Search recipes..." onkeydown="if(event.key==='Enter')GlaDOS.views.meal_plan.addMeal('${day}',this.value)" oninput="GlaDOS.views.meal_plan.searchRecipes(this.value,'${day}')">
+                        <div class="mp-add-suggestions" id="mp-sug-${day}"></div>
+                    </div>
+                </div>`;
+
+                html += `</div></div>`;
             });
             html += '</div>';
         }
@@ -91,5 +101,45 @@ GlaDOS.views.meal_plan = {
         }
 
         container.innerHTML = html;
-    }
+    },
+
+    showAddInput(day) {
+        const el = document.getElementById('mp-add-' + day);
+        if (el) {
+            el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+            if (el.style.display === 'flex') {
+                el.querySelector('input').focus();
+            }
+        }
+    },
+
+    addMeal(day, recipeName) {
+        if (recipeName && recipeName.trim()) {
+            socket.emit('meal_planner_action', {action: 'plan_meal', recipe_name: recipeName.trim(), day: day});
+        }
+    },
+
+    _searchTimer: null,
+    searchRecipes(query, day) {
+        clearTimeout(this._searchTimer);
+        const sugEl = document.getElementById('mp-sug-' + day);
+        if (!query || query.length < 2) { if (sugEl) sugEl.innerHTML = ''; return; }
+        this._searchTimer = setTimeout(() => {
+            // Client-side search through dashboardData if available, otherwise just show typed name
+            // For now, show the typed name as a suggestion + any favorites that match
+            if (!sugEl) return;
+            const favs = (GlaDOS.dashboardData.meal_planner_favorites || [])
+                .filter(f => f.toLowerCase().includes(query.toLowerCase()))
+                .slice(0, 3);
+            let html = '';
+            favs.forEach(f => {
+                const safe = GlaDOS.esc(f).replace(/'/g, "\\'");
+                html += `<div class="mp-sug-item" onclick="GlaDOS.views.meal_plan.addMeal('${day}','${safe}')">${GlaDOS.esc(f)}</div>`;
+            });
+            // Always show the typed text as an option
+            const safe = GlaDOS.esc(query).replace(/'/g, "\\'");
+            html += `<div class="mp-sug-item" onclick="GlaDOS.views.meal_plan.addMeal('${day}','${safe}')"><i>${GlaDOS.esc(query)}</i></div>`;
+            sugEl.innerHTML = html;
+        }, 200);
+    },
 };

@@ -187,9 +187,10 @@ python main.py
 python main.py --no-speech
 
 # Run tests
-make test                     # fast unit tests
+make test                     # fast unit tests (excludes integration/browser/benchmark)
 make test-all                 # unit + browser tests
 make test-knowledge           # knowledge RAG benchmark (needs Qdrant)
+pytest tests/test_meal_planner.py -m integration  # meal planner e2e (run separately)
 
 # Backfill ingredient normalization map (requires local LLM server running)
 # Processes all unique recipe ingredients through an LLM to extract canonical names.

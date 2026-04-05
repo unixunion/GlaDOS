@@ -36,10 +36,12 @@ Plan what you're cooking this week, day by day.
 | "show the meal plan" | Displays weekly plan on screen |
 | "what are we cooking this week" | Alternate phrasing |
 
-- Dinner-focused by default — one meal per day
+- **Multiple meals per day** — add breakfast, lunch, and dinner to the same day
 - Plan auto-clears at the start of each new week
-- The meal plan dashboard card shows "3/7 meals planned"
-- Click a recipe in the plan to view it; click X to remove
+- The meal plan dashboard card shows total meals planned
+- Click a recipe in the plan to view it; click X to remove individual meals
+- **"+" button** on each day row — tap to add a meal with inline search
+- These tools use NLP fast-path for reliable execution (the LLM is bypassed for direct tool calls)
 
 ## Household Setup
 

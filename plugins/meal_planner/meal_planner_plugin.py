@@ -22,6 +22,25 @@ _DAY_ABBREVS = {"mon": "monday", "tue": "tuesday", "wed": "wednesday", "thu": "t
                 "fri": "friday", "sat": "saturday", "sun": "sunday"}
 
 
+def _suggest_meals_nlp_response(result: dict) -> str:
+    if result.get("status") == "empty":
+        return result.get("message", "No suggestions available.")
+    count = result.get("count", 0)
+    return result.get("message", f"I've suggested {count} meals and put them on the screen.")
+
+
+def _generate_list_nlp_response(result: dict) -> str:
+    if result.get("status") == "empty":
+        return result.get("message", "No meals planned yet.")
+    return result.get("message", "Shopping list generated.")
+
+
+def _show_plan_nlp_response(result: dict) -> str:
+    if result.get("status") == "empty":
+        return result.get("message", "No meals planned this week.")
+    return result.get("message", "Here's the meal plan.")
+
+
 class MealPlannerPlugin(RunnableMCPPlugin):
 
     def __init__(self):
@@ -154,11 +173,16 @@ class MealPlannerPlugin(RunnableMCPPlugin):
                 "save this recipe",
                 "favorite this recipe",
                 "add this to favorites",
-                "I love this recipe",
+                "I love this recipe save it",
                 "bookmark this recipe",
-                "save that one",
+                "save that one to favorites",
                 "add to my favorites",
-                "keep this recipe",
+                "keep this recipe in my favorites",
+                # Casual / spoken forms
+                "save this one",
+                "that's a keeper save it",
+                "add this recipe to my saved recipes",
+                "save this to my recipes",
             ],
             process_output=False,
             activity=[Activity.COOKING, Activity.GENERAL],
@@ -173,9 +197,12 @@ class MealPlannerPlugin(RunnableMCPPlugin):
             required=["recipe_name"],
             intents=[
                 "remove from favorites",
-                "unfavorite this",
+                "unfavorite this recipe",
                 "delete from favorites",
                 "remove this from my favorites",
+                "take this off my favorites",
+                "remove that recipe from favorites",
+                "unsave this recipe",
             ],
             process_output=False,
             activity=[Activity.COOKING, Activity.GENERAL],
@@ -192,6 +219,10 @@ class MealPlannerPlugin(RunnableMCPPlugin):
                 "what recipes have I saved",
                 "show saved recipes",
                 "my favorite recipes",
+                "list my favorite recipes",
+                "show me my bookmarked recipes",
+                "what are my saved recipes",
+                "pull up my favorites",
             ],
             process_output=True,
             activity=[Activity.COOKING, Activity.GENERAL],
@@ -301,7 +332,14 @@ class MealPlannerPlugin(RunnableMCPPlugin):
                 "let's have this on saturday",
                 "cook this on tuesday",
                 "add this to the meal plan",
-                "plan this recipe",
+                "plan this recipe for the week",
+                "put this on the meal plan",
+                "schedule this recipe for thursday",
+                "let's make this on sunday",
+                "plan that recipe for monday",
+                # Casual / spoken
+                "meal plan this for wednesday",
+                "pop this on the plan for friday",
             ],
             process_output=False,
             activity=[Activity.COOKING, Activity.GENERAL],
@@ -316,10 +354,14 @@ class MealPlannerPlugin(RunnableMCPPlugin):
             },
             required=[],
             intents=[
-                "remove monday's meal",
-                "cancel the lasagna",
-                "clear friday",
-                "remove that from the plan",
+                "remove monday's meal from the plan",
+                "cancel the lasagna from the meal plan",
+                "clear friday on the meal plan",
+                "remove that from the meal plan",
+                "take lasagna off the plan",
+                "unplan monday",
+                "remove wednesday's dinner from the plan",
+                "clear that day on the meal plan",
             ],
             process_output=False,
             activity=[Activity.COOKING, Activity.GENERAL],
@@ -331,14 +373,21 @@ class MealPlannerPlugin(RunnableMCPPlugin):
             parameters={},
             required=[],
             intents=[
+                # Core: display/show the existing plan
                 "show the meal plan",
-                "what are we cooking this week",
-                "what's the plan for the week",
+                "show me the meal plan",
                 "show me this week's meals",
-                "weekly meal plan",
+                "display the meal plan",
+                "what's on the meal plan",
+                "what have we got planned",
+                "what meals are planned",
+                "what did we plan for the week",
+                "show planned meals",
+                "pull up the meal plan",
             ],
             process_output=True,
             activity=[Activity.COOKING, Activity.GENERAL],
+            nlp_response=_show_plan_nlp_response,
         )
 
     def plan_meal(self, recipe_name: str, day: str = None) -> dict:
@@ -370,9 +419,7 @@ class MealPlannerPlugin(RunnableMCPPlugin):
             if not day_resolved:
                 return {"status": "full", "message": "All days are planned! Remove a meal first."}
 
-        # Remove existing meal for that day
-        self._meal_plan["meals"] = [m for m in self._meal_plan["meals"] if m["day"] != day_resolved]
-
+        # Append to day (allow multiple meals per day: breakfast, lunch, dinner)
         self._meal_plan["meals"].append({
             "id": uuid.uuid4().hex[:8],
             "recipe_title": title,
@@ -491,8 +538,12 @@ class MealPlannerPlugin(RunnableMCPPlugin):
                 "two adults and one kid",
                 "there are two adults and two kids",
                 "set up the household",
-                "it's just me",
+                "set up the household size",
+                "it's just me cooking for one",
                 "family of five",
+                "there are three of us",
+                "update the household to four people",
+                "we cook for two adults and one child",
             ],
             process_output=False,
             activity=[Activity.GENERAL],
@@ -531,15 +582,21 @@ class MealPlannerPlugin(RunnableMCPPlugin):
             parameters={},
             required=[],
             intents=[
-                "generate a shopping list",
+                "generate a shopping list from the meal plan",
                 "create a shopping list from the meal plan",
-                "what do I need to buy this week",
-                "what do we need for the week",
-                "auto generate shopping list",
-                "generate shopping list from plan",
+                "what do I need to buy for the meal plan",
+                "what do we need to buy for the week's meals",
+                "auto generate shopping list from the plan",
+                "generate shopping list from the meal plan",
+                "build a shopping list from the plan",
+                "make a shopping list for the planned meals",
+                "shopping list for this week's meal plan",
+                "what ingredients do I need for the meal plan",
             ],
             process_output=True,
             activity=[Activity.GENERAL, Activity.COOKING],
+            nlp_threshold=0.5,
+            nlp_response=_generate_list_nlp_response,
         )
 
         self.register_tool(
@@ -554,14 +611,25 @@ class MealPlannerPlugin(RunnableMCPPlugin):
             },
             required=[],
             intents=[
+                # Core: generate/suggest new meals — "suggest" is the anchor
                 "suggest meals for the week",
-                "help me plan the week",
-                "what should we cook this week",
-                "plan the week for me",
+                "suggest what to cook this week",
                 "suggest a weekly menu",
+                "suggest a weekly meal plan",
+                "recommend meals for the week",
+                "give me meal suggestions for the week",
+                "auto suggest meals for the week",
+                "help me decide what to cook this week",
+                "fill in the meal plan with suggestions",
+                "suggest dinners for the week",
+                "plan meals for the week",
+                "suggest a healthy meal plan for the week",
+                "plan a healthy week of meals",
             ],
             process_output=True,
             activity=[Activity.GENERAL, Activity.COOKING],
+            nlp_threshold=0.5,
+            nlp_response=_suggest_meals_nlp_response,
         )
 
     def _get_pantry_names(self) -> list[str]:
@@ -711,10 +779,18 @@ class MealPlannerPlugin(RunnableMCPPlugin):
             )
 
         elif action == "remove_planned_meal":
-            self.remove_planned_meal(
-                day=data.get("day"),
-                recipe_name=data.get("recipe_name"),
-            )
+            meal_id = data.get("meal_id")
+            if meal_id:
+                # Remove specific meal by ID (from UI)
+                self._ensure_current_week()
+                self._meal_plan["meals"] = [m for m in self._meal_plan["meals"] if m["id"] != meal_id]
+                self._save_meal_plan()
+                self._publish_meal_plan_display()
+            else:
+                self.remove_planned_meal(
+                    day=data.get("day"),
+                    recipe_name=data.get("recipe_name"),
+                )
 
         elif action == "generate_shopping_list":
             result = self.generate_shopping_list()

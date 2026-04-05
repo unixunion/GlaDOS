@@ -59,8 +59,32 @@
 .mp-day-recipe { flex: 1; cursor: pointer; color: var(--text-primary); }
 .mp-day-recipe:hover { text-decoration: underline; }
 .mp-day-empty { color: var(--text-secondary); font-size: 0.85rem; }
-.mp-day-remove { background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; }
+.mp-day-meals { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mp-day-meal { display: flex; align-items: center; gap: 8px; }
+.mp-day-remove { background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; flex-shrink: 0; }
 .mp-day-remove:hover { color: #ff4444; }
+
+/* Inline add */
+.mp-day-add { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.mp-add-btn {
+    background: none; border: 1px dashed rgba(255,255,255,0.15); border-radius: 6px;
+    color: var(--text-secondary); cursor: pointer; padding: 2px 8px; font-size: 0.8rem;
+}
+.mp-add-btn:hover { border-color: var(--accent); color: var(--accent); }
+.mp-add-input { display: flex; flex-direction: column; flex: 1; position: relative; }
+.mp-add-input input {
+    padding: 6px 10px; border-radius: 6px; font-size: 0.85rem;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text-primary); width: 100%;
+}
+.mp-add-input input:focus { border-color: var(--accent); outline: none; }
+.mp-add-suggestions {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+    background: var(--bg-card, #1e1e2e); border: 1px solid var(--accent); border-radius: 0 0 6px 6px;
+    max-height: 150px; overflow-y: auto;
+}
+.mp-sug-item { padding: 6px 10px; cursor: pointer; font-size: 0.85rem; }
+.mp-sug-item:hover { background: rgba(255,102,0,0.15); }
 
 /* Suggestions */
 .mp-suggestions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }

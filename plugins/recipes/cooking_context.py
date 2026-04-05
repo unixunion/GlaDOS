@@ -35,11 +35,24 @@ def _get_recipe() -> dict | None:
 def _get_steps() -> list[str]:
     """Get parsed step list from the selected recipe, or empty list."""
     recipe = _get_recipe()
-    if not recipe:
-        return []
-    directions = recipe.get("directions", "")
+    directions = ""
+    if recipe:
+        directions = recipe.get("directions", "")
+
+    # Fallback: the full recipe data is in _last_selected_recipe (module global)
+    # which has the directions from the recipe API's select_recipe() call
+    if not directions:
+        try:
+            from plugins.recipes.recipe_api import _last_selected_recipe
+            if _last_selected_recipe:
+                directions = _last_selected_recipe.get("directions", "")
+        except ImportError:
+            pass
+
     if not directions:
         return []
+    if isinstance(directions, list):
+        return [s.strip() for s in directions if s.strip()]
     return [s.strip() for s in directions.split("\n") if s.strip()]
 
 

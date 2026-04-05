@@ -21,6 +21,10 @@ class MessageManager:
         self.current_context = Activity.GENERAL
         self.max_context_messages = max_context_messages
         self._lock = threading.Lock()
+        # Full conversation history — never trimmed, used for log reports and debugging.
+        # Separate from _messages which is trimmed for the LLM context window.
+        from collections import deque
+        self._history = deque(maxlen=200)  # Last 200 messages across all contexts
 
     def add_message(self, role, content, name=None, images=None, tool_call_id=None, tool_calls=None, activity: Activity = Activity.GENERAL, architecture=ClientType.OPENAI):
         with self._lock:
@@ -40,6 +44,20 @@ class MessageManager:
                     message["tool_calls"] = tool_calls
                 self._messages[activity].append(message)
                 self._trim_context(activity)
+                # Also append to full history (never trimmed — for log reports)
+                from datetime import datetime
+                self._history.append({
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "activity": activity.name,
+                    "role": role,
+                    "content": str(content)[:500] if content else None,
+                    "name": name,
+                    "tool_calls": [
+                        {"name": tc.get("function", {}).get("name", "?"),
+                         "args": str(tc.get("function", {}).get("arguments", ""))[:200]}
+                        for tc in (tool_calls or [])
+                    ] if tool_calls else None,
+                })
                 logger.debug(f"Added message {message}")
             elif architecture is ClientType.LANGCHAIN:
                 if role == "tool":

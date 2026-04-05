@@ -90,6 +90,7 @@
             cursor: pointer; padding: 6px 14px 6px 0; display: none;
         }
         #header-title { flex: 1; font-size: 1.2rem; font-weight: 600; }
+        #header-clock { font-size: 0.85rem; color: var(--text-secondary, #888); margin-right: 8px; font-variant-numeric: tabular-nums; }
         #status-dot {
             width: 12px; height: 12px; border-radius: 50%; background: var(--text-dim);
             margin-right: 10px; transition: background 0.3s;
@@ -370,6 +371,13 @@
         .pantry-expiry-picker { background: transparent; border: 1px solid var(--border-input); border-radius: 4px; color: inherit; font-size: 0.7rem; padding: 1px 4px; width: 110px; color-scheme: dark; cursor: pointer; }
         .pantry-expiry-picker.empty { width: 28px; opacity: 0.5; }
         .pantry-expiry-picker:hover { border-color: var(--accent); }
+        .pi-expiry-quick { display: inline-flex; gap: 2px; margin-left: 4px; }
+        .pi-expiry-quick button {
+            font-size: 0.6rem; padding: 1px 5px; border-radius: 4px; cursor: pointer;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary); white-space: nowrap;
+        }
+        .pi-expiry-quick button:hover { background: rgba(255,102,0,0.15); border-color: var(--accent); color: var(--accent); }
         .pi-remove { font-size: 0.9rem; color: var(--text-muted); background: none; border: none; cursor: pointer; padding: 8px; min-width: 40px; min-height: 40px; }
         .pi-remove:hover { color: var(--status-error-dim); }
         .pi-move { background: var(--bg-primary); color: var(--text-secondary); border: 1px solid var(--border-dark); border-radius: 4px; font-size: 0.7rem; padding: 2px 4px; cursor: pointer; max-width: 50px; }

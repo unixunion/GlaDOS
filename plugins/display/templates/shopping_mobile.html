@@ -32,7 +32,12 @@
             align-items: center;
         }
 
-        header h1 { font-size: 1.2rem; font-weight: 600; }
+        header h1 { font-size: 1.2rem; font-weight: 600; flex: 1; }
+        .home-btn {
+            background: none; border: none; color: #888; font-size: 1.1rem;
+            cursor: pointer; padding: 4px 8px; margin-right: 4px;
+        }
+        .home-btn:hover { color: #ff6600; }
         .header-right { display: flex; gap: 10px; align-items: center; font-size: 0.8rem; }
         .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #666; }
         .sync-dot.connected { background: #4caf50; }
@@ -162,6 +167,7 @@
 </head>
 <body>
     <header>
+        <button class="home-btn" onclick="goHome()" title="Home"><i class="icon-home"></i></button>
         <h1>Shopping List</h1>
         <div class="header-right">
             <span class="item-count" id="item-count">0 items</span>
@@ -407,6 +413,16 @@
             const d = document.createElement('div');
             d.textContent = str;
             return d.innerHTML;
+        }
+
+        function goHome() {
+            const pending = Object.keys(pendingToggles).length;
+            if (pending > 0 && !connected) {
+                if (!confirm(`You have ${pending} unsynced change${pending !== 1 ? 's' : ''}. They'll sync when you're back on WiFi. Leave anyway?`)) {
+                    return;
+                }
+            }
+            window.location.href = '/';
         }
 
         // --- Init ---

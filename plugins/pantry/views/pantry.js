@@ -32,7 +32,8 @@ GlaDOS.views.pantry = {
                 const l = i.days_left<0?'expired':i.days_left===0?'today':i.days_left===1?'tomorrow':`in ${i.days_left} days`;
                 const actionLabel = i.days_left < 0 ? 'Toss' : 'Used it';
                 const actionCls = i.days_left < 0 ? 'exp-btn-toss' : 'exp-btn-used';
-                return `<div class="exp-row"><span class="exp-info">${GlaDOS.esc(i.name)} (${GlaDOS.esc(i.location)}) — ${l}</span><button class="exp-btn ${actionCls}" onclick="socket.emit('pantry_action',{action:'remove_item',item_id:'${i.id}'});GlaDOS.views.pantry.toast('Removed ${GlaDOS.esc(i.name).replace(/'/g,"\\'")}')">${actionLabel}</button></div>`;
+                const qb = `<span class="pi-expiry-quick" onclick="event.stopPropagation()"><button onclick="socket.emit('pantry_action',{action:'adjust_expiry',item_id:'${i.id}',days:3})">+3d</button><button onclick="socket.emit('pantry_action',{action:'adjust_expiry',item_id:'${i.id}',days:7})">+7d</button><button onclick="socket.emit('pantry_action',{action:'adjust_expiry',item_id:'${i.id}',days:30})">+1m</button><button onclick="socket.emit('pantry_action',{action:'adjust_expiry',item_id:'${i.id}',days:365})">Long</button></span>`;
+                return `<div class="exp-row"><span class="exp-info">${GlaDOS.esc(i.name)} (${GlaDOS.esc(i.location)}) — ${l}</span>${qb}<button class="exp-btn ${actionCls}" onclick="socket.emit('pantry_action',{action:'remove_item',item_id:'${i.id}'});GlaDOS.views.pantry.toast('Removed ${GlaDOS.esc(i.name).replace(/'/g,"\\'")}')">${actionLabel}</button></div>`;
             }).join('');
             html += `<div class="pantry-expiry-banner">
                 <div class="pantry-expiry-banner-title"><i class="icon-alert-triangle"></i> Expiring Soon
@@ -60,9 +61,10 @@ GlaDOS.views.pantry = {
                         const rl = dl<0?'expired':dl===0?'today':dl===1?'tomorrow':dl+'d';
                         const estCls = item.expiry_source === 'estimated' ? ' estimated' : '';
                         const prefix = item.expiry_source === 'estimated' ? '~' : '';
-                        expHtml = `<span class="pi-expiry ${cls}${estCls}" title="${item.expiry_source === 'estimated' ? 'Estimated — click to set exact date' : ''}">${prefix}${rl} <input type="date" class="pantry-expiry-picker" value="${item.expires}" onchange="socket.emit('pantry_action',{action:'set_expiry',item_id:'${item.id}',expires:this.value})" onclick="event.stopPropagation()"></span>`;
+                        const qb = `<span class="pi-expiry-quick" onclick="event.stopPropagation()"><button onclick="socket.emit('pantry_action',{action:'adjust_expiry',item_id:'${item.id}',days:3})">+3d</button><button onclick="socket.emit('pantry_action',{action:'adjust_expiry',item_id:'${item.id}',days:7})">+7d</button><button onclick="socket.emit('pantry_action',{action:'adjust_expiry',item_id:'${item.id}',days:30})">+1m</button><button onclick="socket.emit('pantry_action',{action:'adjust_expiry',item_id:'${item.id}',days:365})">Long</button></span>`;
+                        expHtml = `<span class="pi-expiry ${cls}${estCls}" title="${item.expiry_source === 'estimated' ? 'Estimated — click to set exact date' : ''}">${prefix}${rl} <input type="date" class="pantry-expiry-picker" value="${item.expires}" onchange="socket.emit('pantry_action',{action:'set_expiry',item_id:'${item.id}',expires:this.value})" onclick="event.stopPropagation()"></span>${qb}`;
                     } else {
-                        expHtml = `<span><input type="date" class="pantry-expiry-picker empty" onchange="socket.emit('pantry_action',{action:'set_expiry',item_id:'${item.id}',expires:this.value})" onclick="event.stopPropagation()" title="Set expiry"></span>`;
+                        expHtml = `<span><input type="date" class="pantry-expiry-picker empty" onchange="socket.emit('pantry_action',{action:'set_expiry',item_id:'${item.id}',expires:this.value})" onclick="event.stopPropagation()" title="Set expiry"><span class="pi-expiry-quick" onclick="event.stopPropagation()"><button onclick="socket.emit('pantry_action',{action:'adjust_expiry',item_id:'${item.id}',days:7})">+7d</button><button onclick="socket.emit('pantry_action',{action:'adjust_expiry',item_id:'${item.id}',days:30})">+1m</button><button onclick="socket.emit('pantry_action',{action:'adjust_expiry',item_id:'${item.id}',days:365})">Long</button></span></span>`;
                     }
                     let tagsHtml = '<span class="pi-tags">';
                     if (item.item_type) {

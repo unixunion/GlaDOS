@@ -183,6 +183,25 @@ python tools/categorize_recipes.py --stats
 
 Output: `plugin_data/recipes/recipe_categories.json`. Applied automatically at startup — overrides the built-in keyword-based categories. The browse view shows all LLM-inferred categories.
 
+### Meal Planner (`tests/test_meal_planner.py`)
+
+End-to-end tests for the meal planning workflow: favorites, weekly planning, shopping list generation, and the optimizer.
+
+```bash
+# Run separately (integration marker — uses plugin singletons)
+pytest tests/test_meal_planner.py -m integration -v
+```
+
+**What it covers:**
+- Favorites: save, duplicate rejection, remove, show
+- Meal planning: plan for specific day, auto-assign day, multiple meals per day, remove by day/name
+- Household setup and persistence
+- Suggest meals: returns results using pantry + favorites
+- Generate shopping list: adds missing ingredients, skips pantry items, suggests staples
+- Full workflow: save favorites → set household → plan 3 meals → generate list → verify counts
+
+**Note:** Marked as `integration` because it registers plugins with singletons that would pollute other test modules. Not included in `make test` — run separately.
+
 ### Model Benchmarks (`tests/benchmark_models.py`)
 
 Benchmarking tool for comparing LLM models on tool-calling tasks.

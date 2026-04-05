@@ -861,15 +861,18 @@ class PantryPlugin(RunnableMCPPlugin):
             },
             required=[],
             intents=[
-                "that's wrong",
-                "that's not right",
+                # Correction after add — specific to shopping list name errors
+                "that's not what I said on the list",
                 "I said chicken not chicken breast",
-                "use the name I said",
-                "rename that",
-                "change the name",
-                "rename the last item",
-                "that's not what I said",
-                "no I meant chicken",
+                "use the name I said for the shopping item",
+                "rename that on the shopping list",
+                "change the name on the list",
+                "rename the last item on the list",
+                "that's not what I added",
+                "no I meant chicken on the list",
+                "the shopping list item name is wrong",
+                "undo the rename on the list",
+                "revert the last shopping item name",
             ],
             process_output=False,
             activity=[Activity.GENERAL, Activity.COOKING],
@@ -961,7 +964,16 @@ class PantryPlugin(RunnableMCPPlugin):
                 "store the milk in the fridge",
                 "put the bread in the pantry",
                 "I stored the rice in the cupboard",
+                "I put eggs in the fridge",
+                "I added boiled eggs to the fridge",
+                "put the butter in the refrigerator",
+                "I put the leftovers in the freezer",
+                "store the vegetables in the fridge",
+                "I put the cheese in the fridge",
+                "the jam is in the fridge door",
+                "I stored the sauce in the cupboard",
             ],
+            nlp_threshold=0.5,
             process_output=False,
             activity=[Activity.GENERAL, Activity.COOKING],
             nlp_extract_fn=_store_item_nlp_extract,
@@ -1017,6 +1029,12 @@ class PantryPlugin(RunnableMCPPlugin):
                 "where are the eggs",
                 "check if we have rice",
                 "find the chicken",
+                "where is the butter",
+                "where did I store the milk",
+                "do we have any onions",
+                "is there cheese in the fridge",
+                "where are the leftovers",
+                "what's in the fridge",
             ],
             process_output=True,
             activity=[Activity.GENERAL, Activity.COOKING],
@@ -1166,22 +1184,21 @@ class PantryPlugin(RunnableMCPPlugin):
             },
             required=[],
             intents=[
+                # Core: pantry-based meal suggestions — "pantry" is the anchor word
                 "what can I make with what's in the pantry",
-                "what can I make with the contents of the pantry",
-                "what can I cook with what we have",
-                "what can I make before things expire",
+                "what can I cook from the pantry",
                 "suggest a meal from the pantry",
-                "suggest a meal from what we have",
                 "suggest meals from pantry",
                 "recipe suggestions from pantry",
-                "suggest a meal",
-                "what meals can I make",
-                "what do we have to eat",
-                "what's for dinner",
+                "meals from the pantry",
+                "pantry meal suggestions",
+                "suggest a meal from pantry ingredients",
+                # Expiry-driven
+                "what can I make before things expire",
+                "cook something before it expires",
+                # Ready meals / leftovers
                 "do we have any left overs",
-                "is anything ready to eat",
-                "I'm starving",
-                "what's to eat",
+                "is anything ready to eat in the pantry",
             ],
             process_output=True,
             activity=[Activity.GENERAL, Activity.COOKING],
@@ -2376,11 +2393,22 @@ class PantryPlugin(RunnableMCPPlugin):
         "show_pantry", "show_shopping_list",
     ]
     _CATALOG_TRIGGERS = [
+        # Direct commands
         "catalog the", "catalogue the", "inventory the", "stocktake the",
-        "catalog mode", "catalogue mode", "stocktake mode",
+        "catalog mode", "catalogue mode", "stocktake mode", "inventory mode",
+        # Contractions and casual forms
         "let's catalog the", "let's catalogue the", "let's inventory the",
         "let's stocktake the", "lets catalog the", "lets inventory the",
-        "inventory of the",
+        "lets catalogue the", "lets stocktake the",
+        # "of" phrasing (reported gap: "inventory of the fridge" didn't match)
+        "inventory of the", "catalog of the", "catalogue of the", "stocktake of the",
+        # Polite / interrogative forms
+        "can you catalog the", "can you inventory the",
+        "do a stocktake of the", "do an inventory of the",
+        # AU/ZA casual: "let's go through the fridge"
+        "go through the", "let's go through the", "lets go through the",
+        # UK: "sort out the fridge", "do the fridge"
+        "sort out the", "let's sort out the",
     ]
     _CATALOG_TOOLS = ["store_item", "find_item", "show_pantry"]
 
@@ -3046,6 +3074,26 @@ class PantryPlugin(RunnableMCPPlugin):
                     item["expires"] = expires
                     item["expiry_source"] = "user"
                     logger.info(f"[Pantry] UI: set expiry for '{item['name']}' to {expires}")
+                    break
+            self._save_pantry()
+            self._publish_pantry_display()
+
+        elif action == "adjust_expiry":
+            # Quick-adjust expiry by adding days
+            item_id = data.get("item_id")
+            days = data.get("days", 7)
+            for item in self._pantry["items"]:
+                if item["id"] == item_id:
+                    base = date.today()
+                    if item.get("expires"):
+                        try:
+                            base = date.fromisoformat(item["expires"])
+                        except ValueError:
+                            pass
+                    new_expiry = (base + timedelta(days=days)).isoformat()
+                    item["expires"] = new_expiry
+                    item["expiry_source"] = "user"
+                    logger.info(f"[Pantry] UI: adjusted expiry for '{item['name']}' +{days}d → {new_expiry}")
                     break
             self._save_pantry()
             self._publish_pantry_display()

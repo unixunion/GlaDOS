@@ -32,8 +32,13 @@ plugin_manager = PluginSystem()
 event_system = EventSystem()
 
 
+_active_instance = None  # Module-level reference for plugins that need conversation context
+
+
 class ChatClient:
     def __init__(self, config: GladosConfig, plugin_system=None, event_system_instance=None):
+        global _active_instance
+        _active_instance = self
         self.model = config.model
         self.plugin_system = plugin_system or PluginSystem()
         self.config: GladosConfig = config

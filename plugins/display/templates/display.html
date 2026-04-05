@@ -29,6 +29,7 @@
         <button id="mute-tts-btn" class="header-mute-btn" onclick="toggleMuteTTS()" title="Mute/unmute speech"><i class="icon-volume-2"></i></button>
         <button id="mute-mic-btn" class="header-mute-btn" onclick="toggleMuteMic()" title="Mute/unmute microphone"><i class="icon-mic"></i></button>
         <div id="header-title">GlaDOS</div>
+        <div id="header-clock"></div>
         <div id="status-dot"></div>
         <a href="/wiki/" class="header-link" title="Wiki"><i class="icon-book-open"></i></a>
         <button id="chat-toggle" onclick="toggleChat()"><i class="icon-menu"></i></button>
@@ -77,7 +78,7 @@
     <div id="bottom-nav">
         <div class="nav-items">
             <button class="nav-item active" onclick="viewHistory=[];navigateTo('dashboard')"><span class="nav-icon"><i class="icon-home"></i></span>Home</button>
-            <button class="nav-item" onclick="socket.emit('shopping_list_action',{action:'show'})"><span class="nav-icon"><i class="icon-shopping-cart"></i></span>List</button>
+            <button class="nav-item" onclick="window.location.href='/shopping'"><span class="nav-icon"><i class="icon-shopping-cart"></i></span>List</button>
             <button class="nav-item" onclick="socket.emit('pantry_action',{action:'show'})"><span class="nav-icon"><i class="icon-warehouse"></i></span>Pantry</button>
             <button class="nav-item" onclick="toggleChat()"><span class="nav-icon"><i class="icon-message-circle"></i></span>Chat</button>
         </div>
@@ -143,6 +144,12 @@
         // ── Navigation ─────────────────────────────────
         let _navigatingBack = false;
         function goBack() {
+            // Special case: recipe browse in list mode → go back to category grid
+            if (currentView === 'recipe_browse' && viewContainer.querySelector('.rb-recipe-grid')) {
+                socket.emit('recipe_action', {action: 'browse'});
+                return;
+            }
+
             if (viewHistory.length > 0) {
                 const prev = viewHistory.pop();
                 const refreshActions = {
@@ -151,6 +158,8 @@
                     settings: () => socket.emit('settings_action', {action: 'show'}),
                     pantry_shelf_life: () => socket.emit('pantry_action', {action: 'get_shelf_life_config'}),
                     pantry_put_away: () => socket.emit('pantry_action', {action: 'show_put_away'}),
+                    recipe_browse: () => socket.emit('recipe_action', {action: 'browse'}),
+                    recipe_search: () => socket.emit('recipe_action', {action: 'browse'}),
                 };
                 if (prev === 'dashboard') {
                     navigateTo('dashboard', true);
@@ -301,8 +310,14 @@
                 clockInterval = setInterval(() => {
                     const el = dashboard.querySelector('.dash-clock .time');
                     if (el) el.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    // Also update header clock
+                    const hc = document.getElementById('header-clock');
+                    if (hc) hc.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 }, 1000);
             }
+            // Init header clock immediately
+            const hc = document.getElementById('header-clock');
+            if (hc) hc.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
 
 

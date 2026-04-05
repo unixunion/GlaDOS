@@ -8,12 +8,13 @@ GlaDOS.views.shopping_list = {
     renderCard(container) {
         const d = GlaDOS.dashboardData.shopping || {};
         container.innerHTML = `
-            <div class="dash-card-header" onclick="socket.emit('shopping_list_action',{action:'show'})">
+            <div class="dash-card-header" onclick="window.location.href='/shopping'">
                 <span class="dash-card-icon"><i class="icon-shopping-cart"></i></span> Shopping
                 <span class="dash-card-badge">${d.count || 0}</span>
             </div>
             <div class="dash-card-body">
                 ${d.count ? (d.got||0) + ' of ' + d.count + ' got' : 'List is empty'}
+                <div style="margin-top:4px"><a href="/shopping" style="font-size:0.7rem;color:var(--accent);text-decoration:none;opacity:0.7"><i class="icon-smartphone"></i> Open mobile list (works offline)</a></div>
                 <div class="quick-input">
                     <input type="text" id="dash-add-item" placeholder="Quick add..." onkeydown="if(event.key==='Enter') GlaDOS.views.shopping_list.dashAdd()">
                     <button onclick="GlaDOS.views.shopping_list.dashAdd()">+</button>

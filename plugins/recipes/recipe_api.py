@@ -1223,6 +1223,7 @@ def select_recipe(query: str) -> dict:
                                          )
                                          ),
     intents=[
+        # Core: explicit ingredients mentioned by user
         "what can I make with chicken and rice",
         "what can I cook with chicken",
         "recipes with chicken and garlic",
@@ -1233,6 +1234,12 @@ def select_recipe(query: str) -> dict:
         "find me something with beef and peppers",
         "what uses up mushrooms",
         "I have chicken and pasta what can I make",
+        # More explicit ingredient patterns
+        "recipe ideas with lamb and rosemary",
+        "what goes well with mushrooms and cream",
+        "recipes using mince and potatoes",
+        # AU/ZA: casual
+        "chuck together something with chicken and rice",
     ],
     process_output=True,
     activity=[Activity.COOKING, Activity.GENERAL]
@@ -1307,12 +1314,18 @@ def find_recipe_by_ingredients(query: str) -> str:
                                          )
                                          ),
     intents=[
-        "surprise me",
+        # Core: surprise / inspiration — picks from pantry-weighted recipes
         "surprise me with a recipe",
-        "what should I cook",
-        "what should we cook",
-        "pick something I can make",
-        "inspire me",
+        "surprise me with something to cook",
+        "pick a recipe I can make",
+        "pick something I can make from the pantry",
+        "inspire me with a recipe",
+        "give me a recipe idea",
+        "chef's choice recipe",
+        # Casual forms
+        "just pick a recipe for me",
+        "you choose a recipe",
+        "dealer's choice",
     ],
     process_output=True,
     activity=[Activity.COOKING, Activity.GENERAL]
@@ -1359,11 +1372,18 @@ def surprise_me(category: str = None) -> dict:
                                          )
                                          ),
     intents=[
+        # Core: truly random recipe (no pantry weighting)
         "random recipe",
         "random dinner idea",
-        "surprise me with anything",
-        "show me something new",
+        "random meal idea",
         "pick a random recipe",
+        "show me a random recipe",
+        "give me a random recipe",
+        # Exploration phrasing
+        "show me something new to cook",
+        "show me something different to cook",
+        "pick anything at random",
+        "any random recipe",
     ],
     process_output=True,
     activity=[Activity.COOKING, Activity.GENERAL]
