@@ -1,8 +1,9 @@
-const CACHE_NAME = 'glados-v2';
+const CACHE_NAME = 'glados-v3';
 const URLS_TO_CACHE = [
     '/',
     '/shopping',
     '/static/socket.io.min.js',
+    '/static/fonts/lucide.css',
 ];
 
 self.addEventListener('install', (event) => {

@@ -185,8 +185,10 @@
     <script src="/static/socket.io.min.js"></script>
     <script>
         const STORAGE_KEY = 'glados_shopping_list';
+        const PENDING_KEY = 'glados_shopping_pending';
         let items = [];
         let connected = false;
+        let pendingToggles = {};  // item_id → true (toggled offline, needs sync)
 
         // --- SocketIO ---
         const socket = io({
@@ -200,7 +202,8 @@
             connected = true;
             document.getElementById('sync-dot').classList.add('connected');
             document.getElementById('sync-dot').title = 'Connected';
-            // Request fresh data from server
+            // Sync pending offline toggles before requesting fresh state
+            syncPending();
             socket.emit('shopping_list_action', { action: 'get_state' });
         });
 
@@ -213,7 +216,16 @@
         // Server pushes display updates (same event as main display)
         socket.on('display_update', (data) => {
             if (data.view_type === 'shopping_list') {
-                items = data.items || [];
+                const serverItems = data.items || [];
+                // Merge: keep local "got" state for items toggled offline
+                if (Object.keys(pendingToggles).length > 0) {
+                    serverItems.forEach(si => {
+                        if (pendingToggles[si.id]) {
+                            si.got = !si.got;  // Our toggle wasn't synced yet — re-apply
+                        }
+                    });
+                }
+                items = serverItems;
                 saveLocal();
                 render();
             }
@@ -286,6 +298,31 @@
             container.innerHTML = html;
         }
 
+        // --- Pending offline toggle tracking ---
+        function loadPending() {
+            try {
+                const p = localStorage.getItem(PENDING_KEY);
+                if (p) pendingToggles = JSON.parse(p);
+            } catch (e) { pendingToggles = {}; }
+        }
+
+        function savePending() {
+            try {
+                localStorage.setItem(PENDING_KEY, JSON.stringify(pendingToggles));
+            } catch (e) {}
+        }
+
+        function syncPending() {
+            // Send all pending toggles to server on reconnect
+            const ids = Object.keys(pendingToggles);
+            if (ids.length === 0) return;
+            ids.forEach(id => {
+                socket.emit('shopping_list_action', { action: 'toggle', item_id: id });
+            });
+            pendingToggles = {};
+            savePending();
+        }
+
         // --- Actions ---
         function toggleItem(id) {
             const item = items.find(i => i.id === id);
@@ -295,6 +332,14 @@
                 render();
                 if (connected) {
                     socket.emit('shopping_list_action', { action: 'toggle', item_id: id });
+                } else {
+                    // Track for sync when reconnected
+                    if (pendingToggles[id]) {
+                        delete pendingToggles[id];  // Toggled back — cancel pending
+                    } else {
+                        pendingToggles[id] = true;
+                    }
+                    savePending();
                 }
             }
         }
@@ -366,6 +411,7 @@
 
         // --- Init ---
         loadLocal();
+        loadPending();
         render();
 
         // Register service worker for offline caching

@@ -18,7 +18,9 @@ CANCEL_WORDS = frozenset([
 # Words that signal the user is done with a mode/session (not cancelling — completing)
 EXIT_WORDS = frozenset([
     "done", "finished", "that's everything", "that's it", "that's all",
-    "all done", "exit", "close", "end",
+    "all done", "exit", "close", "end", "complete", "completed",
+    "we're done", "we're finished", "i'm done", "i'm finished",
+    "that is all", "that is everything", "that is it",
 ])
 
 # Combined: any word that exits a mode (cancel or done)

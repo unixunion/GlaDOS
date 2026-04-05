@@ -2378,6 +2378,9 @@ class PantryPlugin(RunnableMCPPlugin):
     _CATALOG_TRIGGERS = [
         "catalog the", "catalogue the", "inventory the", "stocktake the",
         "catalog mode", "catalogue mode", "stocktake mode",
+        "let's catalog the", "let's catalogue the", "let's inventory the",
+        "let's stocktake the", "lets catalog the", "lets inventory the",
+        "inventory of the",
     ]
     _CATALOG_TOOLS = ["store_item", "find_item", "show_pantry"]
 
@@ -2411,9 +2414,15 @@ class PantryPlugin(RunnableMCPPlugin):
                                               self._catalog_mode["removed"], 0)
                 return
 
-            if any(text == t or text.startswith(t) or fuzz.ratio(text, t) >= 80 for t in self._EXIT_TRIGGERS):
+            # Strip leading filler from speech ("okay done" → "done", "no we're finished" → "we're finished")
+            cleaned = re.sub(r"^(?:okay|ok|no|yes|right|so|well|um|uh),?\s*", "", text, flags=re.IGNORECASE).strip() or text
+            exit_match = any(cleaned == t or cleaned.startswith(t) or fuzz.ratio(cleaned, t) >= 80 for t in self._EXIT_TRIGGERS)
+            if not exit_match:
+                # Also check the original text
+                exit_match = any(text == t or text.startswith(t) or fuzz.ratio(text, t) >= 80 for t in self._EXIT_TRIGGERS)
+            if exit_match:
                 # "cancel"/"abort" = exit without reconciliation, "done"/"finished" = exit with reconciliation
-                is_cancel = any(text.startswith(w) or text == w for w in CANCEL_WORDS)
+                is_cancel = any(cleaned.startswith(w) or cleaned == w for w in CANCEL_WORDS)
                 if is_cancel:
                     added = self._catalog_mode["added"]
                     updated = self._catalog_mode["updated"]
@@ -2745,16 +2754,29 @@ class PantryPlugin(RunnableMCPPlugin):
                 quantity = m.group(1)
                 item_name = m.group(2).strip()
 
+        # Handle "dozen" as multiplier: "2 dozen eggs" → quantity "24", item "eggs"
+        if quantity:
+            dozen_match = re.match(r'^dozen\s+(.+)$', item_name, re.IGNORECASE)
+            if dozen_match:
+                try:
+                    quantity = str(int(quantity) * 12)
+                except ValueError:
+                    pass
+                item_name = dozen_match.group(1).strip()
+        elif item_name.lower().startswith("dozen "):
+            quantity = "12"
+            item_name = item_name[6:].strip()
+
         # Strip articles
         item_name = re.sub(r'^(?:a|an|some|the)\s+', '', item_name, flags=re.IGNORECASE).strip()
 
         if not item_name or len(item_name) < 2:
             return
 
-        # Check for existing item in this location
+        # Check for existing item in this location (strict matching to avoid false positives)
         existing = [i for i in self._pantry["items"]
                     if i.get("location_id") == loc_id
-                    and fuzz.partial_ratio(item_name, i["name"].lower()) >= 70]
+                    and fuzz.ratio(item_name, i["name"].lower()) >= 75]
 
         if existing:
             # Update existing item

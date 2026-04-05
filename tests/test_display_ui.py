@@ -231,3 +231,91 @@ class TestMobileNav:
         page.goto(display_server["url"])
         page.wait_for_selector(".dashboard")
         assert not page.locator("#bottom-nav").is_visible()
+
+
+# ---------------------------------------------------------------------------
+# Mobile shopping list (/shopping) tests
+# ---------------------------------------------------------------------------
+
+class TestMobileShoppingList:
+    def test_mobile_page_loads(self, page, display_server):
+        page.set_viewport_size({"width": 375, "height": 812})
+        page.goto(display_server["url"] + "/shopping")
+        page.wait_for_selector("#list-container")
+        assert page.locator("header h1").text_content() == "Shopping List"
+
+    def test_items_render_from_server(self, page, display_server):
+        page.set_viewport_size({"width": 375, "height": 812})
+        page.goto(display_server["url"] + "/shopping")
+        page.wait_for_timeout(2000)  # SocketIO connect + get_state round-trip
+        assert page.locator(".list-item").count() >= 1
+
+    def test_toggle_item_locally(self, page, display_server):
+        page.set_viewport_size({"width": 375, "height": 812})
+        page.goto(display_server["url"] + "/shopping")
+        page.wait_for_timeout(2000)
+        first_item = page.locator(".list-item").first
+        first_item.click()
+        page.wait_for_timeout(300)
+        assert first_item.evaluate("el => el.classList.contains('got')")
+
+    def test_items_persist_in_localstorage(self, page, display_server):
+        page.set_viewport_size({"width": 375, "height": 812})
+        page.goto(display_server["url"] + "/shopping")
+        page.wait_for_timeout(2000)
+        # Check localStorage has items
+        stored = page.evaluate("localStorage.getItem('glados_shopping_list')")
+        assert stored is not None
+        assert "test" in stored.lower()
+
+    def test_offline_toggle_persists(self, page, display_server, context):
+        """Toggle an item while offline, verify it persists and syncs on reconnect."""
+        page.set_viewport_size({"width": 375, "height": 812})
+        page.goto(display_server["url"] + "/shopping")
+        page.wait_for_timeout(2000)
+
+        # Verify connected
+        assert page.locator(".sync-dot.connected").is_visible()
+
+        # Go offline
+        context.set_offline(True)
+        page.wait_for_timeout(500)
+
+        # Toggle first item while offline
+        first_item = page.locator(".list-item").first
+        item_name = first_item.locator(".item-name").text_content()
+        first_item.click()
+        page.wait_for_timeout(300)
+        assert first_item.evaluate("el => el.classList.contains('got')")
+
+        # Verify pending toggle saved
+        pending = page.evaluate("localStorage.getItem('glados_shopping_pending')")
+        assert pending is not None
+        assert len(pending) > 2  # Not empty "{}"
+
+        # Go back online
+        context.set_offline(False)
+        page.wait_for_timeout(3000)  # Reconnect + sync
+
+        # Item should still be checked after sync
+        first_item = page.locator(".list-item").first
+        # The item might have re-rendered, find by name
+        toggled = page.locator(f".list-item.got .item-name:has-text('{item_name}')")
+        assert toggled.count() >= 1
+
+    def test_done_button_disabled_when_none_checked(self, page, display_server):
+        page.set_viewport_size({"width": 375, "height": 812})
+        page.goto(display_server["url"] + "/shopping")
+        page.wait_for_timeout(2000)
+        assert page.locator("#done-btn").is_disabled()
+
+    def test_add_item_form(self, page, display_server):
+        page.set_viewport_size({"width": 375, "height": 812})
+        page.goto(display_server["url"] + "/shopping")
+        page.wait_for_timeout(2000)
+        count_before = page.locator(".list-item").count()
+        page.fill("#add-name", "playwright test item")
+        page.click(".add-form button")
+        page.wait_for_timeout(2000)
+        count_after = page.locator(".list-item").count()
+        assert count_after > count_before

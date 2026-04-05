@@ -241,7 +241,7 @@ class DisplayPlugin(RunnablePlugin):
             })
 
         @self._socketio.on("interrupt")
-        def handle_interrupt():
+        def handle_interrupt(*args):
             logger.info("[Display] Interrupt requested from UI")
             self.event_system.publish(EventMessage(
                 "system", "interrupt_tts", {}

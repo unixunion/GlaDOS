@@ -280,6 +280,91 @@ class TestShoppingSubContexts:
 
 
 # ---------------------------------------------------------------------------
+# Catalog mode trigger phrases
+# ---------------------------------------------------------------------------
+
+class TestCatalogModeTriggers:
+    """Test that various phrasings correctly enter catalog mode."""
+
+    def _try_trigger(self, plugin, tts_queue, phrase):
+        from glados.llm.chat_hooks import ChatContext
+        plugin._shopping_mode = None
+        plugin._catalog_mode = None
+        ctx = ChatContext(user_text=phrase, activity=None, session_id="t", tts_queue=tts_queue)
+        plugin._shopping_context_hook(ctx)
+        return plugin._catalog_mode is not None
+
+    def test_catalog_the_fridge(self, plugin, tts_queue):
+        assert self._try_trigger(plugin, tts_queue, " catalog the fridge")
+
+    def test_inventory_the_fridge(self, plugin, tts_queue):
+        assert self._try_trigger(plugin, tts_queue, " inventory the fridge")
+
+    def test_lets_inventory_the_fridge(self, plugin, tts_queue):
+        assert self._try_trigger(plugin, tts_queue, " let's inventory the fridge")
+
+    def test_lets_catalog_the_freezer(self, plugin, tts_queue):
+        assert self._try_trigger(plugin, tts_queue, " let's catalog the freezer drawer 1")
+
+    def test_inventory_of_the_fridge(self, plugin, tts_queue):
+        assert self._try_trigger(plugin, tts_queue, " inventory of the fridge")
+
+    def test_stocktake_the_dry_goods(self, plugin, tts_queue):
+        assert self._try_trigger(plugin, tts_queue, " stocktake the dry goods cupboard")
+
+    def test_catalogue_british_spelling(self, plugin, tts_queue):
+        assert self._try_trigger(plugin, tts_queue, " catalogue the fridge")
+
+    def test_unrelated_phrase_no_trigger(self, plugin, tts_queue):
+        """Normal text should NOT trigger catalog mode."""
+        assert not self._try_trigger(plugin, tts_queue, " add eggs to the shopping list")
+
+
+class TestCatalogModeExit:
+    """Test that exit phrases work during catalog mode."""
+
+    def _enter_and_try_exit(self, plugin, tts_queue, exit_phrase):
+        from glados.llm.chat_hooks import ChatContext
+        plugin._shopping_mode = None
+        plugin._catalog_mode = None
+        # Enter catalog mode
+        ctx = ChatContext(user_text=" catalog the fridge", activity=None, session_id="t", tts_queue=tts_queue)
+        plugin._shopping_context_hook(ctx)
+        while not tts_queue.empty():
+            tts_queue.get()
+        assert plugin._catalog_mode is not None
+        # Try exit
+        ctx2 = ChatContext(user_text=exit_phrase, activity=None, session_id="t", tts_queue=tts_queue)
+        plugin._shopping_context_hook(ctx2)
+        # Should be exited or in reconciliation
+        return plugin._catalog_mode is None or plugin._catalog_mode.get("awaiting_reconciliation")
+
+    def test_done(self, plugin, tts_queue):
+        assert self._enter_and_try_exit(plugin, tts_queue, " done")
+
+    def test_okay_done(self, plugin, tts_queue):
+        assert self._enter_and_try_exit(plugin, tts_queue, " okay, done")
+
+    def test_finished(self, plugin, tts_queue):
+        assert self._enter_and_try_exit(plugin, tts_queue, " finished")
+
+    def test_no_were_finished(self, plugin, tts_queue):
+        assert self._enter_and_try_exit(plugin, tts_queue, " no, we're finished")
+
+    def test_complete(self, plugin, tts_queue):
+        assert self._enter_and_try_exit(plugin, tts_queue, " complete")
+
+    def test_completed(self, plugin, tts_queue):
+        assert self._enter_and_try_exit(plugin, tts_queue, " completed")
+
+    def test_cancel(self, plugin, tts_queue):
+        assert self._enter_and_try_exit(plugin, tts_queue, " cancel")
+
+    def test_end(self, plugin, tts_queue):
+        assert self._enter_and_try_exit(plugin, tts_queue, " end")
+
+
+# ---------------------------------------------------------------------------
 # Date parsing
 # ---------------------------------------------------------------------------
 
@@ -478,3 +563,61 @@ class TestFuzzyMatchingModes:
         plugin.store_item("chicken breasts", "fridge")
         matches = plugin._find_pantry_items("chicken breast", strict=True)
         assert len(matches) >= 1
+
+
+class TestCatalogFuzzyMatching:
+    """Test that similar-but-distinct items don't block each other during catalog mode.
+
+    The catalog handler uses fuzz.ratio >= 75 (strict matching) to check if an
+    item already exists in the location. These tests verify that items with
+    overlapping words but different identities are treated as distinct.
+    """
+
+    def _catalog_match_exists(self, plugin, new_item, location="fridge"):
+        """Simulate catalog mode matching: would this item match an existing one?"""
+        from rapidfuzz import fuzz
+        loc = plugin._find_location(location)
+        return any(
+            i.get("location_id") == loc["id"]
+            and fuzz.ratio(new_item.lower(), i["name"].lower()) >= 75
+            for i in plugin._pantry["items"]
+        )
+
+    def test_fish_sauce_not_blocked_by_sweet_chili_sauce(self, plugin):
+        plugin.store_item("sweet chili sauce", "fridge")
+        assert not self._catalog_match_exists(plugin, "fish sauce")
+
+    def test_brie_cheese_not_blocked_by_cheese(self, plugin):
+        plugin.store_item("cheese", "fridge")
+        assert not self._catalog_match_exists(plugin, "brie cheese")
+
+    def test_philadelphia_cheese_not_blocked_by_cheese(self, plugin):
+        plugin.store_item("cheese", "fridge")
+        assert not self._catalog_match_exists(plugin, "philadelphia cheese")
+
+    def test_cottage_cheese_not_blocked_by_cheese(self, plugin):
+        plugin.store_item("cheese", "fridge")
+        assert not self._catalog_match_exists(plugin, "cottage cheese")
+
+    def test_dijon_mustard_not_blocked_by_mustard(self, plugin):
+        plugin.store_item("mustard", "fridge")
+        assert not self._catalog_match_exists(plugin, "dijon mustard")
+
+    def test_cream_cheese_not_blocked_by_cream(self, plugin):
+        plugin.store_item("cream", "fridge")
+        assert not self._catalog_match_exists(plugin, "cream cheese")
+
+    def test_soy_sauce_not_blocked_by_sweet_chili_sauce(self, plugin):
+        plugin.store_item("sweet chili sauce", "fridge")
+        assert not self._catalog_match_exists(plugin, "soy sauce")
+
+    def test_exact_item_still_matches(self, plugin):
+        """Same item name should still match (catalog update, not add)."""
+        # Use a unique name that won't conflict with other tests
+        plugin.store_item("test harissa paste", "fridge")
+        assert self._catalog_match_exists(plugin, "test harissa paste")
+
+    def test_close_spelling_still_matches(self, plugin):
+        """Close spelling variants should match (e.g. singular/plural)."""
+        plugin.store_item("test vienna sausages", "fridge")
+        assert self._catalog_match_exists(plugin, "test vienna sausage")
