@@ -1,0 +1,1 @@
+- [Intent audit March 2026](intent_audit_2026_03.md) — Naive Bayes collision zones, confidence dilution, and fix patterns for all plugins

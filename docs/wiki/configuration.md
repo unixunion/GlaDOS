@@ -127,6 +127,17 @@ plugins:
 
 Resolution order: **YAML config > code default > global `hybrid_nlp_threshold`**.
 
+#### Auto-tuning thresholds
+
+Rather than hand-tuning thresholds, use the auto-tuner to compute optimal per-tool values from the test suite:
+
+```bash
+make tune-nlp          # see recommendations
+make tune-nlp-apply    # write to glados_config.yml
+```
+
+The tuner runs all intent test cases, measures actual confidence scores per tool, and calculates the optimal threshold for each (midpoint between lowest correct classification and highest false positive). Run this after adding new tools or modifying intent training examples. See [Testing — NLP Threshold Tuner](testing.md#nlp-threshold-tuner-toolstune_nlp_thresholdspy) for details.
+
 ### Disabling forced tool selection
 
 `plugin_intent_threshold` controls when the LLM is forced to call a specific tool (`tool_choice='required'`). When the IntentClassifier confidence exceeds this threshold, the LLM **must** call a tool rather than responding with text.

@@ -6,7 +6,7 @@
 #   make test-knowledge — knowledge RAG benchmark (requires Qdrant + LM Studio)
 #   make test-models   — LLM tool-calling benchmark (requires LM Studio)
 
-.PHONY: test test-all test-ui test-knowledge test-models lint
+.PHONY: test test-all test-ui test-knowledge test-models tune-nlp lint
 
 # ── Fast unit tests (default) ────────────────────────────────────────────
 test:
@@ -38,6 +38,15 @@ test-knowledge-all-models:
 # Requires: LM Studio running with a model loaded
 test-models:
 	python tests/benchmark_models.py
+
+# ── NLP threshold tuning ─────────────────────────────────────────────────
+# Analyzes intent classification scores and recommends optimal thresholds
+tune-nlp:
+	python tools/tune_nlp_thresholds.py --report
+
+# Apply recommended thresholds to glados_config.yml
+tune-nlp-apply:
+	python tools/tune_nlp_thresholds.py --apply
 
 # ── Run the app ─────────────────────────────────────────────────────────
 run:

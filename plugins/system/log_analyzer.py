@@ -295,10 +295,9 @@ class LogAnalyzer(RunnableMCPPlugin):
 
         errors = self._buffer.get_errors(100)
         warnings = self._buffer.get_warnings_and_errors(200)
-        # Get recent logs but filter out DEBUG event_system noise
-        all_entries = self._buffer.get_recent(500)
-        all_recent = [e for e in all_entries
-                      if not (e["level"] == "DEBUG" and e["module"] == "event_system")][-300:]
+        # Get recent INFO+ logs (skip all DEBUG — it's mostly event_system noise)
+        all_entries = self._buffer.get_recent(2000)
+        all_recent = [e for e in all_entries if e["level"] != "DEBUG"][-500:]
         conversation = self._get_conversation_context()
 
         report = {

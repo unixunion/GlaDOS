@@ -191,6 +191,9 @@ make test                     # fast unit tests (excludes integration/browser/be
 make test-all                 # unit + browser tests
 make test-knowledge           # knowledge RAG benchmark (needs Qdrant)
 pytest tests/test_meal_planner.py -m integration  # meal planner e2e (run separately)
+pytest tests/test_meal_planner_llm.py -m benchmark  # LLM conversation test (needs LM Studio)
+make tune-nlp                 # analyze NLP scores, recommend per-tool thresholds
+make tune-nlp-apply           # write recommended thresholds to glados_config.yml
 
 # Backfill ingredient normalization map (requires local LLM server running)
 # Processes all unique recipe ingredients through an LLM to extract canonical names.

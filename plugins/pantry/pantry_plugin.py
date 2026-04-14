@@ -2374,7 +2374,8 @@ class PantryPlugin(RunnableMCPPlugin):
     _PLANNING_TRIGGERS = [
         "lets plan the shopping", "lets plan shopping", "shopping planning mode",
         "plan the shopping list", "lets make a shopping list", "plan shopping",
-        "planning mode", "start planning", "lets plan", "shopping mode",
+        "planning mode", "start planning the shopping", "shopping mode",
+        "lets plan the list", "shopping list planning",
     ]
     _POST_SHOPPING_TRIGGERS = [
         "we're back from shopping", "back from the shops", "back from shopping",

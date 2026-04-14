@@ -435,22 +435,12 @@ INTENT_TEST_CASES = [
     ("show my favorites", "show_favorites", 0.1),
     ("show my favorite recipes", "show_favorites", 0.1),
     ("what recipes have I saved", "show_favorites", 0.1),
-    # --- Meal planner: plan meal ---
-    ("plan lasagna for monday", "plan_meal", 0.1),
-    ("add this to the meal plan", "plan_meal", 0.1),
-    ("let's have this on saturday", "plan_meal", 0.1),
+    # --- Meal planner: plan_meal, suggest_weekly_meals, generate_shopping_list are LLM-only (no NLP intents)
     # --- Meal planner: show meal plan ---
     ("show the meal plan", "show_meal_plan", 0.1),
     ("show me the meal plan", "show_meal_plan", 0.1),
     ("show planned meals", "show_meal_plan", 0.1),
     ("what's on the meal plan", "show_meal_plan", 0.1),
-    # --- Meal planner: suggest weekly meals ---
-    ("suggest meals for the week", "suggest_weekly_meals", 0.1),
-    ("suggest what to cook this week", "suggest_weekly_meals", 0.1),
-    ("plan the week for me", "suggest_weekly_meals", 0.1),
-    # --- Meal planner: generate shopping list from plan ---
-    ("generate a shopping list from the meal plan", "generate_shopping_list", 0.1),
-    ("what do I need to buy for the meal plan", "generate_shopping_list", 0.1),
     # --- Meal planner: household setup ---
     ("we're a family of four", "setup_household", 0.1),
     ("two adults and one kid", "setup_household", 0.1),
@@ -1058,34 +1048,26 @@ class TestMealPlanningFlow:
             messages.append(q.get())
         return " ".join(m for m in messages if m != "<EOS>")
 
-    def test_suggest_weekly_meals_routes_correctly(self, meal_env):
-        """'suggest meals for the week' should route to suggest_weekly_meals."""
-        from glados.system.intent_classifier import IntentClassifier
-        ic = IntentClassifier()
-        predicted, confidence = ic.predict_intent("suggest meals for the week")
-        assert predicted == "suggest_weekly_meals", f"Got: {predicted} ({confidence:.2f})"
-        assert confidence >= 0.3
+    def test_meal_plan_not_shopping_mode(self, meal_env):
+        """'lets plan meals' must NOT trigger shopping planning mode."""
+        from plugins.pantry.pantry_plugin import PantryPlugin
+        pp = PantryPlugin()
+        from glados.llm.chat_hooks import ChatContext
+        phrases = [
+            "lets plan some healthy meals for the week",
+            "lets plan meals for the week",
+            "lets plan the weekly meals",
+            "plan meals for monday",
+        ]
+        for phrase in phrases:
+            pp._shopping_mode = None
+            pp._catalog_mode = None
+            ctx = ChatContext(user_text=phrase, activity=None, session_id="t", tts_queue=queue.Queue())
+            pp._shopping_context_hook(ctx)
+            assert pp._shopping_mode is None, f"'{phrase}' wrongly triggered shopping mode"
 
-    def test_suggest_healthy_meal_plan_routes(self, meal_env):
-        """'suggest a healthy meal plan for the week' should route to suggest_weekly_meals."""
-        from glados.system.intent_classifier import IntentClassifier
-        ic = IntentClassifier()
-        predicted, confidence = ic.predict_intent("suggest a healthy meal plan for the week")
-        assert predicted == "suggest_weekly_meals", f"Got: {predicted} ({confidence:.2f})"
-
-    def test_plan_meal_for_day_routes(self, meal_env):
-        """'plan lasagna for monday' should route to plan_meal."""
-        from glados.system.intent_classifier import IntentClassifier
-        ic = IntentClassifier()
-        predicted, confidence = ic.predict_intent("plan lasagna for monday")
-        assert predicted == "plan_meal", f"Got: {predicted} ({confidence:.2f})"
-
-    def test_generate_shopping_list_routes(self, meal_env):
-        """'generate a shopping list from the meal plan' should route correctly."""
-        from glados.system.intent_classifier import IntentClassifier
-        ic = IntentClassifier()
-        predicted, confidence = ic.predict_intent("generate a shopping list from the meal plan")
-        assert predicted == "generate_shopping_list", f"Got: {predicted} ({confidence:.2f})"
+    # suggest_weekly_meals, plan_meal, generate_shopping_list are LLM-only (no NLP intents)
+    # — tested in test_meal_planner_llm.py instead
 
     def test_show_meal_plan_routes(self, meal_env):
         """'show the meal plan' should route to show_meal_plan."""
@@ -1093,14 +1075,6 @@ class TestMealPlanningFlow:
         ic = IntentClassifier()
         predicted, confidence = ic.predict_intent("show the meal plan")
         assert predicted == "show_meal_plan", f"Got: {predicted} ({confidence:.2f})"
-
-    def test_suggest_meals_dispatches(self, meal_env):
-        """Suggesting meals should actually execute and return TTS output."""
-        dispatcher, tts_queue = meal_env
-        dispatcher.dispatch("suggest meals for the week", Activity.GENERAL)
-        text = self.drain_queue(tts_queue)
-        # Should get some response (even if "no suggestions" due to empty favorites)
-        assert text, "Should have produced TTS output"
 
     def test_show_plan_dispatches(self, meal_env):
         """Showing the meal plan should execute and return TTS output."""

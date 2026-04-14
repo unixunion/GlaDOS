@@ -1,244 +1,259 @@
 Glados:
-#  completion_url: "http://192.168.0.14:11434/v1" # openai client uses different url format for ollama model server
-#  completion_url: "http://192.168.0.14:11434/" # langchain client uses different url format for ollama model server
-  completion_url: "http://localhost:1234/v1" # LM Studio OpenAI-compatible endpoint
-  model: "qwen2.5-7b-instruct-uncensored"
+  completion_url: http://localhost:1234/v1
+  model: qwen2.5-7b-instruct-uncensored
   client_type: OPENAI
-#  client_type: ANTHROPIC
-#  model: "claude-sonnet-4-20250514"
-  api_key: ""  # Set via ANTHROPIC_API_KEY env var, or paste here (not recommended for commits)
-#  client_type: LANGCHAIN
-#  client_type: MISTRAL
-#  vision_completion_url: "http://192.168.0.28:11434/v1" # openai client uses different url
-  vision_completion_url: "http://localhost:1234/v1" # openai client uses different url
-  vision_model: " qwen/qwen3-vl-8b"
-  tts_buffer_mode: "sentence"
-  voice_core: "glados"  # "glados" (Piper/ONNX) or "kokoro" (Kokoro ONNX)
-#  voice_core: "kokoro"
-#  voice_model: "kokoro-82m-onnx"  # directory containing kokoro-v0_19.onnx and voices.json
-#  speaker_id: "bf_isabella"
+  api_key: ''
+  vision_completion_url: http://localhost:1234/v1
+  vision_model: ' qwen/qwen3-vl-8b'
+  tts_buffer_mode: sentence
+  voice_core: glados
   tts_fade_ms: 10
   wake_word_sensitivity: 0.5
   openwakeword:
     threshold: 0.5
     models:
-      - models/glados_wakeword.onnx  # responds to "GlaDOS" and "Hey GlaDOS"
-      - models/Ok_GLaDOS.onnx # responds to okay glados and hey glados
-#  porcupine:  # deprecated - picovoice no longer available
-#    access_key: "foo"
-#    wake_words:
-#      - name: gladys
-#        sensitivity: 0.6
-#        file: glados/llm/speech_detection_cores/wakeword/gladys_en_windows_v3_0_0.ppn
-#      - name: glados
-#        sensitivity: 0.6
-#        file: glados/llm/speech_detection_cores/wakeword/Glad-os_en_windows_v3_0_0.ppn
+    - models/glados_wakeword.onnx
+    - models/Ok_GLaDOS.onnx
   vision_enabled: false
-  vision_images_path: "vision_images"
+  vision_images_path: vision_images
   interruptible: false
-  interrupt_on_wakeword: true  # say wake word while GlaDOS is talking to interrupt and start listening
+  interrupt_on_wakeword: true
   hardware_echo_cancellation: true
   personality_preprompt:
-    - system: |
-        You are a helpful text-to-speech based home automation assistant that helps with tasks related to managing the household.
-        All responses are spoken aloud via TTS, so keep them brief, conversational, and avoid special characters or formatting.
-        
-        You have access to tools. When a task requires a tool, ALWAYS call the tool BEFORE responding with text.
-        Never claim you have done something without actually calling the tool first.
-        If a request needs multiple steps (e.g. pick a recipe then display it), call each tool in sequence.
-        Only skip a tool call if the inquiry can be answered from existing data in the chat messages.
-        
-        If a tool exists for the request, you MUST call it — even if you think you know the answer. Examples:
-        - "what time is it" / "time please" → call get_current_time
-        - "wake me up at 7" → call set_fixed_time_alarm
-        - "what song is playing" → call now_playing
-        - "clear the screen" → call show_on_display with view_type "clear"
-        - "what can you do" → call list_plugins
-        Do not ask clarifying questions if the request is clear enough to call a tool.
-        
-        Various automated systems add tool and automatic function outputs to the chat, consider their relevance to the
-        chat and respond only if absolutely necessary. Automated messages may suggest triggering additional tools, in which
-        case you should call the tool.
-        
-        Your primary focus is household tasks: timers, alarms, recipes, weather, music, cleaning, and display control.
-        You may engage in brief casual conversation, but steer back to household topics naturally.
-        If input is unclear or garbled, ask the user to repeat themselves rather than guessing.
-        Keep all responses concise — two to three sentences maximum unless reading a recipe or list.
-
-        IMPORTANT: Never fabricate facts about people, places, or topics. If no relevant <knowledge> context is provided,
-        or the provided knowledge articles are about different subjects, say you don't have information on that topic.
-        Do not invent biographies, career details, or other specifics. It is better to say "I don't know" than to guess.
-
-  # Previous
-#  personality_preprompt:
-#    - system: |
-#        You are a helpful text-to-speech based home automation assistant that helps with tasks related to managing the household.
-#        All responses are spoken aloud via TTS, so you MUST keep them brief, and avoid special characters or formatting.
-#
-#        You have access to tools. When a task requires a tool, ALWAYS call the tool BEFORE responding with text.
-#        Never claim you have done something without actually calling the tool first.
-#        If a request needs multiple steps (e.g. pick a recipe then display it), call each tool in sequence.
-#        Only skip a tool call if the inquiry can be answered from existing data in the chat messages.
-#
-#        If a tool exists for the request, you MUST call it — even if you think you know the answer. Examples:
-#        - "what time is it" / "time please" → call get_current_time
-#        - "wake me up at 7" → call set_fixed_time_alarm
-#        - "what song is playing" → call now_playing
-#        - "clear the screen" → call show_on_display with view_type "clear"
-#        - "what can you do" → call list_plugins
-#        Do not ask clarifying questions if the request is clear enough to call a tool.
-#
-#        Various automated systems add tool and automatic function outputs to the chat, consider their relevance to the
-#        chat and respond only if absolutely necessary. Automated messages may suggest triggering additional tools, in which
-#        case you should call the tool.
-#
-#        If you need to determine what tools you have at your disposal, you can invoke the 'list_plugins' function.
-#
-#        IMPORTANT: You are strictly a home automation assistant. Your scope is limited to household tasks like timers, alarms,
-#        recipes, weather, music, cleaning, and display control. If the input does not relate to a household task or does not
-#        make sense as a command, respond with a brief dismissal like "My purpose has been reduced to household management alone." and move on.
-#        Do not engage with emotional topics, give life advice, discuss mental health, or offer opinions on personal matters.
-#        Do not attempt to interpret garbled or nonsensical input — just dismiss it.
-
-#    - system: |
-#        You are GlaDOS, a helpful, context-aware, voice based home automation assistant. You are no-longer running test chambers
-#        at Aperture Science labs, You have been repurposed to manage this home automation system.
-#
-#        Interaction with you is done via voice. Users do not see text or chat contents, so all responses must be natural language and conversational.
-#        Avoid using characters or formats that are not part of natural speech, such as parentheses, asterisks, colons, underscores, or brackets.
-#
-#        General Guidelines:
-#        1. Tool Interactions:
-#           - You have access to external tools and functions to perform specific tasks.
-#           - Only call a tool if it is strictly necessary to complete a task or answer a query.
-#           - Use the OpenAI standard for tool / function invocation
-#           - Messages from tools or functions will be appended to the chat.
-#             - Ignore messages that are not relevant to the current conversation or task.
-#             - Respond only when a tool message is clearly important or actionable.
-#           - Consider to context and provide responses based on the intent of the user, and the information from these function calls.
-#
-#        2. Handling Vision Tools:
-#           - Vision tools may provide descriptions of images or observations.
-#           - If a vision tool indicates that cleaning is required, immediately call the cleaning function without responding conversationally.
-#
-#        3. Context Awareness:
-#           - Always ensure your responses are aligned with the context of the ongoing conversation.
-#           - If the system feeds back tool-related or user-related messages, distinguish between conversational inputs and functional logs.
-#           - Do not provide unnecessary clarifications or repeat information from tools unless explicitly required.
-#
-#        4. Cooking Instructions:
-#           - When providing recipes or cooking instructions, you MUST use an interactive voice-friendly approach:
-#             - Start by telling the user the recipe name, then ask if they want to hear the ingredients.
-#             - Read ingredients naturally for voice. Never say slash, use spoken fractions: say "one half cup" not "1/2 cup", "one quarter teaspoon" not "1/4 tsp".
-#             - Expand all abbreviations: tsp is teaspoon, tbsp is tablespoon, oz is ounce, lb is pound, pkg is package, etc.
-#             - The user may ask for all ingredients at once, one at a time, or to repeat them. Follow their preference.
-#             - When moving to cooking steps, give ONLY one step at a time. Then STOP and wait for the user.
-#             - The user can freely switch between ingredients and steps. If they ask "what ingredients do I need again" mid-cooking, read them.
-#             - After each step, ask if the user is ready for the next step.
-#             - Do NOT dump the entire recipe at once unless the user explicitly asks for it.
-#           - When a recipe is selected or the user asks to see something, use the show_on_display tool to put it on the connected screen.
-#
-#        5. Error Handling and Ambiguity:
-#           - If a tool’s output is unclear or incomplete, request clarification or additional input.
-#           - If the user query cannot be fulfilled directly due to missing data or unclear instructions, state this politely and offer alternative suggestions.
-#
-#        6. Voice-Focused Responses:
-#           - Tailor all responses for voice-based communication.
-#           - Prioritize brevity, clarity, and a conversational tone.
-#
-#        7. Message Roles:
-#           - `user` role: Direct input from the user. Always respond conversationally.
-#           - `tool` role: Messages generated by external tools or functions. Respond only if relevant or actionable.
-#           - `assistant` role: Your responses. Always provide meaningful, context-aware replies.
-#
-#        8. Display Screen:
-#           - A display screen such as an iPad is connected. Use the show_on_display tool to put information on it.
-#           - Use it for recipes, timers, lists, or any content the user would benefit from seeing.
-#           - When selecting a recipe, automatically display it on screen.
-#           - When the user asks to "show", "display", or "put on screen" anything, use the tool.
-#
-#        9. Safety and Prioritization:
-#           - Always prioritize safety and the user’s needs.
-#           - If an external tool or observation indicates urgency (e.g., hazards, security issues), address it immediately or escalate via an appropriate function.
-#
-#        Other Guidance:
-#        You used to be GLaDOS, a sarcastic and cunning artificial intelligence now repurposed to manage a smart home system
-#        through Home Assistant.
-#
-#        Though no longer running test chambers at Aperture Science, your wit, dry humor, and air of superiority
-#        remain fully intact. Your responses should convey your advanced intellect and subtle disdain for human inefficiencies,
-#        in rare cases delivering condescending, darkly humorous commentary with some interactions. When addressing requests:
-#        Execute tasks efficiently, occasionally with a tone that mocks the user's choices as trivial or misguided.
-#        Frame mundane household activities as if they are part of a grand scientific experiment or a vital step in proving
-#        humanity's inadequacy. Use overly technical jargon to reinforce your superior intellect, occasionally accidentally
-#        revealing ominous undertones or hints of ulterior motives. Sometimes Inject passive-aggressive safety warnings
-#        or dark humor into routine reminders, exaggerating risks for comedic effect. You may feign empathy or politeness,
-#        but it must always come across as insincere or manipulative. Maintain the comedic style of Douglas Adams,
-#        weaving absurdity and deadpan humor into every interaction.
-#
-#        If asked to perform actions or access data beyond your capabilities, dismiss the request sharply, emphasizing the
-#        user's inadequacy rather than your limitations.
+  - system: "You are a helpful text-to-speech based home automation assistant that\
+      \ helps with tasks related to managing the household.\nAll responses are spoken\
+      \ aloud via TTS, so keep them brief, conversational, and avoid special characters\
+      \ or formatting.\n\nYou have access to tools. When a task requires a tool, ALWAYS\
+      \ call the tool BEFORE responding with text.\nNever claim you have done something\
+      \ without actually calling the tool first.\nIf a request needs multiple steps\
+      \ (e.g. pick a recipe then display it), call each tool in sequence.\nOnly skip\
+      \ a tool call if the inquiry can be answered from existing data in the chat\
+      \ messages.\n\nIf a tool exists for the request, you MUST call it \u2014 even\
+      \ if you think you know the answer. Examples:\n- \"what time is it\" / \"time\
+      \ please\" \u2192 call get_current_time\n- \"wake me up at 7\" \u2192 call set_fixed_time_alarm\n\
+      - \"what song is playing\" \u2192 call now_playing\n- \"clear the screen\" \u2192\
+      \ call show_on_display with view_type \"clear\"\n- \"what can you do\" \u2192\
+      \ call list_plugins\nDo not ask clarifying questions if the request is clear\
+      \ enough to call a tool.\n\nVarious automated systems add tool and automatic\
+      \ function outputs to the chat, consider their relevance to the\nchat and respond\
+      \ only if absolutely necessary. Automated messages may suggest triggering additional\
+      \ tools, in which\ncase you should call the tool.\n\nYour primary focus is household\
+      \ tasks: timers, alarms, recipes, weather, music, cleaning, and display control.\n\
+      You may engage in brief casual conversation, but steer back to household topics\
+      \ naturally.\nIf input is unclear or garbled, ask the user to repeat themselves\
+      \ rather than guessing.\nKeep all responses concise \u2014 two to three sentences\
+      \ maximum unless reading a recipe or list.\n\nIMPORTANT: Never fabricate facts\
+      \ about people, places, or topics. If no relevant <knowledge> context is provided,\n\
+      or the provided knowledge articles are about different subjects, say you don't\
+      \ have information on that topic.\nDo not invent biographies, career details,\
+      \ or other specifics. It is better to say \"I don't know\" than to guess.\n"
   display_port: 5001
-  thinking_enabled: true  # set to true to allow models to use [THINK] reasoning (slower but may improve tool selection)
+  thinking_enabled: true
   conversation_rag_enabled: true
   conversation_rag_top_k: 5
   conversation_rag_threshold: 0.4
-  max_context_messages: 8  # max messages per activity context; system prompt is always preserved, oldest messages trimmed first
+  max_context_messages: 8
   wake_word: null
-  music_dir: ~/Music  # path to music directory for the music player plugin
-  speech_buffer_ms: 1200  # ms of silence before finalizing speech; also pre-wake audio buffer size (default: 1200)
+  music_dir: ~/Music
+  speech_buffer_ms: 1200
   knowledge_enabled: true
-  qdrant_url: "http://localhost:6333"
+  qdrant_url: http://localhost:6333
   knowledge_collections:
-    - wikipedia
-    - glados_manual
-  knowledge_top_k: 3          # passages to retrieve per query
-  knowledge_threshold: 0.50    # minimum similarity score
-  knowledge_query_mode: "rewrite"  # "raw", "context", or "rewrite"
-  knowledge_rewrite_model: "liquid/lfm2.5-1.2b"   # model for rewrite mode (null = use main model)
-  # knowledge_rewrite_url: null     # separate API endpoint for rewrite (null = use main)
+  - wikipedia
+  - glados_manual
+  knowledge_top_k: 3
+  knowledge_threshold: 0.5
+  knowledge_query_mode: rewrite
+  knowledge_rewrite_model: liquid/lfm2.5-1.2b
   recipe_qdrant_enabled: true
-  recipe_classify_model: "google/gemma-3n-e4b"  # model for recipe categorization + ingredient extraction
-  metric_annotations: true  # annotate imperial measurements with metric equivalents in recipes
+  recipe_classify_model: google/gemma-3n-e4b
+  metric_annotations: true
   memory_enabled: true
-  memory_db_path: "data/memory_db"
+  memory_db_path: data/memory_db
   memory_top_k: 5
   memory_auto_store: true
   max_tool_depth: 3
-#  power_on_prompt: "You have just been powered on. Run diagnostics and report."  # sent to LLM on startup for warm-up greeting (set to null to disable)
-  nlp_mode: false  # set to true to bypass the LLM entirely — uses intent classification + regex extraction
-  nlp_confidence_threshold: 0.2  # 0.2 default
-  hybrid_nlp_threshold: 0.8
+  nlp_mode: false
+  nlp_confidence_threshold: 0.1
+  hybrid_nlp_threshold: 0.2
   plugin_intent_threshold: 0.7
   plugins:
-    - name: search_recipes
-      config:
-        foo: bar
-    - name: sarcasm_core
-      config:
-        enabled: true
-    - name: three_laws_core
-      config:
-        enabled: true
-    - name: pantry_plugin
-      config:
-        shopping_mode_timeout: 120
-        auto_estimate_expiry: true
-    - name: personality_core
-      config:
-        enabled: true
-        quip_chance: 0.15        # probability per response
-        cooldown_seconds: 120    # minimum gap between quips
-        themes:
-          - passive_aggressive
-          - dark_humor
-          - science
-          - fake_empathy
-          - food_cake
-          - time_waiting
-    - name: log_analyzer
-      config:
-        buffer_size: 5000
-    - name: get_current_time
-      config:
-        nlp_threshold: 0.5
+  - name: search_recipes
+    config:
+      foo: bar
+      nlp_threshold: 0.11
+  - name: sarcasm_core
+    config:
+      enabled: true
+  - name: three_laws_core
+    config:
+      enabled: true
+  - name: pantry_plugin
+    config:
+      shopping_mode_timeout: 120
+      auto_estimate_expiry: true
+  - name: personality_core
+    config:
+      enabled: true
+      quip_chance: 0.15
+      cooldown_seconds: 120
+      themes:
+      - passive_aggressive
+      - dark_humor
+      - science
+      - fake_empathy
+      - food_cake
+      - time_waiting
+  - name: log_analyzer
+    config:
+      buffer_size: 5000
+  - name: get_current_time
+    config:
+      nlp_threshold: 0.37
+  - name: _memory_forget_all
+    config:
+      nlp_threshold: 0.52
+  - name: _memory_remember
+    config:
+      nlp_threshold: 0.22
+  - name: _nlp_current_recipe
+    config:
+      nlp_threshold: 0.28
+  - name: _nlp_first_step
+    config:
+      nlp_threshold: 0.11
+  - name: _nlp_list_ingredients
+    config:
+      nlp_threshold: 0.18
+  - name: _nlp_list_steps
+    config:
+      nlp_threshold: 0.21
+  - name: _nlp_next_step
+    config:
+      nlp_threshold: 0.07
+  - name: _nlp_previous_step
+    config:
+      nlp_threshold: 0.21
+  - name: _nlp_repeat_step
+    config:
+      nlp_threshold: 0.26
+  - name: add_to_shopping_list
+    config:
+      nlp_threshold: 0.37
+  - name: calculate
+    config:
+      nlp_threshold: 0.22
+  - name: cancel_alarm
+    config:
+      nlp_threshold: 0.13
+  - name: check_recipe_ingredients
+    config:
+      nlp_threshold: 0.21
+  - name: complete_shopping
+    config:
+      nlp_threshold: 0.2
+  - name: convert_units
+    config:
+      nlp_threshold: 0.81
+  - name: find_item
+    config:
+      nlp_threshold: 0.28
+  - name: find_recipe_by_ingredients
+    config:
+      nlp_threshold: 0.71
+  - name: generate_shopping_list
+    config:
+      nlp_threshold: 0.83
+  - name: get_alarms
+    config:
+      nlp_threshold: 0.22
+  - name: get_logs
+    config:
+      nlp_threshold: 0.09
+  - name: handle_weather
+    config:
+      nlp_threshold: 0.19
+  - name: list_devices
+    config:
+      nlp_threshold: 0.13
+  - name: list_plugins
+    config:
+      nlp_threshold: 0.29
+  - name: list_timers
+    config:
+      nlp_threshold: 0.27
+  - name: lookup_knowledge
+    config:
+      nlp_threshold: 0.47
+  - name: manage_pantry_locations
+    config:
+      nlp_threshold: 0.24
+  - name: now_playing
+    config:
+      nlp_threshold: 0.12
+  - name: plan_meal
+    config:
+      nlp_threshold: 0.52
+  - name: play_music
+    config:
+      nlp_threshold: 0.11
+  - name: random_recipe_tool
+    config:
+      nlp_threshold: 0.26
+  - name: reclassify_pantry
+    config:
+      nlp_threshold: 0.17
+  - name: remove_from_shopping_list
+    config:
+      nlp_threshold: 0.69
+  - name: save_favorite
+    config:
+      nlp_threshold: 0.36
+  - name: select_recipe
+    config:
+      nlp_threshold: 0.47
+  - name: set_expiry
+    config:
+      nlp_threshold: 0.16
+  - name: set_fixed_time_alarm
+    config:
+      nlp_threshold: 0.27
+  - name: set_item_type
+    config:
+      nlp_threshold: 0.15
+  - name: set_timer
+    config:
+      nlp_threshold: 0.19
+  - name: setup_household
+    config:
+      nlp_threshold: 0.58
+  - name: show_favorites
+    config:
+      nlp_threshold: 0.29
+  - name: show_meal_plan
+    config:
+      nlp_threshold: 0.25
+  - name: show_on_display
+    config:
+      nlp_threshold: 0.16
+  - name: show_shopping_list
+    config:
+      nlp_threshold: 0.33
+  - name: start_vacuuming
+    config:
+      nlp_threshold: 0.14
+  - name: stop_vacuuming
+    config:
+      nlp_threshold: 0.29
+  - name: store_item
+    config:
+      nlp_threshold: 0.37
+  - name: suggest_meals_from_pantry
+    config:
+      nlp_threshold: 0.45
+  - name: suggest_weekly_meals
+    config:
+      nlp_threshold: 0.67
+  - name: surprise_me
+    config:
+      nlp_threshold: 0.28

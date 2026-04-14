@@ -252,22 +252,75 @@ def suggest_meals(
     favorites: list[str],
     pantry_items: set[str],
     count: int = 5,
+    preferences: str = None,
 ) -> list[dict]:
-    """Suggest diverse meals prioritizing favorites with high pantry match."""
+    """Suggest diverse meals prioritizing favorites with high pantry match.
+
+    Args:
+        preferences: Comma-separated keywords like "healthy", "kid-friendly", "quick", "vegetarian".
+                     Used to boost recipes whose title or category matches.
+                     "diverse" reduces pantry-match bias so suggestions aren't just condiments.
+    """
     recipes = _get_recipes()
     pantry_lower = {p.lower() for p in pantry_items}
     fav_set = {f.lower() for f in favorites}
+
+    # Parse preference keywords for title/category matching
+    pref_keywords = []
+    reduce_pantry_bias = False
+    if preferences:
+        raw_prefs = [p.strip().lower() for p in preferences.split(",") if p.strip()]
+        if "diverse" in raw_prefs:
+            reduce_pantry_bias = True
+            raw_prefs.remove("diverse")
+        pref_keywords = list(raw_prefs)
+        # Expand keywords to related terms
+        _expansions = {
+            "healthy": ["salad", "grilled", "baked", "steamed", "light", "lean", "fresh",
+                         "vegetable", "quinoa", "salmon", "chicken breast", "low"],
+            "kid-friendly": ["mac", "cheese", "pizza", "chicken", "nugget", "pasta", "pancake", "simple"],
+            "quick": ["easy", "quick", "simple", "minute", "one-pot", "sheet pan", "skillet"],
+            "vegetarian": ["vegetable", "tofu", "bean", "lentil", "chickpea", "mushroom", "cheese"],
+            "comfort": ["stew", "soup", "casserole", "pot pie", "roast", "braised", "slow cooker"],
+        }
+        for pref in raw_prefs:
+            pref_keywords.extend(_expansions.get(pref, []))
+
+    # Minimum ingredient count to filter out condiments/sides/sauces
+    MIN_INGREDIENTS_FOR_MEAL = 4
 
     scored = []
     for recipe in recipes:
         core = set(recipe.get("core_ingredients", []))
         if not core:
             continue
+        # Skip recipes with too few ingredients — they're condiments/sides, not meals
+        if len(core) < MIN_INGREDIENTS_FOR_MEAL:
+            continue
+
         have = core & pantry_lower
         match_pct = len(have) / len(core) * 100 if core else 0
         is_fav = recipe["title"].lower() in fav_set
-        # Score: favorites get 50 point bonus, rest is pantry match %
-        score = match_pct + (50 if is_fav else 0)
+
+        # Pantry match: cap contribution and reduce when user wants diversity
+        pantry_weight = 0.15 if reduce_pantry_bias else 0.30
+        pantry_score = match_pct * pantry_weight  # 0-30 (or 0-15 if diverse)
+
+        # Favorites bonus
+        fav_score = 40 if is_fav else 0
+
+        # Preference bonus: boost recipes matching user preferences
+        pref_score = 0
+        if pref_keywords:
+            title_lower = recipe["title"].lower()
+            category = recipe.get("category", "").lower()
+            cuisine = recipe.get("cuisine", "").lower()
+            searchable = f"{title_lower} {category} {cuisine}"
+            pref_hits = sum(1 for kw in pref_keywords if kw in searchable)
+            pref_score = pref_hits * 20  # Strong preference signal
+
+        score = pantry_score + fav_score + pref_score
+
         scored.append({
             "title": recipe["title"],
             "image_name": recipe.get("image_name"),

@@ -202,6 +202,45 @@ pytest tests/test_meal_planner.py -m integration -v
 
 **Note:** Marked as `integration` because it registers plugins with singletons that would pollute other test modules. Not included in `make test` — run separately.
 
+### Meal Planner LLM Conversation (`tests/test_meal_planner_llm.py`)
+
+End-to-end test with a real LLM. Sends natural language to the ChatClient, verifies the LLM correctly orchestrates meal planning tools in multi-turn conversation.
+
+```bash
+pytest tests/test_meal_planner_llm.py -m benchmark -v
+```
+
+**Requires:** Running LLM server (LM Studio). Takes ~30s.
+
+**What it covers:**
+- "suggest healthy meals for the week" → LLM calls `suggest_weekly_meals` with preferences
+- Multi-turn: suggest → "plan those for the week" → LLM calls `plan_meal` for each day
+
+This tests the LLM-driven orchestration flow where the model chains tools based on conversation context — not just single-tool routing.
+
+### NLP Threshold Tuner (`tools/tune_nlp_thresholds.py`)
+
+Auto-tunes per-tool NLP confidence thresholds by running all intent test cases and analyzing score distributions.
+
+```bash
+make tune-nlp            # summary report with per-tool scores + recommendations
+make tune-nlp-apply      # write recommended thresholds to glados_config.yml
+
+# Or directly:
+python tools/tune_nlp_thresholds.py              # summary
+python tools/tune_nlp_thresholds.py --report      # detailed per-tool breakdown with individual phrases
+python tools/tune_nlp_thresholds.py --apply       # apply to config
+```
+
+**What it does:**
+1. Loads all plugins and the 189+ intent test cases
+2. Classifies every phrase, records confidence scores per tool
+3. Computes optimal thresholds: midpoint between lowest correct score and highest false positive
+4. Outputs a report showing per-tool score ranges, current vs recommended thresholds
+5. With `--apply`, writes per-tool thresholds to `glados_config.yml` and updates global hybrid threshold
+
+**When to run:** After adding or modifying intent training examples, adding new tools, or when intent dilution causes misroutes.
+
 ### Model Benchmarks (`tests/benchmark_models.py`)
 
 Benchmarking tool for comparing LLM models on tool-calling tasks.

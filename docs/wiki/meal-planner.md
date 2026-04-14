@@ -41,7 +41,21 @@ Plan what you're cooking this week, day by day.
 - The meal plan dashboard card shows total meals planned
 - Click a recipe in the plan to view it; click X to remove individual meals
 - **"+" button** on each day row — tap to add a meal with inline search
-- These tools use NLP fast-path for reliable execution (the LLM is bypassed for direct tool calls)
+
+### LLM-Driven Planning
+
+Meal planning is handled by the LLM, not the NLP fast-path. This enables multi-turn conversations:
+
+1. **You**: "plan healthy kid-friendly meals for the week"
+2. **GlaDOS**: suggests 5 recipes based on preferences + pantry + favorites
+3. **You**: "swap Tuesday for something Asian"
+4. **GlaDOS**: adjusts the plan
+5. **You**: "looks good, generate the shopping list"
+6. **GlaDOS**: generates optimized list, skipping pantry items
+
+The LLM orchestrates `suggest_weekly_meals`, `plan_meal`, and `generate_shopping_list` tools in sequence, using your feedback to refine the plan.
+
+**Supported preferences**: healthy, kid-friendly, quick, vegetarian, comfort — extracted from your natural language and used to boost matching recipes.
 
 ## Household Setup
 

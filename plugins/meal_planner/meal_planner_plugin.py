@@ -22,19 +22,6 @@ _DAY_ABBREVS = {"mon": "monday", "tue": "tuesday", "wed": "wednesday", "thu": "t
                 "fri": "friday", "sat": "saturday", "sun": "sunday"}
 
 
-def _suggest_meals_nlp_response(result: dict) -> str:
-    if result.get("status") == "empty":
-        return result.get("message", "No suggestions available.")
-    count = result.get("count", 0)
-    return result.get("message", f"I've suggested {count} meals and put them on the screen.")
-
-
-def _generate_list_nlp_response(result: dict) -> str:
-    if result.get("status") == "empty":
-        return result.get("message", "No meals planned yet.")
-    return result.get("message", "Shopping list generated.")
-
-
 def _show_plan_nlp_response(result: dict) -> str:
     if result.get("status") == "empty":
         return result.get("message", "No meals planned this week.")
@@ -60,9 +47,20 @@ class MealPlannerPlugin(RunnableMCPPlugin):
 
         self.register_system_prompt(
             "MEAL PLANNER: A meal planning system is available. Users can save favorite recipes, "
-            "plan meals for the week, and generate optimized shopping lists. "
-            "Use save_favorite when the user wants to bookmark a recipe. "
-            "Use generate_shopping_list to create a shopping list from the weekly meal plan."
+            "plan meals for the week, and generate optimized shopping lists.\n"
+            "When the user asks to plan meals for the week:\n"
+            "1. Call suggest_weekly_meals with their preferences (healthy, kid-friendly, quick, vegetarian, comfort)\n"
+            "2. Present the suggestions briefly and ask which ones to keep\n"
+            "3. For each accepted meal, call plan_meal with a day of the week\n"
+            "4. Ask if they want to generate a shopping list\n"
+            "5. If yes, call generate_shopping_list\n"
+            "IMPORTANT rules for meal planning:\n"
+            "- ALWAYS call suggest_weekly_meals when the user wants new or different suggestions. "
+            "Never reuse previous results or make up recipe names.\n"
+            "- If the user is unhappy with suggestions, call suggest_weekly_meals AGAIN with adjusted preferences.\n"
+            "- NEVER invent or fabricate recipe names. Only suggest recipes returned by the tool.\n"
+            "- Pass user preferences as the 'preferences' parameter: e.g. 'healthy, quick' or 'comfort, kid-friendly'.\n"
+            "- If the user says suggestions are too pantry-focused, add 'diverse' to preferences."
         )
 
         self._register_favorite_tools()
@@ -318,29 +316,16 @@ class MealPlannerPlugin(RunnableMCPPlugin):
             handler=self.plan_meal,
             description=(
                 "Add a recipe to the weekly meal plan for a specific day. "
-                "If no day specified, adds to the next unplanned day."
+                "If no day specified, adds to the next unplanned day. "
+                "Call this after suggest_weekly_meals for each recipe the user wants to keep. "
+                "Multiple meals per day are supported (breakfast, lunch, dinner)."
             ),
             parameters={
                 "recipe_name": {"type": "string", "description": "Recipe to plan"},
                 "day": {"type": "string", "description": "Day of week, e.g. 'monday', 'friday'"},
             },
             required=["recipe_name"],
-            intents=[
-                "plan lasagna for monday",
-                "add pasta to wednesday",
-                "plan this for friday",
-                "let's have this on saturday",
-                "cook this on tuesday",
-                "add this to the meal plan",
-                "plan this recipe for the week",
-                "put this on the meal plan",
-                "schedule this recipe for thursday",
-                "let's make this on sunday",
-                "plan that recipe for monday",
-                # Casual / spoken
-                "meal plan this for wednesday",
-                "pop this on the plan for friday",
-            ],
+            # No intents — LLM-driven, part of multi-turn planning conversation
             process_output=False,
             activity=[Activity.COOKING, Activity.GENERAL],
         )
@@ -577,59 +562,32 @@ class MealPlannerPlugin(RunnableMCPPlugin):
             description=(
                 "Generate an optimized shopping list from the weekly meal plan. "
                 "Cross-references pantry to skip what we have, scales quantities for "
-                "household size, and suggests staple ingredients that unlock more recipes."
+                "household size, and suggests staple ingredients that unlock more recipes. "
+                "Call this after the user has finished planning their week with plan_meal."
             ),
             parameters={},
             required=[],
-            intents=[
-                "generate a shopping list from the meal plan",
-                "create a shopping list from the meal plan",
-                "what do I need to buy for the meal plan",
-                "what do we need to buy for the week's meals",
-                "auto generate shopping list from the plan",
-                "generate shopping list from the meal plan",
-                "build a shopping list from the plan",
-                "make a shopping list for the planned meals",
-                "shopping list for this week's meal plan",
-                "what ingredients do I need for the meal plan",
-            ],
+            # No intents — LLM chains this after planning conversation
             process_output=True,
             activity=[Activity.GENERAL, Activity.COOKING],
-            nlp_threshold=0.5,
-            nlp_response=_generate_list_nlp_response,
         )
 
         self.register_tool(
             handler=self.suggest_weekly_meals,
             description=(
-                "Suggest meals for the week based on favorites, pantry contents, "
-                "and ingredient optimization. Picks diverse recipes that maximize "
-                "use of existing ingredients."
+                "Suggest meals for the week. Accepts preferences like 'healthy', 'kid-friendly', "
+                "'quick', 'vegetarian', 'comfort', 'diverse'. Pass 'diverse' to reduce pantry bias. "
+                "After getting suggestions, ask the user which to keep, then call plan_meal for each. "
+                "ALWAYS call this tool again (not from memory) when the user wants different suggestions."
             ),
             parameters={
                 "count": {"type": "integer", "description": "Number of meals to suggest (default: 5)"},
+                "preferences": {"type": "string", "description": "Comma-separated preferences: 'healthy', 'kid-friendly', 'quick', 'vegetarian', 'comfort', 'diverse'"},
             },
             required=[],
-            intents=[
-                # Core: generate/suggest new meals — "suggest" is the anchor
-                "suggest meals for the week",
-                "suggest what to cook this week",
-                "suggest a weekly menu",
-                "suggest a weekly meal plan",
-                "recommend meals for the week",
-                "give me meal suggestions for the week",
-                "auto suggest meals for the week",
-                "help me decide what to cook this week",
-                "fill in the meal plan with suggestions",
-                "suggest dinners for the week",
-                "plan meals for the week",
-                "suggest a healthy meal plan for the week",
-                "plan a healthy week of meals",
-            ],
+            # No intents — LLM handles this for multi-turn planning conversation
             process_output=True,
             activity=[Activity.GENERAL, Activity.COOKING],
-            nlp_threshold=0.5,
-            nlp_response=_suggest_meals_nlp_response,
         )
 
     def _get_pantry_names(self) -> list[str]:
@@ -695,7 +653,7 @@ class MealPlannerPlugin(RunnableMCPPlugin):
             "message": " ".join(parts),
         }
 
-    def suggest_weekly_meals(self, count: int = 5) -> dict:
+    def suggest_weekly_meals(self, count: int = 5, preferences: str = None) -> dict:
         """Suggest diverse meals for the week from favorites + pantry optimization."""
         self._ensure_current_week()
         pantry_names = self._get_pantry_names()
@@ -706,6 +664,7 @@ class MealPlannerPlugin(RunnableMCPPlugin):
                 favorites=[f["title"] for f in self._favorites["favorites"]],
                 pantry_items=set(pantry_names),
                 count=min(count, 7),
+                preferences=preferences,
             )
         except Exception as e:
             logger.error(f"[MealPlanner] Suggestion failed: {e}")
@@ -740,12 +699,13 @@ class MealPlannerPlugin(RunnableMCPPlugin):
         ))
 
         titles = [s["title"] for s in suggestions[:5]]
+        pref_note = f" matching '{preferences}'" if preferences else ""
         return {
             "status": "success",
             "count": len(suggestions),
-            "message": f"Here are {len(suggestions)} meal suggestions based on your favorites "
-                       f"and what's in the pantry: {', '.join(titles)}. "
-                       f"Say 'plan' followed by a recipe name and day to add it to your plan.",
+            "top_recipes": titles,
+            "message": f"Here are {len(suggestions)} meal suggestions{pref_note}: {', '.join(titles)}. "
+                       f"Would you like to plan any of these for the week?",
         }
 
     # -----------------------------------------------------------------------
