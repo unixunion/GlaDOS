@@ -34,7 +34,12 @@ class LLMQueueProcessor:
         self._thread.join()
 
     def _run(self):
-        """Monitor the LLM queue and process messages."""
+        """Monitor the LLM queue and process messages.
+
+        Queue items may be plain strings (normal user input) or
+        `(content, kwargs)` tuples for messages that need extra options
+        passed through to `chat()`, such as system-injected prompts.
+        """
         while not self._shutdown_event.is_set():
             try:
                 user_input = self._llm_queue.get(timeout=0.1)
@@ -51,9 +56,14 @@ class LLMQueueProcessor:
                     if drained > 0:
                         logger.info(f"Drained {drained} stale message(s) from LLM queue, using latest")
 
-                    logger.success(f"Processing input from LLM queue: {latest[:100]}")
+                    if isinstance(latest, tuple):
+                        content, kwargs = latest
+                    else:
+                        content, kwargs = latest, {}
+
+                    logger.success(f"Processing input from LLM queue: {str(content)[:100]}")
                     event_system.publish(EventMessage("status", "thinking", {"message": "Thinking..."}))
-                    self._chat_fn(latest, tools=None)
+                    self._chat_fn(content, tools=None, **kwargs)
             except queue.Empty:
                 continue
             except Exception as e:

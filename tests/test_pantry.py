@@ -621,3 +621,207 @@ class TestCatalogFuzzyMatching:
         """Close spelling variants should match (e.g. singular/plural)."""
         plugin.store_item("test vienna sausages", "fridge")
         assert self._catalog_match_exists(plugin, "test vienna sausage")
+
+
+class TestProactiveExpiryWarning:
+    """Test the proactive expiry warning that fires when many items are going off.
+
+    Mirrors the real-world scenario observed on startup where a well-stocked
+    fridge previously generated a 20-item run-on warning. The formatter now
+    groups items by urgency bucket, oxford-joins names within a bucket, and
+    caps each bucket so the spoken output stays short and natural.
+    """
+
+    @pytest.fixture
+    def plugin(self, tmp_path):
+        os.environ["PANTRY_DATA_DIR"] = str(tmp_path)
+        from plugins.pantry.pantry_plugin import PantryPlugin
+        PantryPlugin._instance = None
+        return PantryPlugin()
+
+    @staticmethod
+    def _set_expiry(plugin, name, location, days_offset, estimated):
+        from datetime import timedelta, date
+        plugin.store_item(name, location)
+        item = plugin._find_pantry_items(name, strict=True)[0]
+        item["expires"] = (date.today() + timedelta(days=days_offset)).isoformat()
+        item["expiry_source"] = "estimated" if estimated else "manual"
+
+    @classmethod
+    def _seed_all_buckets(cls, plugin):
+        """Seed the pantry so every urgency bucket has exactly one item."""
+        # Manual expiry
+        cls._set_expiry(plugin, "onion", "fridge", 2, estimated=False)           # expires_soon
+        cls._set_expiry(plugin, "potatoes", "dry-goods", 0, estimated=False)     # expires_today
+        cls._set_expiry(plugin, "milk", "fridge", 1, estimated=False)            # expires_tomorrow
+        cls._set_expiry(plugin, "vienna sausages", "fridge", -2, estimated=False)  # expired, 2 days
+        cls._set_expiry(plugin, "yogurt", "fridge", -5, estimated=False)         # expired, 5 days
+
+        # Estimated expiry
+        cls._set_expiry(plugin, "basil", "fridge", 2, estimated=True)            # getting_old
+        cls._set_expiry(plugin, "cheese", "fridge", 0, estimated=True)           # getting_old
+        cls._set_expiry(plugin, "cream", "fridge", 1, estimated=True)            # getting_old
+        cls._set_expiry(plugin, "lettuce", "fridge", -3, estimated=True)         # past_best
+        cls._set_expiry(plugin, "bacon", "fridge", -7, estimated=True)           # past_best
+
+        # Items that should NOT appear (more than 2 days out)
+        cls._set_expiry(plugin, "flour", "dry-goods", 30, estimated=False)
+        cls._set_expiry(plugin, "rice", "dry-goods", 14, estimated=True)
+
+        # Items with no expiry date at all — should be ignored
+        plugin.store_item("salt", "dry-goods")
+        plugin.store_item("pepper", "dry-goods")
+
+    @staticmethod
+    def _capture_warning(plugin, today):
+        from unittest.mock import patch
+        published = []
+        with patch.object(plugin.event_system, "publish",
+                          side_effect=lambda msg: published.append(msg)):
+            plugin._check_proactive_expiry(today)
+        tts_events = [m for m in published if getattr(m, "role", None) == "tts"]
+        return tts_events
+
+    def test_publishes_single_warning_with_all_categories(self, plugin):
+        from datetime import date
+        today = date.today()
+        self._seed_all_buckets(plugin)
+
+        tts_events = self._capture_warning(plugin, today)
+        assert len(tts_events) == 1, f"expected one TTS event, got {len(tts_events)}"
+
+        warning = tts_events[0].content
+        assert warning.startswith("Heads up. ")
+        assert warning.endswith(".")
+
+        # Every seeded expiring item must be mentioned
+        for name in [
+            "onion", "potatoes", "milk", "vienna sausages", "yogurt",
+            "basil", "cheese", "cream", "lettuce", "bacon",
+        ]:
+            assert name in warning, f"missing item from warning: {name}"
+
+        # Items outside the 2-day window and those without expiry must NOT be mentioned
+        for name in ["flour", "rice", "salt", "pepper"]:
+            assert name not in warning, f"unexpected item in warning: {name}"
+
+    def test_urgency_buckets_produce_distinct_sentences(self, plugin):
+        from datetime import date
+        today = date.today()
+        self._seed_all_buckets(plugin)
+
+        warning = self._capture_warning(plugin, today)[0].content
+
+        # One headed sentence per non-empty bucket
+        assert "Already expired: " in warning
+        assert "Expiring today: potatoes" in warning
+        assert "Expiring tomorrow: milk" in warning
+        assert "Expiring in 2 days: onion" in warning
+        assert "Probably past their best: " in warning
+        assert "Might be getting old: " in warning
+
+        # Expired items carry the days-ago suffix with correct pluralization
+        assert "vienna sausages 2 days ago" in warning
+        assert "yogurt 5 days ago" in warning
+
+        # The old run-on "and ... and ... and" style is gone
+        assert ", and the " not in warning  # no repeated "the" linkers
+        assert "it's been about" not in warning  # old estimated-expired phrase
+        assert warning.count("Heads up") == 1
+
+    def test_pluralization_singular_day_ago(self, plugin):
+        """An item that expired yesterday should say '1 day ago', not '1 days'."""
+        from datetime import date
+        today = date.today()
+        self._set_expiry(plugin, "steak", "fridge", -1, estimated=False)
+
+        warning = self._capture_warning(plugin, today)[0].content
+
+        assert "1 day ago" in warning
+        assert "1 days ago" not in warning
+
+    def test_oxford_comma_join_two_items(self, plugin):
+        """Two items in a bucket: 'A and B', no comma."""
+        from datetime import date
+        today = date.today()
+        self._set_expiry(plugin, "milk", "fridge", 0, estimated=False)
+        self._set_expiry(plugin, "cheese slice", "fridge", 0, estimated=False)
+
+        warning = self._capture_warning(plugin, today)[0].content
+
+        # Must contain one of the two orderings — dict iteration is insertion-ordered
+        assert (
+            "Expiring today: milk and cheese slice." in warning
+            or "Expiring today: cheese slice and milk." in warning
+        )
+
+    def test_oxford_comma_join_three_items(self, plugin):
+        """Three items in a bucket: 'A, B, and C'."""
+        from datetime import date
+        today = date.today()
+        self._set_expiry(plugin, "apple", "fridge", 0, estimated=False)
+        self._set_expiry(plugin, "banana", "fridge", 0, estimated=False)
+        self._set_expiry(plugin, "pear", "fridge", 0, estimated=False)
+
+        warning = self._capture_warning(plugin, today)[0].content
+
+        today_part = warning.split("Expiring today: ", 1)[1].split(".", 1)[0]
+        assert today_part.count(",") == 2  # two commas for three items
+        assert " and " in today_part
+        for name in ["apple", "banana", "pear"]:
+            assert name in today_part
+
+    def test_bucket_capped_with_plus_more(self, plugin):
+        """Buckets with more than 3 items should show '..., plus N more'.
+
+        Uses distinct food names to avoid store_item's fuzzy-match merging
+        (which would collapse 'item0'/'item1'/... into a single entry).
+        """
+        from datetime import date
+        today = date.today()
+        names = ["apple", "banana", "pear", "plum", "kiwi", "mango", "peach"]
+        for name in names:
+            self._set_expiry(plugin, name, "fridge", 0, estimated=False)
+
+        warning = self._capture_warning(plugin, today)[0].content
+
+        today_sentence = warning.split("Expiring today: ", 1)[1].split(".", 1)[0]
+        # 3 names shown, 4 summarised as "plus 4 more"
+        shown = sum(1 for n in names if n in today_sentence)
+        assert shown == 3, f"expected 3 names shown, got {shown}: {today_sentence}"
+        assert "plus 4 more" in today_sentence
+
+    def test_warned_today_flag_set(self, plugin):
+        from datetime import date
+        from unittest.mock import patch
+
+        today = date.today()
+        self._seed_all_buckets(plugin)
+
+        with patch.object(plugin.event_system, "publish"):
+            plugin._check_proactive_expiry(today)
+
+        assert plugin._expiry_warned_today == today
+
+    def test_silent_when_nothing_expiring(self, plugin):
+        from datetime import date
+        today = date.today()
+        self._set_expiry(plugin, "flour", "dry-goods", 30, estimated=False)
+
+        tts_events = self._capture_warning(plugin, today)
+        assert tts_events == []
+
+    def test_invalid_expiry_dates_are_skipped(self, plugin):
+        """Items with malformed expiry strings should be ignored, not crash."""
+        from datetime import date
+        today = date.today()
+        plugin.store_item("mystery", "fridge")
+        item = plugin._find_pantry_items("mystery", strict=True)[0]
+        item["expires"] = "sometime next week"  # not ISO format
+
+        # Add valid expiring items so we can confirm the loop continues
+        self._seed_all_buckets(plugin)
+
+        warning = self._capture_warning(plugin, today)[0].content
+        assert "mystery" not in warning
+        assert "onion" in warning  # from _seed_all_buckets

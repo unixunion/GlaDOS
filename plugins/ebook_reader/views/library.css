@@ -1,0 +1,204 @@
+/* Ebook reader library view */
+
+.el-total {
+    font-size: 0.8em;
+    opacity: 0.7;
+    margin-left: 12px;
+    font-weight: normal;
+}
+
+.el-toolbar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.el-input {
+    flex: 1;
+    min-width: 200px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    color: inherit;
+    font-size: 0.95em;
+}
+
+.el-input:focus {
+    outline: none;
+    border-color: var(--accent, #f5b800);
+    background: rgba(255, 255, 255, 0.10);
+}
+
+.el-search-banner {
+    background: rgba(245, 184, 0, 0.10);
+    border: 1px solid rgba(245, 184, 0, 0.35);
+    border-radius: 4px;
+    padding: 8px 14px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.el-section-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin: 16px 0 10px;
+    opacity: 0.85;
+}
+
+.el-recent-row {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+}
+
+.el-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+}
+
+.el-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 6px;
+    padding: 12px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, transform 0.12s;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.el-card:hover {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(245, 184, 0, 0.40);
+    transform: translateY(-1px);
+}
+
+.el-card-compact {
+    min-width: 200px;
+    flex-shrink: 0;
+}
+
+.el-card-cover {
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 4px;
+    font-size: 2em;
+    opacity: 0.6;
+}
+
+.el-card-title {
+    font-weight: 600;
+    font-size: 1em;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.el-card-author {
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+
+.el-card-meta {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 0.75em;
+}
+
+.el-lcc, .el-words {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 2px 6px;
+    border-radius: 3px;
+    opacity: 0.8;
+}
+
+.el-lcc {
+    color: var(--accent, #f5b800);
+}
+
+.el-card-subjects {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+}
+
+.el-subject {
+    font-size: 0.7em;
+    background: rgba(245, 184, 0, 0.15);
+    color: var(--accent, #f5b800);
+    padding: 2px 6px;
+    border-radius: 3px;
+    line-height: 1.4;
+}
+
+/* Dashboard card */
+.el-card-current-title {
+    font-size: 1em;
+    font-weight: 600;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.el-card-current-author {
+    font-size: 0.8em;
+    opacity: 0.7;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.el-card-current-progress {
+    margin-top: 8px;
+    font-size: 0.8em;
+    opacity: 0.85;
+}
+
+.el-progress-bar {
+    height: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 2px;
+    margin-top: 4px;
+    overflow: hidden;
+}
+
+.el-progress-fill {
+    height: 100%;
+    background: var(--accent, #f5b800);
+    transition: width 0.3s;
+}
+
+.el-card-empty {
+    text-align: center;
+    opacity: 0.6;
+    font-size: 0.9em;
+    padding: 12px 4px;
+}
+
+.el-card-empty code {
+    font-size: 0.85em;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 1px 5px;
+    border-radius: 3px;
+}

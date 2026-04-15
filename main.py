@@ -169,6 +169,11 @@ class Glados2:
         # a lock used to mask when the voice module is talking, so the assistant doesnt hear
         # itself, #TODO find a better fix
         self.speaking_lock = threading.Event()
+        # Expose the lock so secondary voice cores (e.g. ebook reader narrator)
+        # can share it — without this, a second SpeechModule would let the mic
+        # activate while it's speaking and wake-word interrupts would bypass it.
+        from glados.system.tts_runtime import TTSRuntime
+        TTSRuntime().set_speaking_lock(self.speaking_lock)
 
         self.speech_module = None
         self.wakeword_module = None
@@ -263,7 +268,7 @@ class Glados2:
         power_on = getattr(self.config, 'power_on_prompt', None)
         if power_on:
             logger.info(f"Sending power-on prompt to LLM: {power_on}")
-            self.client.llm_queue.put(power_on)
+            self.client.llm_queue.put((power_on, {"system_injected": True}))
 
     def stop(self):
         """

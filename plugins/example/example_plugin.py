@@ -53,6 +53,10 @@ class MyRunnablePlugin(RunnablePlugin):
         )(self.hello_universe)
 
     def start(self):
+        # __init__ short-circuits with an intentional `return` for testing,
+        # so _stop_event may not exist. Skip start in that case.
+        if not hasattr(self, "_stop_event"):
+            return
         logger.info("Starting...")
         if getattr(self, '_worker_thread', None) and self._worker_thread.is_alive():
             return
@@ -69,6 +73,8 @@ class MyRunnablePlugin(RunnablePlugin):
         logger.success("started")
 
     def stop(self):
+        if not hasattr(self, "_stop_event"):
+            return
         logger.info("Shutting down")
         self._stop_event.set()
 

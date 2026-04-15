@@ -42,7 +42,7 @@ class ChatClient:
         self.model = config.model
         self.plugin_system = plugin_system or PluginSystem()
         self.config: GladosConfig = config
-        self.llm_queue: queue.Queue[str] = queue.Queue()
+        self.llm_queue: queue.Queue = queue.Queue()
         self.tts_queue: queue.Queue[str] = queue.Queue()
         self.message_manager = MessageManager(
             max_context_messages=getattr(config, 'max_context_messages', 20)
@@ -230,8 +230,14 @@ class ChatClient:
     # Main chat entry point
     # -----------------------------------------------------------------------
 
-    def chat(self, content, tools=None, _recursive=False, _depth=0, _called_tools=None):
-        """Handles user input and communicates with the LLM."""
+    def chat(self, content, tools=None, _recursive=False, _depth=0, _called_tools=None, system_injected=False):
+        """Handles user input and communicates with the LLM.
+
+        When `system_injected=True`, the message is treated as a system-originated
+        prompt (e.g. the power-on greeting): activity inference, PRE_LLM hooks,
+        hybrid NLP fast-path, and the user chat event are all skipped so the
+        message goes straight to the LLM.
+        """
         if _called_tools is None:
             _called_tools = set()
 
@@ -240,7 +246,7 @@ class ChatClient:
             logger.info(f"[Recursion Guard] Depth {_depth} >= max {_max_depth} — text-only response")
             tools = None
 
-        if content:
+        if content and not system_injected:
             inferred_activity = self.infer_activity_from_input(content)
             self.message_manager.switch_context(inferred_activity)
             event_system.publish(EventMessage("status", "activity", {"activity": inferred_activity.name}))
@@ -249,12 +255,12 @@ class ChatClient:
             self.message_manager.add_message_to_current_context("user", str(content))
             from_display = getattr(self, '_from_display', False)
             self._from_display = False
-            if not from_display and not str(content).startswith("You have just been powered on"):
+            if not from_display and not system_injected:
                 event_system.publish(EventMessage("chat", "user", {"role": "user", "content": str(content)}))
 
         # -- Pre-LLM hooks --
         memory_context = None
-        if content and not _recursive:
+        if content and not _recursive and not system_injected:
             from glados.llm.chat_hooks import ChatHookRegistry, ChatPipelinePhase, ChatContext
             from glados.llm.token_budget import TokenBudget
             budget = TokenBudget(
@@ -281,7 +287,7 @@ class ChatClient:
             self._chat_ctx = ctx
 
         # -- Hybrid NLP fast-path --
-        if (not _recursive and content and self._nlp_dispatcher
+        if (not _recursive and content and not system_injected and self._nlp_dispatcher
                 and not self.config.nlp_mode
                 and getattr(self.config, 'hybrid_nlp_threshold', 1.0) < 1.0):
             result = self._nlp_dispatcher.try_hybrid_dispatch(
@@ -320,8 +326,12 @@ class ChatClient:
             )
 
         try:
+            # For system-injected prompts, skip the intent-classifier tool_choice
+            # optimisation — we want the LLM to reply naturally, not be forced
+            # into a tool call based on an incidental keyword match.
+            classifier_query = None if system_injected else content
             response = self.stream_handler.stream_response(
-                relevant_tools or tools, model=self.model, query=content,
+                relevant_tools or tools, model=self.model, query=classifier_query,
                 memory_context=memory_context,
                 token_budget=getattr(self, '_token_budget', None),
             )

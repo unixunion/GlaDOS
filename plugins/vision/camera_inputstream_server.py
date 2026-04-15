@@ -136,9 +136,13 @@ class CameraInputStreamPlugin(RunnablePlugin):
         if self._worker_thread and self._worker_thread.is_alive():
             return
 
+        # Port 5000 clashes with macOS AirPlay Receiver, so use 5002
+        # (display server uses 5001).
+        port = 5002
+
         def run_flask():
-            logger.info("Calling socketio run...")
-            self._socketio.run(self._flask_app, host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)
+            logger.info(f"Calling socketio run on port {port}...")
+            self._socketio.run(self._flask_app, host="0.0.0.0", port=port, allow_unsafe_werkzeug=True)
 
         self._stop_event.clear()
         self._worker_thread = threading.Thread(target=run_flask, daemon=True)

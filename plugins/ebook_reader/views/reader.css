@@ -1,0 +1,124 @@
+/* Ebook reader view */
+
+.er-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+    margin-bottom: 16px;
+}
+
+.er-book-meta {
+    flex: 1;
+    min-width: 0;
+}
+
+.er-book-title {
+    font-size: 1.2em;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.er-book-author {
+    font-size: 0.85em;
+    opacity: 0.7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.er-chapter-info {
+    font-size: 0.9em;
+    opacity: 0.8;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 4px 12px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.er-chapter {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 12px;
+}
+
+.er-chapter-title {
+    font-size: 1.4em;
+    margin: 16px 0 24px;
+    text-align: center;
+    opacity: 0.9;
+}
+
+.er-chapter-body {
+    line-height: 1.7;
+    font-size: 1em;
+}
+
+.er-paragraph {
+    margin: 0 0 14px;
+    padding: 4px 8px;
+    border-radius: 3px;
+    transition: background 0.12s;
+}
+
+.er-paragraph-active {
+    background: rgba(245, 184, 0, 0.15);
+    border-left: 3px solid var(--accent, #f5b800);
+    padding-left: 12px;
+}
+
+.er-controls {
+    position: sticky;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    padding: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.10);
+    margin-top: 24px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.er-chapter-select {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: inherit;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.er-bookmarks {
+    max-width: 720px;
+    margin: 24px auto 0;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 4px;
+}
+
+.er-bookmarks-title {
+    font-weight: 600;
+    margin-bottom: 8px;
+    opacity: 0.85;
+}
+
+.er-bookmark {
+    padding: 6px 10px;
+    background: rgba(245, 184, 0, 0.08);
+    border-left: 3px solid var(--accent, #f5b800);
+    border-radius: 3px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background 0.12s;
+}
+
+.er-bookmark:hover {
+    background: rgba(245, 184, 0, 0.18);
+}
